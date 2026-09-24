@@ -1,7 +1,7 @@
 {
   "name": "interceptor-demo",
   "version": "1.0.0",
-  "description": "Demo to show interceptor pattern comparison between @nestjs/axios and nestjs-undici",
+  "description": "Demo to show interceptor pattern comparison between @nestjs/axios and nestjs-axios-undici",
   "scripts": {
     "start": "ts-node src/main.ts",
     "test:axios": "ts-node src/axios-example.ts",
@@ -18,7 +18,7 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "axios": "^1.4.0",
-    "nestjs-undici-interceptors": "file:../..",
+    "nestjs-axios-undici": "file:../..",
     "reflect-metadata": "^0.1.13",
     "rxjs": "7.8.1"
   },

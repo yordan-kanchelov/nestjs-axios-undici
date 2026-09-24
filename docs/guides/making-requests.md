@@ -6,7 +6,7 @@ The `HttpService` provides an axios-compatible API on top of the [undici](https:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { lastValueFrom } from 'rxjs';
 
 @Injectable()

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggingInterceptor } from './logging.interceptor';

@@ -1,7 +1,7 @@
 /**
  * Axios Compatibility Features
  *
- * This example demonstrates all the axios compatibility features available in nestjs-undici-interceptors,
+ * This example demonstrates all the axios compatibility features available in nestjs-axios-undici,
  * including configuration mapping, interceptor APIs, and response compatibility.
  */
 

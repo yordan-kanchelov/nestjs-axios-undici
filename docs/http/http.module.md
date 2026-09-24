@@ -6,7 +6,7 @@ The `HttpModule` is the main module that provides HTTP client functionality for 
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [HttpModule],
@@ -104,7 +104,7 @@ HttpModule.register({
 
 ## Migration from @nestjs/axios
 
-nestjs-undici-interceptors now provides enhanced axios compatibility, making migration much simpler:
+nestjs-axios-undici now provides enhanced axios compatibility, making migration much simpler:
 
 ### Automatic Axios Configuration Detection
 
@@ -179,7 +179,7 @@ The library automatically:
 - Logs warnings for unsupported features
 - Converts transformRequest/transformResponse to interceptors
 
-See the [migration example](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts) and [enhanced compatibility demo](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/enhanced-axios-compatibility.ts) for detailed patterns.
+See the [migration example](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts) and [enhanced compatibility demo](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/enhanced-axios-compatibility.ts) for detailed patterns.
 
 ## Available Options
 
@@ -198,7 +198,7 @@ All options from [@nodejs/undici](https://github.com/nodejs/undici) are supporte
 For better TypeScript support, you can also use `TypedHttpModule`:
 
 ```typescript
-import { TypedHttpModule } from 'nestjs-undici-interceptors';
+import { TypedHttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [

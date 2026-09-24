@@ -1,8 +1,8 @@
 import 'reflect-metadata';
 import { Module, Injectable } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
-import type { HttpInterceptor, HttpInterceptorHandler, HttpInterceptorRequest } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
+import type { HttpInterceptor, HttpInterceptorHandler, HttpInterceptorRequest } from 'nestjs-axios-undici';
 import type { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import type { Dispatcher } from 'undici';
@@ -81,7 +81,7 @@ export class ApiService {
   }
 
   async testRequest() {
-    console.log('\n📡 Making request with nestjs-undici interceptors...\n');
+    console.log('\n📡 Making request with nestjs-axios-undici interceptors...\n');
 
     try {
       const observable = this.httpService.request(

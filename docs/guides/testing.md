@@ -1,12 +1,12 @@
 # Testing
 
-You can test services that use `nestjs-undici-interceptors` either by mocking the `HttpService` directly or by using Undici's `MockAgent`.
+You can test services that use `nestjs-axios-undici` either by mocking the `HttpService` directly or by using Undici's `MockAgent`.
 
 ## Mocking HttpService
 
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { of } from 'rxjs';
 import { CatsService } from './cats.service';
 
@@ -42,7 +42,7 @@ describe('CatsService', () => {
 
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 import { MockAgent } from 'undici';
 import { CatsService } from './cats.service';
 

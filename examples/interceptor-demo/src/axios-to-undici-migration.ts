@@ -5,7 +5,7 @@ import * as http from 'http';
 import * as https from 'https';
 
 /**
- * This example demonstrates migration patterns from @nestjs/axios to nestjs-undici-interceptors.
+ * This example demonstrates migration patterns from @nestjs/axios to nestjs-axios-undici.
  * 
  * UPDATE: With enhanced axios compatibility, many axios features now work directly
  * through HttpModule.register() without requiring code changes!
@@ -68,7 +68,7 @@ export class AxiosBasedService implements OnModuleInit {
 export class AxiosModule {}
 
 // ============================================
-// AFTER: Using nestjs-undici-interceptors
+// AFTER: Using nestjs-axios-undici
 // ============================================
 
 import { 
@@ -76,7 +76,7 @@ import {
   HttpService as UndiciHttpService,
   HttpInterceptorRequest,
   HttpInterceptorHandler
-} from 'nestjs-undici-interceptors';
+} from 'nestjs-axios-undici';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
@@ -288,7 +288,7 @@ async function demonstrateMigration() {
   console.log('✅ All modules created successfully');
   console.log('\n📝 Migration is simple:');
   console.log('\n🎯 Recommended Approach:');
-  console.log('   1. Change the import from @nestjs/axios to nestjs-undici-interceptors');
+  console.log('   1. Change the import from @nestjs/axios to nestjs-axios-undici');
   console.log('   2. That\'s it! Your existing configuration works automatically');
   console.log('   3. The register() method detects and maps axios options');
   console.log('   4. Both axios-style and undici-style interceptors are supported');

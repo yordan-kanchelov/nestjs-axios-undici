@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { firstValueFrom } from 'rxjs';
 
 @Injectable()
@@ -23,7 +23,7 @@ export class AppService {
 
     return {
       message: 'Fastify Undici Interceptor Response',
-      // nestjs-undici-interceptors returns axios-compatible responses with
+      // nestjs-axios-undici returns axios-compatible responses with
       // the body already read and parsed into `data`.
       data: results.map((res) => res.data),
       duration: endTime - startTime,

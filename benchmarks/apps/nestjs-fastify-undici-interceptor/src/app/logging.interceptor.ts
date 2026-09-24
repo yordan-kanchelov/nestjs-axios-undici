@@ -6,7 +6,7 @@ import type {
   HttpInterceptor,
   HttpInterceptorHandler,
   HttpInterceptorRequest,
-} from 'nestjs-undici-interceptors';
+} from 'nestjs-axios-undici';
 
 @Injectable()
 export class LoggingInterceptor implements HttpInterceptor {

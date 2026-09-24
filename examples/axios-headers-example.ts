@@ -24,7 +24,7 @@ export class ApiService implements OnModuleInit {
       config.headers
         .set('Authorization', 'Bearer token')
         .set('X-Request-ID', Math.random().toString(36))
-        .set('User-Agent', 'nestjs-undici/1.0');
+        .set('User-Agent', 'nestjs-axios-undici/1.0');
 
       // Headers are automatically normalized to lowercase
       console.log('Has auth:', config.headers.has('authorization')); // true

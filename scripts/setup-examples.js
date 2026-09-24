@@ -7,7 +7,7 @@ const fs = require('fs');
 console.log('🔧 Setting up examples...\n');
 
 // Build the main library first
-console.log('📦 Building nestjs-undici-interceptors library...');
+console.log('📦 Building nestjs-axios-undici library...');
 execSync('npm run build', {
   stdio: 'inherit',
   cwd: path.resolve(__dirname, '..'),
@@ -28,7 +28,7 @@ if (fs.existsSync(interceptorDemoPath)) {
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
   // Ensure it points to the local build
-  packageJson.dependencies['nestjs-undici-interceptors'] = 'file:../..';
+  packageJson.dependencies['nestjs-axios-undici'] = 'file:../..';
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
   // Install dependencies
@@ -67,8 +67,8 @@ if (!fs.existsSync(rootExamplesTsConfig)) {
       resolveJsonModule: true,
       esModuleInterop: true,
       paths: {
-        'nestjs-undici-interceptors': ['../lib'],
-        'nestjs-undici-interceptors/*': ['../lib/*'],
+        'nestjs-axios-undici': ['../lib'],
+        'nestjs-axios-undici/*': ['../lib/*'],
       },
     },
     include: ['*.ts'],

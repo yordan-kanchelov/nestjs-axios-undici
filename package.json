@@ -1,8 +1,8 @@
 {
-  "name": "nestjs-undici-interceptors",
-  "version": "0.5.5",
-  "description": "Fork of nestjs-undici with interceptor support - Undici utilities module based on the @nodejs/undici package 🌐",
-  "homepage": "https://hebertcisco.github.io/nestjs-undici",
+  "name": "nestjs-axios-undici",
+  "version": "0.6.0",
+  "description": "Drop-in @nestjs/axios replacement built on Undici: the same HttpModule/HttpService API and axios-compatible responses, errors and interceptors, with much lower latency.",
+  "homepage": "https://yordan-kanchelov.github.io/nestjs-axios-undici/",
   "main": "index.js",
   "types": "index.d.ts",
   "engines": {
@@ -107,15 +107,18 @@
     "docs"
   ],
   "keywords": [
-    "fetch",
+    "nestjs",
+    "nest",
+    "axios",
+    "@nestjs/axios",
+    "undici",
     "http",
-    "https",
-    "promise",
-    "request",
-    "curl",
-    "wget",
-    "xhr",
-    "whatwg"
+    "http-client",
+    "httpmodule",
+    "httpservice",
+    "drop-in",
+    "interceptors",
+    "fast"
   ],
   "standard": {
     "env": [
@@ -127,7 +130,7 @@
   },
   "author": "Hebert Cisco",
   "license": "MIT",
-  "url": "https://github.com/hebertcisco/nestjs-undici#readme",
+  "url": "https://github.com/yordan-kanchelov/nestjs-axios-undici#readme",
   "lint-staged": {
     "*.ts": [
       "prettier --write"
@@ -141,10 +144,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yordan-kanchelov/nestjs-undici-fork.git"
+    "url": "git+https://github.com/yordan-kanchelov/nestjs-axios-undici.git"
   },
   "bugs": {
-    "url": "https://github.com/yordan-kanchelov/nestjs-undici-fork/issues"
+    "url": "https://github.com/yordan-kanchelov/nestjs-axios-undici/issues"
   },
   "dependencies": {
     "http-cookie-agent": "^7.0.1",

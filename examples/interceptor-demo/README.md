@@ -1,6 +1,6 @@
 # Interceptor Demo
 
-This example demonstrates the interceptor pattern implementation in `nestjs-undici` compared to `@nestjs/axios`.
+This example demonstrates the interceptor pattern implementation in `nestjs-axios-undici` compared to `@nestjs/axios`.
 
 ## Setup
 
@@ -16,13 +16,13 @@ npm run test:axios
 ```
 Shows the traditional axios interceptor pattern.
 
-### 2. nestjs-undici WITHOUT interceptors (original issue)
+### 2. nestjs-axios-undici WITHOUT interceptors (original issue)
 ```bash
 npm run test:undici
 ```
 Shows the original problem - no interceptor support.
 
-### 3. nestjs-undici WITH interceptors (NEW!)
+### 3. nestjs-axios-undici WITH interceptors (NEW!)
 ```bash
 npm run test:undici-simple
 ```
@@ -41,7 +41,7 @@ Shows comprehensive interceptor usage including:
 
 ## Problem Solved! ✅
 
-`nestjs-undici` now supports HTTP interceptors similar to `@nestjs/axios`:
+`nestjs-axios-undici` now supports HTTP interceptors similar to `@nestjs/axios`:
 
 ### Configuration-based Interceptors
 ```typescript
@@ -68,4 +68,4 @@ httpService.addInterceptor((request, next) => {
 4. ✅ Chain multiple interceptors
 5. ✅ Add interceptors dynamically at runtime
 
-The interceptor pattern is now fully supported in nestjs-undici!
+The interceptor pattern is now fully supported in nestjs-axios-undici!

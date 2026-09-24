@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains various examples demonstrating the features of `nestjs-undici-interceptors`.
+This directory contains various examples demonstrating the features of `nestjs-axios-undici`.
 
 ## Running Examples
 

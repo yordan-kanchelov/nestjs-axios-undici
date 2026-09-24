@@ -1,6 +1,6 @@
 # Configuration Guide
 
-The `nestjs-undici-interceptors` module allows you to configure the underlying `undici` client options.
+The `nestjs-axios-undici` module allows you to configure the underlying `undici` client options.
 
 > **Note**: As of v0.4.0+, the module always returns axios-compatible responses by default. No special configuration is needed for axios compatibility.
 
@@ -10,7 +10,7 @@ Use the `register` method to configure the module synchronously. The configurati
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
@@ -73,7 +73,7 @@ Use `registerAsync` to load configuration asynchronously, for example from a `Co
 ```typescript
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
@@ -97,7 +97,7 @@ To configure advanced behavior like connection pooling, proxies, or mocks, you s
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 import { Agent } from 'undici';
 
 @Module({

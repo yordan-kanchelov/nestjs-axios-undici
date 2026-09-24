@@ -1,6 +1,6 @@
 # Interceptor Patterns and Best Practices
 
-This document describes common patterns and best practices for using interceptors with nestjs-undici-interceptors.
+This document describes common patterns and best practices for using interceptors with nestjs-axios-undici.
 
 ## Function-based vs Class-based Interceptors
 

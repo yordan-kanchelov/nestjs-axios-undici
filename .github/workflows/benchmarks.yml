@@ -122,7 +122,7 @@ jobs:
         run: |
           k6 run \
             -e BENCHMARK_ENVIRONMENT="GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner" \
-            -e LIBRARY_REF="nestjs-undici-interceptors@$(node -p "require('../package.json').version") (${GITHUB_SHA::7})" \
+            -e LIBRARY_REF="nestjs-axios-undici@$(node -p "require('../package.json').version") (${GITHUB_SHA::7})" \
             k6-scripts/test-node${{ matrix.node-version }}.js
       - uses: actions/upload-artifact@v4
         with:

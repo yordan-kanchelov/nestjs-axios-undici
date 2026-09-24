@@ -64,7 +64,7 @@ Overhead = how much slower the average response gets when interceptors are added
 | Fastify + Axios | 20.4% | 19.3% | 20.6% | 20.2% | 20.1% |
 | Fastify + Undici | 115.4% | 98.7% | 115.3% | 115.8% | 111.3% |
 
-> **Note:** the Undici interceptor app uses the `nestjs-undici-interceptors` fork, which returns axios-compatible responses (body read and parsed for you), while the plain Undici app uses `nestjs-undici` and parses `body.json()` itself. The Undici "overhead" therefore includes the fork's response adaptation, not only the interceptor.
+> **Note:** the Undici interceptor app uses the `nestjs-axios-undici` fork, which returns axios-compatible responses (body read and parsed for you), while the plain Undici app uses `nestjs-undici` and parses `body.json()` itself. The Undici "overhead" therefore includes the fork's response adaptation, not only the interceptor.
 
 ---
 
@@ -119,5 +119,5 @@ Overhead = how much slower the average response gets when interceptors are added
 - **Environment**: GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner
 - **Library build**: nestjs-undici-interceptors@0.5.5 (edcb85f)
 - **Test Tool**: k6
-- **Packages**: nestjs-undici ^0.2.60, nestjs-undici-interceptors N/A, undici ^7.29.1, @nestjs/axios ^4.0.1, axios ^1.20.0, @nestjs/core ^11.2.6
+- **Packages**: nestjs-undici 0.2.60, nestjs-axios-undici 0.6.0, undici 7.29.1, @nestjs/axios 4.0.1, axios 1.20.0, @nestjs/core 11.2.6
 - **Test Runs**: 2026-09-24

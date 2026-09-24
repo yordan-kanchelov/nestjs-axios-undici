@@ -1,6 +1,6 @@
 # Benchmarks
 
-> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.
+> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.
 
 Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js 20, 22, 24, 26.
 
@@ -59,7 +59,7 @@ How much slower the average response gets when interceptors are added.
 | Fastify + Axios | 20.4% | 19.3% | 20.6% | 20.2% |
 | Fastify + Undici | 115.4% | 98.7% | 115.3% | 115.8% |
 
-> The Undici interceptor app uses `nestjs-undici-interceptors`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.
+> The Undici interceptor app uses `nestjs-axios-undici`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.
 
 ## Configurations
 
@@ -69,7 +69,7 @@ How much slower the average response gets when interceptors are added.
 | Fastify + Axios | Fastify | `@nestjs/axios` |
 | Fastify + Undici | Fastify | `nestjs-undici` (upstream) |
 | Express/Fastify + Axios + Interceptor | Express/Fastify | `@nestjs/axios` with request/response interceptors |
-| Fastify + Undici + Interceptor | Fastify | `nestjs-undici-interceptors` (this repository) with a logging interceptor |
+| Fastify + Undici + Interceptor | Fastify | `nestjs-axios-undici` (this repository) with a logging interceptor |
 
 ## Environment
 
@@ -82,7 +82,7 @@ Absolute latencies depend on the machine; compare configurations within a run.
 
 ## Regression Checks
 
-Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/micro).
+Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/micro).
 
 ## Running the Benchmarks
 

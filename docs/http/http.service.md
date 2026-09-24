@@ -8,7 +8,7 @@ To use the HttpService, inject it into your component or service:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { lastValueFrom } from 'rxjs';
 
 @Injectable()
@@ -184,7 +184,7 @@ Migration requires updating imports and adapting interceptor usage:
 import { HttpService } from '@nestjs/axios';
 
 // After
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 ```
 
 **What stays the same:**
@@ -197,4 +197,4 @@ import { HttpService } from 'nestjs-undici-interceptors';
 - Some configuration options
 - No direct access to axios instance
 
-For detailed migration patterns, see the [migration guide](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts).
+For detailed migration patterns, see the [migration guide](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts).

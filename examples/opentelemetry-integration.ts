@@ -2,7 +2,7 @@
  * OpenTelemetry Integration Example
  *
  * This example demonstrates how to integrate OpenTelemetry trace propagation
- * with nestjs-undici-interceptors using both axios-style and native interceptor APIs.
+ * with nestjs-axios-undici using both axios-style and native interceptor APIs.
  */
 
 import { HttpModule, HttpService, AxiosHeaders, HttpInterceptorRequest, HttpInterceptorHandler } from "../lib";

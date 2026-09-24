@@ -229,7 +229,7 @@ function buildReport(runs) {
   }
   lines.push('');
   lines.push(
-    '> **Note:** the Undici interceptor app uses the `nestjs-undici-interceptors` fork, which returns axios-compatible responses ' +
+    '> **Note:** the Undici interceptor app uses the `nestjs-axios-undici` fork, which returns axios-compatible responses ' +
       '(body read and parsed for you), while the plain Undici app uses `nestjs-undici` and parses `body.json()` itself. ' +
       'The Undici "overhead" therefore includes the fork\'s response adaptation, not only the interceptor.',
     ''
@@ -259,7 +259,7 @@ function buildReport(runs) {
   lines.push(`- **Library build**: ${describeInfo(runs, 'library_ref')}`);
   lines.push('- **Test Tool**: k6');
   lines.push(
-    `- **Packages**: nestjs-undici ${packageVersion('nestjs-undici')}, nestjs-undici-interceptors ${packageVersion('nestjs-undici-interceptors')}, ` +
+    `- **Packages**: nestjs-undici ${packageVersion('nestjs-undici')}, nestjs-axios-undici ${packageVersion('nestjs-axios-undici')}, ` +
       `undici ${packageVersion('undici')}, @nestjs/axios ${packageVersion('@nestjs/axios')}, axios ${packageVersion('axios')}, @nestjs/core ${packageVersion('@nestjs/core')}`
   );
   const timestamps = runs.map((r) => r.data.test_info?.timestamp).filter(Boolean).sort();
@@ -446,7 +446,7 @@ function buildDocsPage(runs) {
   return [
     '# Benchmarks',
     '',
-    '> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.',
+    '> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.',
     '',
     `Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js ${versions}.`,
     '',
@@ -481,7 +481,7 @@ function buildDocsPage(runs) {
     header(['Configuration', ...runs.map((r) => `Node ${r.version}`)]),
     ...INTERCEPTOR_BASES.map((key) => row([labelOf(key), ...runs.map((r) => formatPercentage(interceptorOverhead(r, key)))])),
     '',
-    '> The Undici interceptor app uses `nestjs-undici-interceptors`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.',
+    '> The Undici interceptor app uses `nestjs-axios-undici`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.',
     '',
     '## Configurations',
     '',
@@ -491,7 +491,7 @@ function buildDocsPage(runs) {
     '| Fastify + Axios | Fastify | `@nestjs/axios` |',
     '| Fastify + Undici | Fastify | `nestjs-undici` (upstream) |',
     '| Express/Fastify + Axios + Interceptor | Express/Fastify | `@nestjs/axios` with request/response interceptors |',
-    '| Fastify + Undici + Interceptor | Fastify | `nestjs-undici-interceptors` (this repository) with a logging interceptor |',
+    '| Fastify + Undici + Interceptor | Fastify | `nestjs-axios-undici` (this repository) with a logging interceptor |',
     '',
     '## Environment',
     '',
@@ -504,7 +504,7 @@ function buildDocsPage(runs) {
     '',
     '## Regression Checks',
     '',
-    'Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/micro).',
+    'Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/micro).',
     '',
     '## Running the Benchmarks',
     '',

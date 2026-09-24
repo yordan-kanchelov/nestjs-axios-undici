@@ -81,7 +81,7 @@ const routes: Record<string, (req: IncomingMessage, res: ServerResponse, body: s
   },
 };
 
-describe('Axios compatibility matrix (@nestjs/axios vs nestjs-undici-interceptors)', () => {
+describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', () => {
   let server: Server;
   let base: string;
   const modules: TestingModule[] = [];

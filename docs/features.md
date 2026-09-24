@@ -1,14 +1,14 @@
 # What's New in This Fork
 
-`nestjs-undici-interceptors` is a fork of [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) that keeps Undici's speed and adds what you need to replace `@nestjs/axios`: interceptors, axios-compatible responses and axios-style configuration. It tracks upstream, most recently merged at upstream v0.2.60.
+`nestjs-axios-undici` (previously `nestjs-undici-interceptors`) gives you the `@nestjs/axios` API on top of Undici. It started as a fork of [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) and adds what you need to replace `@nestjs/axios`: interceptors, axios-compatible responses and errors, and axios-style configuration. It tracks upstream, most recently merged at upstream v0.2.60.
 
 ```bash
-npm install nestjs-undici-interceptors undici
+npm install nestjs-axios-undici undici
 ```
 
 ## At a Glance
 
-| Feature | nestjs-undici | nestjs-undici-interceptors |
+| Feature | nestjs-undici (upstream) | nestjs-axios-undici |
 |---------|:-------------:|:--------------------------:|
 | Undici-based HTTP client | ✅ | ✅ |
 | Request/response interceptors (function and class) | ❌ | ✅ |
@@ -116,7 +116,7 @@ In most cases, only the import changes (check the [compatibility matrix](/docs/a
 // Before
 import { HttpModule, HttpService } from '@nestjs/axios';
 // After
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 ```
 
 Read the full [Migration Guide](/docs/migration-guide.md) for special cases such as agents, proxies, transforms and OpenTelemetry.

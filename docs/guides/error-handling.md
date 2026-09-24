@@ -1,6 +1,6 @@
 # Error Handling
 
-`nestjs-undici-interceptors` follows axios semantics: responses with a status outside the 2xx range are emitted as errors.
+`nestjs-axios-undici` follows axios semantics: responses with a status outside the 2xx range are emitted as errors.
 
 ## HTTP Status Codes
 
@@ -8,7 +8,7 @@ Failed responses reject with an axios-like error exposing `error.response`, `err
 
 ```typescript
 import { Injectable, HttpException } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { lastValueFrom } from 'rxjs';
 
 @Injectable()
@@ -56,7 +56,7 @@ this.httpService.get('https://api.example.com')
 A `timeout` (module-level or per request) maps to undici's `headersTimeout` and `bodyTimeout` (about 1s resolution). Like axios, a timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`:
 
 ```typescript
-import { isAxiosError } from 'nestjs-undici-interceptors';
+import { isAxiosError } from 'nestjs-axios-undici';
 
 try {
   await lastValueFrom(this.httpService.get('https://slow-api.com', { timeout: 2000 }));

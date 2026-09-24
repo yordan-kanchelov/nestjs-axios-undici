@@ -142,7 +142,7 @@ export class HttpModule {
     if (hasAxiosOptions) {
       const warnings = getAxiosCompatibilityWarnings(config);
       if (warnings.length > 0) {
-        console.warn('[nestjs-undici-interceptors] Axios compatibility warnings:');
+        console.warn('[nestjs-axios-undici] Axios compatibility warnings:');
         warnings.forEach(warning => console.warn(`  - ${warning}`));
       }
       

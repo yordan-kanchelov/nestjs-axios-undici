@@ -1,16 +1,18 @@
-# NestJS Undici (Fork with Interceptor Support)
+# NestJS Axios Undici
 
-> **Note**: This is a fork of the original [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) package with added HTTP interceptor support.
+> **Drop-in `@nestjs/axios` replacement built on [Undici](https://github.com/nodejs/undici)**: keep your `HttpModule`/`HttpService` code, get axios-compatible responses, errors and interceptors, with much lower latency. No axios dependency.
+>
+> Previously published as `nestjs-undici-interceptors`; originally forked from [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) by Hebert Cisco.
 
 > **Breaking Change in v0.4.0**: This library now always returns axios-compatible responses. All axios options are automatically detected and handled by the standard `register()` method.
 
-[![npm version](https://badge.fury.io/js/nestjs-undici-interceptors.svg)](https://badge.fury.io/js/nestjs-undici-interceptors)
-[![Original Package](https://img.shields.io/badge/original-nestjs--undici-blue)](https://github.com/hebertcisco/nestjs-undici)
+[![npm version](https://badge.fury.io/js/nestjs-axios-undici.svg)](https://badge.fury.io/js/nestjs-axios-undici)
+[![Forked from](https://img.shields.io/badge/forked%20from-nestjs--undici-blue)](https://github.com/hebertcisco/nestjs-undici)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-undici/)** · ✨ **[What's new in this fork](docs/features.md)** · 📊 **[Benchmarks](docs/benchmarks.md)** · 🔁 **[Migrating from @nestjs/axios](docs/migration-guide.md)**
+📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-axios-undici/)** · ✨ **[What's new in this fork](docs/features.md)** · 📊 **[Benchmarks](docs/benchmarks.md)** · 🔁 **[Migrating from @nestjs/axios](docs/migration-guide.md)**
 
-**NestJS Undici** is a powerful HTTP client module for NestJS applications, built on top of [@nodejs/undici](https://github.com/nodejs/undici). It provides a simple and efficient way to make HTTP requests in your NestJS applications.
+**NestJS Axios Undici** is an HTTP client module for NestJS applications built on [@nodejs/undici](https://github.com/nodejs/undici), with the same API as `@nestjs/axios`.
 
 ## Fork Features
 
@@ -41,13 +43,13 @@ This fork adds the following features to the original package:
 
 ```bash
 # Using npm
-npm install nestjs-undici-interceptors
+npm install nestjs-axios-undici undici
 
 # Using yarn
-yarn add nestjs-undici-interceptors
+yarn add nestjs-axios-undici undici
 ```
 
-To use the original package without interceptor support:
+To use the original upstream package (raw Undici responses, no interceptors):
 ```bash
 npm install nestjs-undici
 ```
@@ -58,7 +60,7 @@ npm install nestjs-undici
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici-interceptors';
+import { HttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
@@ -77,7 +79,7 @@ export class AppModule {}
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici-interceptors';
+import { HttpService } from 'nestjs-axios-undici';
 import { firstValueFrom } from 'rxjs';
 
 @Injectable()
@@ -104,7 +106,7 @@ Migrating from @nestjs/axios is simple - just change your import:
 import { HttpModule, HttpService } from '@nestjs/axios';
 
 // After
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 ```
 
 Your existing code, including axios-style configuration and interceptors, will continue to work. The `register()` method automatically detects and maps axios options.
@@ -191,7 +193,7 @@ In our [benchmarks](docs/benchmarks.md) (a NestJS endpoint making 5 parallel ups
 - Undici's connection pooling and keep-alive by default
 
 ```typescript
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 // Drop-in replacement for @nestjs/axios!
 @Module({
@@ -238,7 +240,7 @@ Migration is incredibly simple - just change the import:
 import { HttpModule, HttpService } from '@nestjs/axios';
 
 // After
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 ```
 
 That's it! Your existing code continues to work without any other changes. You get:
@@ -268,7 +270,7 @@ The library always returns axios-compatible responses for consistency and ease o
 
 ## API Reference
 
-For detailed API documentation, please visit our [documentation site](https://hebertcisco.github.io/nestjs-undici/).
+For detailed API documentation, please visit our [documentation site](https://yordan-kanchelov.github.io/nestjs-axios-undici/).
 
 ## Testing
 
@@ -301,4 +303,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-If you find this package useful, please consider giving it a ⭐️ on [GitHub](https://github.com/hebertcisco/nestjs-undici).
+If you find this package useful, please consider giving it a ⭐️ on [GitHub](https://github.com/yordan-kanchelov/nestjs-axios-undici).

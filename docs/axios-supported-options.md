@@ -1,6 +1,6 @@
 # Axios Compatibility and Supported Options
 
-This page lists what works when you switch from `@nestjs/axios` to `nestjs-undici-interceptors`, and what behaves differently. Every row is covered by a side-by-side test against real axios / `@nestjs/axios` in [`tests/axios-compatibility-matrix.e2e.spec.ts`](../tests/axios-compatibility-matrix.e2e.spec.ts).
+This page lists what works when you switch from `@nestjs/axios` to `nestjs-axios-undici`, and what behaves differently. Every row is covered by a side-by-side test against real axios / `@nestjs/axios` in [`tests/axios-compatibility-matrix.e2e.spec.ts`](../tests/axios-compatibility-matrix.e2e.spec.ts).
 
 Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ not supported
 
@@ -75,7 +75,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `error.cause` | ✅ | The original undici/Node.js error for network, timeout and cancellation errors. |
 
 ```typescript
-import { AxiosError, isAxiosError, isCancel } from 'nestjs-undici-interceptors';
+import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 ```
 
 ## HttpModule

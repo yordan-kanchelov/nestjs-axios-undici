@@ -1,6 +1,6 @@
 # Interceptors
 
-`nestjs-undici-interceptors` supports request/response interceptors in two styles, and still lets you use [Undici's Dispatcher system](https://github.com/nodejs/undici#dispatcher) for lower-level control.
+`nestjs-axios-undici` supports request/response interceptors in two styles, and still lets you use [Undici's Dispatcher system](https://github.com/nodejs/undici#dispatcher) for lower-level control.
 
 ## Axios-style Interceptors
 
@@ -23,7 +23,7 @@ Native interceptors wrap the request as an Observable chain. They run outside th
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
 import { tap } from 'rxjs/operators';
-import type { HttpInterceptor, HttpInterceptorHandler, HttpInterceptorRequest } from 'nestjs-undici-interceptors';
+import type { HttpInterceptor, HttpInterceptorHandler, HttpInterceptorRequest } from 'nestjs-axios-undici';
 
 @Injectable()
 export class LoggingInterceptor implements HttpInterceptor {

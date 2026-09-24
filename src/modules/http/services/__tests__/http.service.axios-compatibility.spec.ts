@@ -266,7 +266,7 @@ describe('HttpService - Axios Compatibility', () => {
 
       // Should show warnings for unsupported options
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[nestjs-undici-interceptors] Axios compatibility warnings:',
+        '[nestjs-axios-undici] Axios compatibility warnings:',
       );
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('socketPath'),

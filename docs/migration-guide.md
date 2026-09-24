@@ -1,6 +1,30 @@
-# Migration Guide: From @nestjs/axios to nestjs-undici-interceptors
+# Migration Guide: From @nestjs/axios to nestjs-axios-undici
 
-This comprehensive guide helps you migrate from `@nestjs/axios` to `nestjs-undici-interceptors` with minimal code changes while gaining significant performance improvements.
+This comprehensive guide helps you migrate from `@nestjs/axios` to `nestjs-axios-undici` with minimal code changes while gaining significant performance improvements.
+
+## Coming from `nestjs-undici-interceptors`
+
+The package was renamed to `nestjs-axios-undici` in 0.6.0. The API is the same, so replace the dependency and the import path:
+
+```bash
+npm uninstall nestjs-undici-interceptors
+npm install nestjs-axios-undici undici
+```
+
+```typescript
+// Before
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+// After
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
+```
+
+0.6.0 also brings behaviour closer to axios. Check these if you relied on the old behaviour:
+
+- Network, timeout and cancellation errors are wrapped in an `AxiosError` (`error.code` such as `ECONNREFUSED`, `ECONNABORTED`, `ERR_CANCELED`); the original undici error is kept in `error.cause`, so `instanceof undici.errors.*` checks must look at `error.cause`.
+- String and `Buffer` request bodies get `Content-Type: application/x-www-form-urlencoded` by default, as in axios (previously `application/json`). Falsy primitive bodies (`0`, `false`, `''`) are no longer sent.
+- Per-request headers are merged with module headers (case-insensitively) instead of replacing them.
+- Module-level `timeout`, `auth`, `params` and `maxRedirects` now apply to every request, including with `registerAsync`.
+- `params`, `baseURL` joining, `responseType`, `signal`/`cancelToken`, `request(config)` and `axiosRef.defaults` / `axiosRef.get()` now work like axios. See [Supported Axios Options](/docs/axios-supported-options.md).
 
 ## Quick Start
 
@@ -20,7 +44,7 @@ import { HttpModule, HttpService } from '@nestjs/axios';
 })
 
 // After
-import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
@@ -78,10 +102,10 @@ export class MyService implements OnModuleInit {
 
 ### 2. AxiosHeaders Class
 
-`nestjs-undici-interceptors` includes the `AxiosHeaders` class that matches axios's header handling:
+`nestjs-axios-undici` includes the `AxiosHeaders` class that matches axios's header handling:
 
 ```typescript
-import { AxiosHeaders } from 'nestjs-undici-interceptors';
+import { AxiosHeaders } from 'nestjs-axios-undici';
 
 // Create headers just like in axios
 const headers = new AxiosHeaders();
@@ -133,7 +157,7 @@ response.config     // Request configuration
 
 ### 5. Axios-Compatible Errors
 
-Errors are also axios-compatible, including network errors, timeouts (`ECONNABORTED`) and cancellations (`ERR_CANCELED`). `axios.isAxiosError(error)` works; `error instanceof AxiosError` only works with the `AxiosError` class exported by `nestjs-undici-interceptors`:
+Errors are also axios-compatible, including network errors, timeouts (`ECONNABORTED`) and cancellations (`ERR_CANCELED`). `axios.isAxiosError(error)` works; `error instanceof AxiosError` only works with the `AxiosError` class exported by `nestjs-axios-undici`:
 
 ```typescript
 try {
@@ -171,7 +195,7 @@ export class ApiService {
 Here's a complete example of migrating OpenTelemetry trace injection:
 
 ```typescript
-import { HttpModule, HttpService, AxiosHeaders } from "nestjs-undici-interceptors";
+import { HttpModule, HttpService, AxiosHeaders } from "nestjs-axios-undici";
 import { DynamicModule, Global, Module, OnModuleInit } from "@nestjs/common";
 import { context, propagation } from "@opentelemetry/api";
 
@@ -290,7 +314,7 @@ You can run both modules side-by-side during migration:
 
 ```typescript
 import { HttpModule as AxiosModule } from '@nestjs/axios';
-import { HttpModule as UndiciModule } from 'nestjs-undici-interceptors';
+import { HttpModule as UndiciModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
@@ -318,7 +342,7 @@ After migrating, you'll see:
 
 Migration from `@nestjs/axios` is straightforward:
 
-1. **Change imports** from `@nestjs/axios` to `nestjs-undici-interceptors`
+1. **Change imports** from `@nestjs/axios` to `nestjs-axios-undici`
 2. **Review the [known differences](./axios-supported-options.md)** (redirects, interceptor order, response parsing)
 3. The `HttpModule.register()` method automatically detects and maps axios options
 4. Existing interceptor code works with `httpService.axiosRef.interceptors`

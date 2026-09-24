@@ -2,7 +2,7 @@
 
 A performance benchmark comparing HTTP client/server configurations in NestJS applications, with and without interceptors. See [Architecture](#-architecture) section for detailed configuration descriptions.
 
-> This directory lives inside the [nestjs-undici-interceptors](../README.md) repository (it was previously the standalone `nestjs-undici-performance` repository). The **Fastify + Undici + Interceptor** app runs against the library built from this checkout, so every change to `src/` can be benchmarked before it is published. The other apps use published packages (`@nestjs/axios`, upstream `nestjs-undici`) as fixed reference points. Results are also published on the [documentation site](https://yordan-kanchelov.github.io/nestjs-undici/#/docs/benchmarks).
+> This directory lives inside the [nestjs-axios-undici](../README.md) repository (it was previously the standalone `nestjs-undici-performance` repository). The **Fastify + Undici + Interceptor** app runs against the library built from this checkout, so every change to `src/` can be benchmarked before it is published. The other apps use published packages (`@nestjs/axios`, upstream `nestjs-undici`) as fixed reference points. Results are also published on the [documentation site](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
 
 ## 🏆 Performance Results Summary
 
@@ -94,8 +94,8 @@ The test simulates a common microservices pattern where a gateway service needs 
 
 1. **Clone, build the library and install dependencies:**
    ```bash
-   git clone https://github.com/yordan-kanchelov/nestjs-undici.git
-   cd nestjs-undici/benchmarks
+   git clone https://github.com/yordan-kanchelov/nestjs-axios-undici.git
+   cd nestjs-axios-undici/benchmarks
    ./scripts/pack-lib.sh          # build + pack the library from this checkout into .lib/
    npm ci && npm run install-lib  # benchmark deps, then the packed library
    ```
@@ -320,7 +320,7 @@ curl http://localhost:3004/api | jq
 ## 📁 Project Structure
 
 ```
-nestjs-undici/
+nestjs-axios-undici/
 ├── apps/
 │   ├── mock-service/      # Simple Fastify server
 │   │   └── Dockerfile     # Multi-version Docker config
@@ -332,7 +332,7 @@ nestjs-undici/
 │   │   └── Dockerfile     # Multi-version Docker config
 │   ├── nestjs-express-axios-interceptor/  # Express + @nestjs/axios + interceptors
 │   ├── nestjs-fastify-axios-interceptor/  # Fastify + @nestjs/axios + interceptors
-│   └── nestjs-fastify-undici-interceptor/ # Fastify + nestjs-undici-interceptors
+│   └── nestjs-fastify-undici-interceptor/ # Fastify + nestjs-axios-undici
 ├── k6-scripts/
 │   ├── lib/benchmark.js   # Shared scenarios, checks and summary output
 │   ├── test-node20.js     # Node.js 20 test (~7.5 min)

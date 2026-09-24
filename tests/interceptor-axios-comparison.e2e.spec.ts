@@ -20,7 +20,7 @@ import type {
 } from '../src/modules/http/interfaces/http-interceptor.interface';
 import type { Dispatcher } from 'undici';
 
-describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
+describe('Interceptor Comparison: @nestjs/axios vs nestjs-axios-undici', () => {
   let mockServer: http.Server;
   let serverUrl: string;
 

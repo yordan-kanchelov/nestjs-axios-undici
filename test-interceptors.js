@@ -1,7 +1,7 @@
 // Test script to verify interceptor functionality
 const { HttpService } = require('./lib/modules/http/services/http.service');
 
-console.log('Testing interceptor functionality in nestjs-undici...\n');
+console.log('Testing interceptor functionality in nestjs-axios-undici...\n');
 
 // Create a new HttpService instance
 const httpService = new HttpService({});

@@ -11,13 +11,13 @@ echo ""
 mkdir -p results
 
 # The apps use the library build from .lib/ (see scripts/pack-lib.sh)
-if [ ! -f .lib/nestjs-undici-interceptors.tgz ]; then
+if [ ! -f .lib/nestjs-axios-undici.tgz ]; then
     ./scripts/pack-lib.sh
 fi
 
 # Recorded in the results so reports say where and against what they were produced
 export BENCHMARK_ENVIRONMENT="${BENCHMARK_ENVIRONMENT:-Local run via test-all-node-versions.sh ($(uname -s), $(nproc 2>/dev/null || sysctl -n hw.ncpu) CPUs, Docker Compose)}"
-export LIBRARY_REF="${LIBRARY_REF:-nestjs-undici-interceptors@$(node -p "require('../package.json').version") ($(git rev-parse --short HEAD 2>/dev/null || echo 'working tree'))}"
+export LIBRARY_REF="${LIBRARY_REF:-nestjs-axios-undici@$(node -p "require('../package.json').version") ($(git rev-parse --short HEAD 2>/dev/null || echo 'working tree'))}"
 
 # Colors for output
 RED='\033[0;31m'
