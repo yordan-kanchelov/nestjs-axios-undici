@@ -1,6 +1,8 @@
 # NestJS HTTP Performance Comparison: Fastify vs Express vs Undici
 
-A comprehensive performance benchmark comparing three HTTP client/server configurations in NestJS applications. See [Architecture](#-architecture) section for detailed configuration descriptions.
+A performance benchmark comparing HTTP client/server configurations in NestJS applications, with and without interceptors. See [Architecture](#-architecture) section for detailed configuration descriptions.
+
+> This directory lives inside the [nestjs-undici-interceptors](../README.md) repository (it was previously the standalone `nestjs-undici-performance` repository). The **Fastify + Undici + Interceptor** app runs against the library built from this checkout, so every change to `src/` can be benchmarked before it is published. The other apps use published packages (`@nestjs/axios`, upstream `nestjs-undici`) as fixed reference points. Results are also published on the [documentation site](https://yordan-kanchelov.github.io/nestjs-undici/#/docs/benchmarks).
 
 ## 🏆 Performance Results Summary
 
@@ -88,12 +90,14 @@ The test simulates a common microservices pattern where a gateway service needs 
 
 #### Option 1: Test All Node.js Versions (Recommended)
 
-1. **Clone and install dependencies:**
+1. **Clone, build the library and install dependencies:**
    ```bash
-   git clone <repository>
-   cd nestjs-undici
-   npm install
+   git clone https://github.com/yordan-kanchelov/nestjs-undici.git
+   cd nestjs-undici/benchmarks
+   ./scripts/pack-lib.sh          # build + pack the library from this checkout into .lib/
+   npm ci && npm run install-lib  # benchmark deps, then the packed library
    ```
+   Re-run `./scripts/pack-lib.sh && npm run install-lib` after changing `src/`. The Docker images install the same `.lib/` tarball.
 
 2. **Run comprehensive tests across Node.js 20, 22, 24, and 26:**
    ```bash
@@ -259,6 +263,21 @@ Each NestJS service:
 ```
 
 ## 🧪 Alternative Test Methods
+
+### HttpService Micro-benchmark (regression check)
+
+`micro/compare.js` measures `HttpService` throughput of two library builds against a local keep-alive server, alternating rounds so machine noise hits both sides equally. CI runs it on every pull request that touches `src/` (base branch vs PR) and fails on a drop of more than 10%:
+
+```bash
+# from the repository root; both directories need a built lib/ and resolvable node_modules
+node benchmarks/micro/compare.js --base ../base-checkout --head . --rounds 5 --duration 5 --threshold 10
+```
+
+### Continuous Integration
+
+`.github/workflows/benchmarks.yml` in the repository root:
+- **Pull requests**: typechecks the apps on Node.js 20-26 and runs the micro-benchmark regression check.
+- **Pushes to main** (touching `src/` or `benchmarks/`) and manual runs: the full Docker + k6 benchmark on Node.js 20, 22, 24 and 26. When every version succeeds, the results, this README's tables and `docs/benchmarks.md` are regenerated and committed.
 
 ### Local Development (without Docker)
 
