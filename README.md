@@ -30,8 +30,6 @@ This fork adds the following features to the original package:
 - 🔒 Secure by default
 - 🛠️ Easy to configure and use
 - 📦 Lightweight and dependency-free
-- 🔍 Built-in request/response interceptors
-- 🔄 Automatic retry mechanism
 - 📝 Comprehensive documentation
 - 🎯 **Drop-in Replacement**: Can replace @nestjs/axios with minimal code changes
 - 🔄 **Axios-Compatible**: All responses use axios format by default
@@ -63,9 +61,9 @@ import { HttpModule } from 'nestjs-undici-interceptors';
 @Module({
   imports: [
     HttpModule.register({
-      // Optional configuration
+      // Optional configuration (Undici Request Options)
       headers: {
-        'Content-Type': 'application/json',
+        'User-Agent': 'NestJS-Undici',
       },
     }),
   ],
@@ -114,20 +112,23 @@ See the [Migration Guide](docs/migration-guide.md) for detailed instructions.
 
 ## Configuration
 
-The `HttpModule` can be configured using the `register` or `registerAsync` methods:
+The `HttpModule` can be configured using the `register` or `registerAsync` methods. The configuration object accepts standard [Undici Request Options](https://github.com/nodejs/undici#undicirequesturl-options-promise) and an optional `dispatcher`.
 
 ### Synchronous Configuration
 
 ```typescript
+import { Agent } from 'undici';
+
 HttpModule.register({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 5000,
-  retry: {
-    attempts: 3,
-    delay: 1000,
-  },
+  // You can set a custom dispatcher (e.g., for proxy or mocking)
+  dispatcher: new Agent({
+    connect: {
+      timeout: 5000
+    }
+  }),
 });
 ```
 
@@ -149,18 +150,13 @@ HttpModule.registerAsync({
 ### Making HTTP Requests
 
 ```typescript
-// GET request
-const response = await this.httpService
-  .request('https://api.example.com/users')
-  .toPromise();
-
 // POST request
-const response = await this.httpService
-  .request('https://api.example.com/users', {
+const response = await lastValueFrom(
+  this.httpService.request('https://api.example.com/users', {
     method: 'POST',
     body: JSON.stringify({ name: 'John Doe' }),
   })
-  .toPromise();
+);
 ```
 
 ### Using Interceptors
