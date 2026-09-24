@@ -7,15 +7,15 @@ A performance benchmark comparing HTTP client/server configurations in NestJS ap
 ## 🏆 Performance Results Summary
 
 <!-- perf-summary:start -->
-> **TL;DR: Undici is 66-71% faster than Axios across Node.js 20, 22, 24, 26**
+> **TL;DR: Undici is 67-70% faster than Axios across Node.js 20, 22, 24, 26**
 
 ### Latest Benchmark Results
 
 | Configuration | Avg Response Time | vs Baseline | Throughput |
 |--------------|-------------------|-------------|------------|
-| **Express + Axios** | 96-138ms | baseline | 100% |
-| **Fastify + Axios** | 96-127ms | -1 to 8% faster | 99-108% |
-| **Fastify + Undici** | **28-43ms** | **69-70% faster** | **319-336%** |
+| **Express + Axios** | 57-138ms | baseline | 100% |
+| **Fastify + Axios** | 49-128ms | -6 to 14% faster | 94-116% |
+| **Fastify + Undici** | **16-43ms** | **68-71% faster** | **307-348%** |
 
 *Results from Node.js 20, 22, 24, 26. [View detailed results](#-latest-performance-results) | [View full report](results/PERFORMANCE-COMPARISON-REPORT.md)*
 
@@ -188,35 +188,35 @@ With 5 parallel HTTP requests per endpoint call, tested across Node.js 20, 22, 2
 
 | Node Version | Configuration | Avg Response (ms) | P95 (ms) | P99 (ms) | vs Express+Axios |
 |--------------|---------------|-------------------|----------|----------|------------------|
-| **Node 20** | Express + Axios | 132.42 | 228.51 | 245.87 | baseline |
-| **Node 20** | Fastify + Axios | 125.28 | 216.17 | 232.61 | 5.4% faster |
-| **Node 20** | Fastify + Undici | 41.10 | 73.54 | 78.51 | **69.0% faster** |
-| **Node 22** | Express + Axios | 137.90 | 230.40 | 400.83 | baseline |
-| **Node 22** | Fastify + Axios | 127.37 | 215.98 | 330.54 | 7.6% faster |
-| **Node 22** | Fastify + Undici | 42.88 | 75.54 | 80.63 | **68.9% faster** |
-| **Node 24** | Express + Axios | 100.55 | 176.76 | 189.40 | baseline |
-| **Node 24** | Fastify + Axios | 101.92 | 177.46 | 188.19 | 1.4% slower |
-| **Node 24** | Fastify + Undici | 31.26 | 54.98 | 60.74 | **68.9% faster** |
-| **Node 26** | Express + Axios | 95.81 | 167.82 | 178.15 | baseline |
-| **Node 26** | Fastify + Axios | 96.45 | 170.22 | 250.25 | 0.7% slower |
-| **Node 26** | Fastify + Undici | 28.28 | 49.10 | 55.19 | **70.5% faster** |
+| **Node 20** | Express + Axios | 138.47 | 232.89 | 417.70 | baseline |
+| **Node 20** | Fastify + Axios | 127.86 | 221.00 | 237.86 | 7.7% faster |
+| **Node 20** | Fastify + Undici | 42.75 | 74.67 | 79.12 | **69.1% faster** |
+| **Node 22** | Express + Axios | 57.13 | 110.40 | 134.81 | baseline |
+| **Node 22** | Fastify + Axios | 49.25 | 87.91 | 108.58 | 13.8% faster |
+| **Node 22** | Fastify + Undici | 16.30 | 28.80 | 34.74 | **71.5% faster** |
+| **Node 24** | Express + Axios | 96.28 | 170.13 | 180.24 | baseline |
+| **Node 24** | Fastify + Axios | 101.91 | 180.75 | 281.28 | 5.8% slower |
+| **Node 24** | Fastify + Undici | 31.15 | 54.00 | 59.37 | **67.6% faster** |
+| **Node 26** | Express + Axios | 106.46 | 185.01 | 197.08 | baseline |
+| **Node 26** | Fastify + Axios | 108.02 | 188.17 | 199.15 | 1.5% slower |
+| **Node 26** | Fastify + Undici | 32.91 | 58.22 | 63.06 | **69.1% faster** |
 
 #### With Interceptors
 
 | Node Version | Express + Axios | Fastify + Axios | Fastify + Undici |
 |--------------|-----------------|-----------------|------------------|
-| **Node 20** | 165.48ms (+25.0%) | 150.78ms (+20.4%) | 88.56ms (+115.4%) |
-| **Node 22** | 164.39ms (+19.2%) | 152.01ms (+19.3%) | 85.18ms (+98.7%) |
-| **Node 24** | 124.40ms (+23.7%) | 122.89ms (+20.6%) | 67.29ms (+115.3%) |
-| **Node 26** | 126.98ms (+32.5%) | 115.90ms (+20.2%) | 61.03ms (+115.8%) |
+| **Node 20** | 170.00ms (+22.8%) | 154.52ms (+20.9%) | 84.21ms (+97.0%) |
+| **Node 22** | 69.72ms (+22.0%) | 59.60ms (+21.0%) | 26.97ms (+65.4%) |
+| **Node 24** | 130.52ms (+35.6%) | 124.96ms (+22.6%) | 58.97ms (+89.3%) |
+| **Node 26** | 139.25ms (+30.8%) | 131.27ms (+21.5%) | 65.38ms (+98.7%) |
 
 ### Key Findings
 
-- **Undici is 66-71% faster than Axios** on the same framework (Fastify) across all tested Node.js versions
-- **Framework impact is smaller**: Fastify is -1.4 to 7.6% faster than Express with Axios
-- **Best configuration**: Fastify + Undici at 28-43ms average, fastest on Node.js 26 (28.28ms)
-- **Throughput**: Fastify + Undici delivers 219-236% more requests/s than Express + Axios
-- **Interceptors**: Fastify + Undici with interceptors averages 61-89ms, still well ahead of every Axios configuration
+- **Undici is 67-70% faster than Axios** on the same framework (Fastify) across all tested Node.js versions
+- **Framework impact is smaller**: Fastify is -5.8 to 13.8% faster than Express with Axios
+- **Best configuration**: Fastify + Undici at 16-43ms average, fastest on Node.js 22 (16.30ms)
+- **Throughput**: Fastify + Undici delivers 207-248% more requests/s than Express + Axios
+- **Interceptors**: Fastify + Undici with interceptors averages 27-84ms, still well ahead of every Axios configuration
 <!-- perf-details:end -->
 
 **Conclusion:** For maximum performance in NestJS applications, use the Undici HTTP client. The choice of HTTP client (Undici vs Axios) has a much larger impact on performance than the choice of server framework (Fastify vs Express); see the findings above for the measured ranges.
