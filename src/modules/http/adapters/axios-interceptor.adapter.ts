@@ -11,6 +11,7 @@ import type {
 } from '../interfaces/axios-compatible.interface';
 import type { AxiosInterceptorManager } from '../interfaces/axios-ref.interface';
 import { AxiosHeaders } from '../interfaces/axios-headers';
+import { buildURL, serializeRequestData } from './axios-request.adapter';
 
 /**
  * Stored interceptor with metadata
@@ -22,12 +23,15 @@ interface StoredInterceptor<T> {
 }
 
 /**
- * Converts axios request config to undici interceptor request
+ * Converts axios request config to undici interceptor request.
+ * Options that have no axios-config counterpart (dispatcher, signal,
+ * maxContentLength, ...) are carried over from `baseOptions`.
  */
 function axiosConfigToInterceptorRequest(
   config: AxiosLikeRequestConfig,
+  baseOptions: Record<string, any> = {},
 ): HttpInterceptorRequest {
-  const { url, method, headers, data, timeout, ...restConfig } = config;
+  const { url, method, headers, data, timeout, params } = config;
 
   // Normalize headers to plain object
   const normalizedHeaders: Record<string, string | string[]> = {};
@@ -57,23 +61,22 @@ function axiosConfigToInterceptorRequest(
     }
   }
 
+  const { body: baseBody, ...restBaseOptions } = baseOptions;
   const options: any = {
-    method: method || 'GET',
+    ...restBaseOptions,
+    method: (method || 'GET').toUpperCase(),
     headers: normalizedHeaders,
   };
 
   // Handle body
-  if (data !== undefined) {
+  if (data !== undefined && data === baseBody) {
+    // Untouched by the interceptor: keep the already serialised body
+    options.body = baseBody;
+  } else if (data !== undefined) {
     if (typeof data === 'string' || data instanceof Buffer) {
       options.body = data;
     } else {
-      options.body = JSON.stringify(data);
-      if (
-        !options.headers['content-type'] &&
-        !options.headers['Content-Type']
-      ) {
-        options.headers['content-type'] = 'application/json';
-      }
+      options.body = serializeRequestData(data, options.headers, options.method);
     }
   }
 
@@ -87,9 +90,15 @@ function axiosConfigToInterceptorRequest(
   if (config.maxRedirects !== undefined) {
     options.maxRedirections = config.maxRedirects;
   }
+  if (config.validateStatus !== undefined) {
+    options.validateStatus = config.validateStatus;
+  }
+  if (config.responseType !== undefined) {
+    options.responseType = config.responseType;
+  }
 
   return {
-    url: url || '',
+    url: params ? buildURL(String(url || ''), params) : url || '',
     options,
   };
 }
@@ -117,6 +126,8 @@ function interceptorRequestToAxiosConfig(
     data: options.body,
     timeout: options.headersTimeout || options.bodyTimeout,
     maxRedirects: options.maxRedirections,
+    validateStatus: (options as any).validateStatus,
+    responseType: (options as any).responseType,
   };
 }
 
@@ -149,6 +160,11 @@ export function createAxiosRequestInterceptorManager(
 
       // Create undici interceptor
       const undiciInterceptor: HttpInterceptorFunction = (request, next) => {
+        // Ejected/cleared interceptors become a pass-through
+        if (!interceptors.has(id)) {
+          return next.handle(request);
+        }
+
         // Convert request to axios config
         const axiosConfig = interceptorRequestToAxiosConfig(request);
 
@@ -167,8 +183,10 @@ export function createAxiosRequestInterceptorManager(
         return applyInterceptor.pipe(
           mergeMap(modifiedConfig => {
             // Convert back to interceptor request
-            const modifiedRequest =
-              axiosConfigToInterceptorRequest(modifiedConfig);
+            const modifiedRequest = axiosConfigToInterceptorRequest(
+              modifiedConfig,
+              request.options,
+            );
             return next.handle(modifiedRequest);
           }),
           catchError(error => {
@@ -185,19 +203,11 @@ export function createAxiosRequestInterceptorManager(
     },
 
     eject(id: number): void {
-      // Note: Current implementation doesn't support removing individual interceptors
-      // This would require tracking interceptors in HttpService
       interceptors.delete(id);
-      console.warn(
-        'Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.',
-      );
     },
 
     clear(): void {
       interceptors.clear();
-      console.warn(
-        'Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.',
-      );
     },
   };
 }
@@ -231,6 +241,11 @@ export function createAxiosResponseInterceptorManager(
 
       // Create undici interceptor
       const undiciInterceptor: HttpInterceptorFunction = (request, next) => {
+        // Ejected/cleared interceptors become a pass-through
+        if (!interceptors.has(id)) {
+          return next.handle(request);
+        }
+
         return next.handle(request).pipe(
           mergeMap(response => {
             if (
@@ -277,16 +292,10 @@ export function createAxiosResponseInterceptorManager(
 
     eject(id: number): void {
       interceptors.delete(id);
-      console.warn(
-        'Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.',
-      );
     },
 
     clear(): void {
       interceptors.clear();
-      console.warn(
-        'Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.',
-      );
     },
   };
 }

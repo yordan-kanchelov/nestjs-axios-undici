@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Observable, from } from 'rxjs';
-import { map, mergeMap } from 'rxjs/operators';
+import { Observable, from, throwError } from 'rxjs';
+import { catchError, map, mergeMap } from 'rxjs/operators';
+import { createStatusError, toAxiosError } from '../errors/axios-error';
+import {
+  parseJsonOrText,
+  readBodyAsResponseType,
+} from '../adapters/axios-response-type.adapter';
 import type { Dispatcher } from 'undici';
 import type {
   HttpInterceptor,
@@ -113,9 +118,16 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
           
           // Check if maxContentLength is set in options
           const maxContentLength = (request.options as any)?.maxContentLength;
+          const responseType = (request.options as any)?.responseType;
 
           try {
-            if (undiciResponse.body) {
+            if (responseType && undiciResponse.body) {
+              parsedData = await readBodyAsResponseType(
+                undiciResponse.body,
+                responseType,
+                maxContentLength,
+              );
+            } else if (undiciResponse.body) {
               if (contentType.includes('application/json')) {
                 const text = await undiciResponse.body.text();
                 
@@ -128,7 +140,7 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
                   throw error;
                 }
                 
-                parsedData = text ? JSON.parse(text) : '';
+                parsedData = parseJsonOrText(text);
               } else if (
                 contentType.includes('text/') ||
                 contentType.includes('application/xml')
@@ -168,7 +180,7 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
                   throw error;
                 }
                 
-                parsedData = Buffer.from(arrayBuffer);
+                parsedData = arrayBuffer.byteLength ? Buffer.from(arrayBuffer) : '';
               }
             } else {
               // Axios returns empty string for null body
@@ -179,7 +191,7 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
             if ((error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED') {
               throw error;
             }
-            
+
             // If parsing fails, try to get raw text
             try {
               parsedData = await undiciResponse.body.text();
@@ -228,28 +240,13 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
           const isValidStatus = validateStatus(undiciResponse.statusCode);
 
           if (!isValidStatus) {
-            const error: any = new Error(
-              `Request failed with status code ${undiciResponse.statusCode}`,
-            );
-            error.response = axiosLikeResponse;
-            error.request = config;
-            error.config = config;
-            error.isAxiosError = true;
-            error.status = undiciResponse.statusCode;
-            error.toJSON = () => ({
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-              config: error.config,
-              code: error.code,
-              status: undiciResponse.statusCode,
-            });
-            throw error;
+            throw createStatusError(axiosLikeResponse, config);
           }
 
           return axiosLikeResponse;
         },
       ),
+      catchError(error => throwError(() => toAxiosError(error, request))),
     );
   }
 }

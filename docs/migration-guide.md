@@ -32,7 +32,9 @@ import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
 })
 ```
 
-The `HttpModule.register()` method automatically detects axios-style configuration options and maps them to their undici equivalents. No need for special registration methods!
+The `HttpModule.register()` and `HttpModule.registerAsync()` methods automatically detect axios-style configuration options and map them to their undici equivalents. No need for special registration methods!
+
+Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, JSON parsing of non-JSON content types, `instanceof AxiosError`, ...). Check the [compatibility matrix](./axios-supported-options.md) before migrating.
 
 ## Key Features for Migration
 
@@ -99,16 +101,18 @@ The following axios options are automatically detected and mapped:
 
 | Axios Option | Undici Equivalent | Notes |
 |-------------|-------------------|-------|
-| `timeout` | `headersTimeout` & `bodyTimeout` | ✅ Automatically mapped |
+| `baseURL` | Joined with request URLs | ✅ Same joining rules as axios |
+| `headers` / `params` / `auth` | Applied to every request | ✅ Merged with per-request values |
+| `timeout` | `headersTimeout` & `bodyTimeout` | ✅ Automatically mapped (about 1s resolution) |
 | `maxRedirects` | `maxRedirections` | ✅ Automatically mapped |
 | `validateStatus` | `validateStatus` | ✅ Supported |
-| `auth` | Authorization header | ✅ Converted to Basic auth |
 | `httpAgent` | Undici Agent | ✅ Automatically configured |
 | `httpsAgent` | Undici Agent | ✅ Automatically configured |
 | `proxy` | ProxyAgent | ✅ Automatically configured |
 | `maxBodyLength` | Size limit interceptor | ✅ Enforced via interceptor |
 | `maxContentLength` | Size limit interceptor | ✅ Enforced via interceptor |
 | `withCredentials` | CookieAgent | ✅ Cookie jar support |
+| `decompress`, `socketPath` | - | ❌ Not supported |
 
 See [Axios Supported Options](./axios-supported-options.md) for detailed documentation.
 
@@ -129,7 +133,7 @@ response.config     // Request configuration
 
 ### 5. Axios-Compatible Errors
 
-Errors are also axios-compatible:
+Errors are also axios-compatible, including network errors, timeouts (`ECONNABORTED`) and cancellations (`ERR_CANCELED`). `axios.isAxiosError(error)` works; `error instanceof AxiosError` only works with the `AxiosError` class exported by `nestjs-undici-interceptors`:
 
 ```typescript
 try {
@@ -315,7 +319,7 @@ After migrating, you'll see:
 Migration from `@nestjs/axios` is straightforward:
 
 1. **Change imports** from `@nestjs/axios` to `nestjs-undici-interceptors`
-2. **That's it!** Your existing configuration and code will work
+2. **Review the [known differences](./axios-supported-options.md)** (redirects, interceptor order, response parsing)
 3. The `HttpModule.register()` method automatically detects and maps axios options
 4. Existing interceptor code works with `httpService.axiosRef.interceptors`
 5. Response structure and error handling remain the same

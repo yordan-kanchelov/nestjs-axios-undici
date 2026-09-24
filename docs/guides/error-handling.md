@@ -35,7 +35,7 @@ To accept other status codes, pass `validateStatus` in the module configuration,
 
 ## Network Errors
 
-Network errors (DNS failures, refused connections, timeouts) are emitted as errors too. Handle them with `try/catch` or RxJS operators:
+Network errors (DNS failures, refused connections, timeouts, cancellations) are emitted as axios errors too, with the same `code` values axios uses (`ECONNREFUSED`, `ENOTFOUND`, `ECONNRESET`, `ECONNABORTED`, `ERR_CANCELED`, ...). The original undici/Node.js error is available as `error.cause`. Handle them with `try/catch` or RxJS operators:
 
 ```typescript
 import { catchError } from 'rxjs/operators';
@@ -53,16 +53,28 @@ this.httpService.get('https://api.example.com')
 
 ## Timeouts
 
-A `timeout` (module-level or per request) maps to undici's `headersTimeout` and `bodyTimeout`:
+A `timeout` (module-level or per request) maps to undici's `headersTimeout` and `bodyTimeout` (about 1s resolution). Like axios, a timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`:
 
 ```typescript
-import { errors } from 'undici';
+import { isAxiosError } from 'nestjs-undici-interceptors';
 
 try {
   await lastValueFrom(this.httpService.get('https://slow-api.com', { timeout: 2000 }));
 } catch (error) {
-  if (error instanceof errors.HeadersTimeoutError || error instanceof errors.BodyTimeoutError) {
-    // Handle timeout
+  if (isAxiosError(error) && error.code === 'ECONNABORTED') {
+    // Handle timeout; error.cause is the undici HeadersTimeoutError/BodyTimeoutError
   }
 }
 ```
+
+## Cancellation
+
+Pass an `AbortSignal` (or an axios `CancelToken`). A cancelled request rejects with a `CanceledError` (`code: 'ERR_CANCELED'`), so `axios.isCancel(error)` and `isCancel(error)` from this package return `true`:
+
+```typescript
+const controller = new AbortController();
+this.httpService.get('https://api.example.com', { signal: controller.signal }).subscribe();
+controller.abort();
+```
+
+Unsubscribing from the Observable does not cancel the request; use a signal for that.

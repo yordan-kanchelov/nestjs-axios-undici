@@ -22,4 +22,6 @@ export interface HttpModuleAsyncOptions
   ) => Promise<HttpModuleOptions> | HttpModuleOptions;
   inject?: any[];
   extraProviders?: Provider[];
+  /** Register the module as global, as in `@nestjs/axios` */
+  global?: boolean;
 }

@@ -40,7 +40,7 @@ export class SizeLimitInterceptor implements HttpInterceptor {
 
     // Execute request and check response size
     return next.handle(request).pipe(
-      map(async (response) => {
+      map((response) => {
         if (this.options.maxContentLength && response.body) {
           // For axios compatibility, we need to check the response size
           // This is tricky because the body might be a stream
