@@ -1,0 +1,171 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/benchmarks.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/benchmarks.yml'
+  workflow_dispatch:
+    inputs:
+      node_versions:
+        description: 'Node.js versions for the full benchmark (comma-separated)'
+        required: false
+        default: '20,22,24,26'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Typecheck benchmark apps (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Build and pack the library
+        run: ./benchmarks/scripts/pack-lib.sh
+      - name: Install benchmark dependencies
+        working-directory: benchmarks
+        run: npm ci && npm run install-lib
+      - name: Typecheck
+        working-directory: benchmarks
+        run: npm run typecheck
+
+  regression:
+    name: HttpService regression check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build head
+        run: npm ci --ignore-scripts && npm run build
+      - name: Build base (${{ github.event.pull_request.base.ref }})
+        run: |
+          git worktree add ../base ${{ github.event.pull_request.base.sha }}
+          cd ../base && npm ci --ignore-scripts && npm run build
+      - name: Compare throughput
+        run: |
+          node benchmarks/micro/compare.js --base ../base --head . \
+            --rounds 5 --duration 5 --threshold 10 --markdown micro-benchmark.md
+      - name: Publish summary
+        if: always()
+        run: '[ -f micro-benchmark.md ] && cat micro-benchmark.md >> "$GITHUB_STEP_SUMMARY" || true'
+
+  full:
+    name: Full benchmark (Node ${{ matrix.node-version }})
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ${{ fromJSON(format('[{0}]', github.event.inputs.node_versions || '20,22,24,26')) }}
+    defaults:
+      run:
+        working-directory: benchmarks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and pack the library
+        run: ./scripts/pack-lib.sh
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+      - name: Start services
+        run: |
+          if [ "${{ matrix.node-version }}" = "20" ]; then COMPOSE_FILE=docker-compose.yml; else COMPOSE_FILE=docker-compose-node${{ matrix.node-version }}.yml; fi
+          echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
+          docker compose -f $COMPOSE_FILE up -d --build
+      - name: Wait for services
+        run: |
+          case "${{ matrix.node-version }}" in 20) BASE=3000;; 22) BASE=3010;; 24) BASE=3020;; 26) BASE=3030;; esac
+          for OFFSET in 1 2 3 4 5 6 7; do
+            URL="http://localhost:$((BASE + OFFSET))/api"; [ $OFFSET = 1 ] && URL="$URL/data"
+            for i in $(seq 1 90); do curl -sf "$URL" > /dev/null && break; sleep 2; done
+            if ! curl -sf "$URL" > /dev/null; then
+              echo "::error::$URL did not become ready"
+              docker compose -f $COMPOSE_FILE ps
+              docker compose -f $COMPOSE_FILE logs --tail=50
+              exit 1
+            fi
+            echo "$URL ready"
+          done
+      - name: Run k6
+        run: |
+          k6 run \
+            -e BENCHMARK_ENVIRONMENT="GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner" \
+            -e LIBRARY_REF="nestjs-undici-interceptors@$(node -p "require('../package.json').version") (${GITHUB_SHA::7})" \
+            k6-scripts/test-node${{ matrix.node-version }}.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-node${{ matrix.node-version }}
+          path: |
+            benchmarks/results/node${{ matrix.node-version }}-performance-comparison.csv
+            benchmarks/results/node${{ matrix.node-version }}-performance-summary.json
+          retention-days: 30
+      - name: Stop services
+        if: always()
+        run: docker compose -f $COMPOSE_FILE down
+
+  publish:
+    name: Publish results
+    # Runs only when every Node.js version produced results.
+    needs: full
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-results-node*
+          path: artifacts
+          merge-multiple: true
+      - name: Generate report, README tables and docs page
+        working-directory: benchmarks
+        run: |
+          cp ../artifacts/* results/
+          node generate-comparison-report.js
+          node generate-comparison-report.js --update-readme
+          node generate-comparison-report.js --docs ../docs/benchmarks.md
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results benchmarks/README.md docs/benchmarks.md
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "chore(benchmarks): update results [skip ci]" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git pull --rebase origin main
+          git push origin HEAD:main

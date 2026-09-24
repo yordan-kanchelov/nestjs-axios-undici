@@ -99,6 +99,12 @@ function fasterOrSlower(value) {
   return n >= 0 ? `${n.toFixed(1)}% faster` : `${(-n).toFixed(1)}% slower`;
 }
 
+// Distinct test_info values across runs, e.g. the environment the results came from.
+function describeInfo(runs, field) {
+  const values = [...new Set(runs.map((r) => r.data.test_info?.[field]).filter((v) => v && v !== 'unspecified'))];
+  return values.length ? values.join('; ') : 'not recorded';
+}
+
 function packageVersion(name) {
   try {
     return require(`${name}/package.json`).version;
@@ -249,9 +255,8 @@ function buildReport(runs) {
   lines.push('## 🛠️ Test Configuration', '');
   lines.push('- **Load Pattern**: 0 → 50 → 100 virtual users over 70 seconds per configuration');
   lines.push('- **Workload**: each request triggers 5 parallel HTTP calls to a mock service');
-  lines.push(
-    `- **Environment**: ${process.env.BENCHMARK_ENVIRONMENT || 'Docker containers with isolated networking, one stack per Node.js version'}`
-  );
+  lines.push(`- **Environment**: ${describeInfo(runs, 'environment')}`);
+  lines.push(`- **Library build**: ${describeInfo(runs, 'library_ref')}`);
   lines.push('- **Test Tool**: k6');
   lines.push(
     `- **Packages**: nestjs-undici ${packageVersion('nestjs-undici')}, nestjs-undici-interceptors ${packageVersion('nestjs-undici-interceptors')}, ` +
@@ -287,9 +292,7 @@ function readmeBlocks(runs) {
     '',
     `*Results from Node.js ${versions}. [View detailed results](#-latest-performance-results) | [View full report](results/PERFORMANCE-COMPARISON-REPORT.md)*`,
   ];
-  if (process.env.BENCHMARK_ENVIRONMENT) {
-    summary.push('', `*Environment: ${process.env.BENCHMARK_ENVIRONMENT}*`);
-  }
+  summary.push('', `*Environment: ${describeInfo(runs, 'environment')}*`);
 
   const details = [
     `With 5 parallel HTTP requests per endpoint call, tested across Node.js ${versions}:`,
@@ -350,13 +353,184 @@ function updateReadme(runs) {
   console.log('README.md results updated');
 }
 
+// ---------------------------------------------------------------------------
+// Documentation site page (docs/benchmarks.md)
+
+const escapeXml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+function niceStep(max, target = 5) {
+  const raw = max / target;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((step) => step >= raw);
+}
+
+// Horizontal bars of average latency for one Node.js version, colored by HTTP client.
+function latencyChart(run) {
+  const bars = CONFIGS.map((c) => ({
+    label: c.label,
+    value: metric(run, c.key, 'duration_avg'),
+    p95: metric(run, c.key, 'duration_p95'),
+    client: c.key.includes('undici') ? 'undici' : 'axios',
+  })).filter((b) => isNum(b.value));
+  const labelWidth = 230;
+  const plotWidth = 400;
+  const rowHeight = 30;
+  const barHeight = 16;
+  const top = 36;
+  const width = labelWidth + plotWidth + 80;
+  const height = top + bars.length * rowHeight + 28;
+  const step = niceStep(Math.max(...bars.map((b) => b.value)));
+  const axisMax = Math.ceil(Math.max(...bars.map((b) => b.value)) / step) * step;
+  const x = (v) => labelWidth + (v / axisMax) * plotWidth;
+
+  const ticks = [];
+  for (let v = 0; v <= axisMax + 1e-9; v += step) {
+    ticks.push(
+      `<line class="grid" x1="${x(v)}" x2="${x(v)}" y1="${top - 6}" y2="${height - 24}"/>` +
+        `<text class="tick" x="${x(v)}" y="${height - 8}" text-anchor="middle">${+v.toFixed(2)}</text>`
+    );
+  }
+  const r = 4;
+  const rows = bars.map((b, i) => {
+    const y = top + i * rowHeight + (rowHeight - barHeight) / 2;
+    const w = Math.max(x(b.value) - labelWidth, r);
+    const x0 = labelWidth;
+    // Square at the baseline, 4px rounded data end.
+    const d = `M${x0},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${barHeight - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;
+    return (
+      `<g class="bar"><title>${escapeXml(`${b.label}: ${formatNumber(b.value)} ms average, ${formatNumber(b.p95)} ms p95`)}</title>` +
+      `<rect x="0" y="${top + i * rowHeight}" width="${width}" height="${rowHeight}" fill="transparent"/>` +
+      `<text class="label" x="${labelWidth - 10}" y="${y + barHeight / 2}" text-anchor="end" dominant-baseline="central">${escapeXml(b.label)}</text>` +
+      `<path class="${b.client}" d="${d}"/>` +
+      `<text class="value" x="${x(b.value) + 6}" y="${y + barHeight / 2}" dominant-baseline="central">${formatNumber(b.value, 1)} ms</text></g>`
+    );
+  });
+  const legend =
+    `<g class="legend"><rect class="undici" x="${labelWidth}" y="6" width="12" height="12" rx="3"/>` +
+    `<text class="label" x="${labelWidth + 18}" y="12" dominant-baseline="central">Undici</text>` +
+    `<rect class="axios" x="${labelWidth + 80}" y="6" width="12" height="12" rx="3"/>` +
+    `<text class="label" x="${labelWidth + 98}" y="12" dominant-baseline="central">Axios</text></g>`;
+
+  return [
+    // Scroll inside its own box on narrow screens rather than shrinking the text.
+    '<div style="overflow-x:auto">',
+    `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:560px" role="img" aria-label="Average response time in milliseconds on Node.js ${run.version}, lower is better">`,
+    '<style>',
+    '.bench-chart{--ink:#0b0b0b;--ink-2:#52514e;--grid:#e4e3df;--undici:#2a78d6;--axios:#eb6834;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+    '@media (prefers-color-scheme:dark){.bench-chart{--ink:#fff;--ink-2:#c3c2b7;--grid:#3a3a37;--undici:#3987e5;--axios:#d95926}}',
+    '.bench-chart .label{fill:var(--ink)}.bench-chart .value,.bench-chart .tick{fill:var(--ink-2);font-variant-numeric:tabular-nums}',
+    '.bench-chart .grid{stroke:var(--grid);stroke-width:1}.bench-chart .undici{fill:var(--undici)}.bench-chart .axios{fill:var(--axios)}',
+    '.bench-chart .bar:hover path{opacity:.85}',
+    '</style>',
+    legend,
+    ...ticks,
+    ...rows,
+    '</svg>',
+    '</div>',
+  ].join('');
+}
+
+function buildDocsPage(runs) {
+  const latest = runs[runs.length - 1];
+  const versions = runs.map((r) => r.version).join(', ');
+  const clientImpact = range(comparisonValues(runs, 'fastify_undici_vs_fastify_axios'));
+  const combined = range(comparisonValues(runs, 'fastify_undici_vs_express_axios'));
+  const throughput = range(comparisonValues(runs, 'fastify_undici_vs_express_axios', 'throughput_improvement'));
+  const header = (cells) => `| ${cells.join(' | ')} |\n|${cells.map((_, i) => (i ? '---:' : '---')).join('|')}|`;
+  const row = (cells) => `| ${cells.join(' | ')} |`;
+  const matrix = (field, decimals, suffix) => [
+    header(['Configuration', ...runs.map((r) => `Node ${r.version}`)]),
+    ...CONFIGS.map((c) => row([c.label, ...runs.map((r) => `${formatNumber(metric(r, c.key, field), decimals)}${suffix}`)])),
+  ].join('\n');
+
+  return [
+    '# Benchmarks',
+    '',
+    '> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.',
+    '',
+    `Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js ${versions}.`,
+    '',
+    '## Summary',
+    '',
+    `- **Undici is ${clientImpact}% faster than Axios** with the same framework (Fastify + Undici vs Fastify + Axios).`,
+    `- **Fastify + Undici is ${combined}% faster than the default Express + Axios setup**, with ${throughput}% more throughput.`,
+    `- **With interceptors**, Fastify + Undici averages ${range(runs.map((r) => metric(r, 'fastify_undici_interceptor', 'duration_avg')), 0, 'ms')}, still faster than every Axios configuration (${range(runs.map((r) => Math.min(...['express_axios', 'fastify_axios'].map((k) => metric(r, k, 'duration_avg')))), 0, 'ms')} at best).`,
+    '',
+    `## Average Response Time on Node.js ${latest.version}`,
+    '',
+    'Lower is better. Hover a bar for its p95.',
+    '',
+    latencyChart(latest),
+    '',
+    '## Average Response Time (ms)',
+    '',
+    matrix('duration_avg', 2, ''),
+    '',
+    '## P95 Response Time (ms)',
+    '',
+    matrix('duration_p95', 2, ''),
+    '',
+    '## Throughput (requests/s)',
+    '',
+    matrix('rps', 0, ''),
+    '',
+    '## Interceptor Overhead',
+    '',
+    'How much slower the average response gets when interceptors are added.',
+    '',
+    header(['Configuration', ...runs.map((r) => `Node ${r.version}`)]),
+    ...INTERCEPTOR_BASES.map((key) => row([labelOf(key), ...runs.map((r) => formatPercentage(interceptorOverhead(r, key)))])),
+    '',
+    '> The Undici interceptor app uses `nestjs-undici-interceptors`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.',
+    '',
+    '## Configurations',
+    '',
+    '| Configuration | Server | HTTP client |',
+    '|---|---|---|',
+    '| Express + Axios | Express | `@nestjs/axios` |',
+    '| Fastify + Axios | Fastify | `@nestjs/axios` |',
+    '| Fastify + Undici | Fastify | `nestjs-undici` (upstream) |',
+    '| Express/Fastify + Axios + Interceptor | Express/Fastify | `@nestjs/axios` with request/response interceptors |',
+    '| Fastify + Undici + Interceptor | Fastify | `nestjs-undici-interceptors` (this repository) with a logging interceptor |',
+    '',
+    '## Environment',
+    '',
+    `- **Where**: ${describeInfo(runs, 'environment')}`,
+    `- **Library build**: \`${describeInfo(runs, 'library_ref')}\``,
+    `- **Load**: 0 → 50 → 100 virtual users over 70 seconds per configuration, configurations run one after another`,
+    `- **Runs**: ${[...new Set(runs.map((r) => r.data.test_info?.timestamp?.split('T')[0]).filter(Boolean))].join(', ')}`,
+    '',
+    'Absolute latencies depend on the machine; compare configurations within a run.',
+    '',
+    '## Regression Checks',
+    '',
+    'Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-undici/tree/main/benchmarks/micro).',
+    '',
+    '## Running the Benchmarks',
+    '',
+    '```bash',
+    'cd benchmarks',
+    './scripts/pack-lib.sh          # build and pack the library from this checkout',
+    'npm ci && npm run install-lib  # install benchmark deps + the packed library',
+    './test-all-node-versions.sh    # Docker + k6 across Node.js 20, 22, 24 and 26',
+    'node generate-comparison-report.js --docs ../docs/benchmarks.md',
+    '```',
+    '',
+  ].join('\n');
+}
+
 const runs = loadResults();
 if (runs.length === 0) {
   console.error(`No results/node<version>-performance-summary.json files found in ${RESULTS_DIR}/`);
   process.exit(1);
 }
 
-if (process.argv.includes('--update-readme')) {
+const docsIndex = process.argv.indexOf('--docs');
+if (docsIndex !== -1) {
+  const target = process.argv[docsIndex + 1] || '../docs/benchmarks.md';
+  fs.writeFileSync(target, buildDocsPage(runs));
+  console.log(`Docs page written to ${target}`);
+} else if (process.argv.includes('--update-readme')) {
   updateReadme(runs);
 } else {
   fs.writeFileSync(REPORT_PATH, buildReport(runs));

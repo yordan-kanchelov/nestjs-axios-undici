@@ -56,4 +56,4 @@ Responses have the axios structure:
 - `headers`: Response headers
 - `config`: Request configuration
 
-Like axios, non-2xx responses are emitted as errors (see [Error Handling](/guides/error-handling)).
+Like axios, non-2xx responses are emitted as errors (see [Error Handling](/docs/guides/error-handling.md)).

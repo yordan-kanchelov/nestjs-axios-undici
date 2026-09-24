@@ -11,7 +11,9 @@
       "fastify_axios_interceptor",
       "fastify_undici_interceptor"
     ],
-    "max_vus": 100
+    "max_vus": 100,
+    "environment": "Local run on a single shared cloud VM (apps on native Node.js, k6 in Docker, same host) - compare configurations, not absolute ms, against Docker CI results",
+    "library_ref": "nestjs-undici-interceptors@0.5.5 (npm)"
   },
   "results": {
     "express_axios": {

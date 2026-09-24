@@ -1,23 +1,18 @@
 ARG NODE_VERSION=20
 FROM node:${NODE_VERSION}-slim
 
-# Set production environment
-ENV NODE_ENV=production
-
 WORKDIR /app
 
-# Copy all files
 COPY . .
 
-# Install dependencies
-RUN npm install
+# Install from the lockfile, including devDependencies: the apps run through the
+# workspace's pinned TypeScript/ts-node (a global ts-node pulls in the latest
+# TypeScript, whose 7.x native compiler has no JS API and crashes ts-node).
+# Then install the library build from .lib/ (see scripts/pack-lib.sh).
+RUN npm ci --include=dev && node scripts/install-lib.js
 
-# Install ts-node and required types
-RUN npm install -g ts-node
-RUN npm install @types/node tsconfig-paths
+ENV NODE_ENV=production
 
-# Expose port
 EXPOSE 3004
 
-# Run with ts-node
-CMD ["ts-node", "--project", "apps/nestjs-express-axios/tsconfig.app.json", "-r", "tsconfig-paths/register", "apps/nestjs-express-axios/src/main.ts"]
+CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-express-axios/tsconfig.app.json", "-r", "tsconfig-paths/register", "apps/nestjs-express-axios/src/main.ts"]

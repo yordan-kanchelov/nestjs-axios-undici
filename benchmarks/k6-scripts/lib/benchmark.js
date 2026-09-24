@@ -188,6 +188,9 @@ function buildSummary(data, nodeVersion) {
       duration_seconds: Math.round((data.state.testRunDurationMs || 0) / 1000),
       scenarios: SERVICES.map((s) => s.key),
       max_vus: 100,
+      // Where and against what the run happened; set by CI / the runner script.
+      environment: __ENV.BENCHMARK_ENVIRONMENT || 'unspecified',
+      library_ref: __ENV.LIBRARY_REF || 'unspecified',
     },
     results,
     comparison: {

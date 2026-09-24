@@ -1,10 +1,12 @@
 {
-  "name": "@test/source",
+  "name": "@nestjs-undici/benchmarks",
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
     "typecheck": "./typecheck.sh",
-    "serve:all": "nx run-many --target=serve --all --parallel"
+    "serve:all": "nx run-many --target=serve --all --parallel",
+    "pack-lib": "./scripts/pack-lib.sh",
+    "install-lib": "node scripts/install-lib.js"
   },
   "private": true,
   "devDependencies": {
@@ -23,6 +25,8 @@
     "esbuild": "^0.19.2",
     "nx": "21.2.0",
     "prettier": "^2.6.2",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "tslib": "^2.3.0",
     "typescript": "~5.8.2",
     "webpack-cli": "^5.1.4"
@@ -37,8 +41,8 @@
     "@nestjs/core": "^11.2.6",
     "@nestjs/platform-express": "^11.2.6",
     "axios": "^1.20.0",
+    "http-cookie-agent": "^7.0.1",
     "nestjs-undici": "^0.2.60",
-    "nestjs-undici-interceptors": "^0.5.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "tough-cookie": "^5.1.2",

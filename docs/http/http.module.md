@@ -195,14 +195,14 @@ All options from [@nodejs/undici](https://github.com/nodejs/undici) are supporte
 
 ## Type-Safe Module
 
-For better TypeScript support, you can also use `HttpTypedModule`:
+For better TypeScript support, you can also use `TypedHttpModule`:
 
 ```typescript
-import { HttpTypedModule } from 'nestjs-undici-interceptors';
+import { TypedHttpModule } from 'nestjs-undici-interceptors';
 
 @Module({
   imports: [
-    HttpTypedModule.register({
+    TypedHttpModule.register({
       // Same options as HttpModule
     }),
   ],

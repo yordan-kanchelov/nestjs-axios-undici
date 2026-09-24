@@ -49,7 +49,7 @@ HttpModule.register({
 this.httpService.addInterceptor((request, next) => next.handle(request));
 ```
 
-See [Interceptor Patterns](/interceptor-patterns) for more examples.
+See [Interceptor Patterns](/docs/interceptor-patterns.md) for more examples.
 
 ## Custom Dispatchers
 

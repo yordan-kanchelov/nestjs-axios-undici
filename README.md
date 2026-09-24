@@ -8,6 +8,8 @@
 [![Original Package](https://img.shields.io/badge/original-nestjs--undici-blue)](https://github.com/hebertcisco/nestjs-undici)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-undici/)** · ✨ **[What's new in this fork](docs/features.md)** · 📊 **[Benchmarks](docs/benchmarks.md)** · 🔁 **[Migrating from @nestjs/axios](docs/migration-guide.md)**
+
 **NestJS Undici** is a powerful HTTP client module for NestJS applications, built on top of [@nodejs/undici](https://github.com/nodejs/undici). It provides a simple and efficient way to make HTTP requests in your NestJS applications.
 
 ## Fork Features
@@ -183,11 +185,10 @@ See the [Interceptor Patterns](docs/interceptor-patterns.md) documentation for a
 
 ### Performance Benefits
 
-After migrating from axios, you'll see:
-- **60-70% faster** HTTP requests
-- Lower memory usage
-- Better connection pooling
-- Native HTTP/2 support
+In our [benchmarks](docs/benchmarks.md) (a NestJS endpoint making 5 parallel upstream calls under load, Node.js 20-26):
+- **71-74% lower latency** than `@nestjs/axios` on the same framework (Fastify)
+- **74-75% lower latency** and roughly **4x the throughput** of the default Express + Axios setup
+- Undici's connection pooling and keep-alive by default
 
 ```typescript
 import { HttpModule, HttpService } from 'nestjs-undici-interceptors';

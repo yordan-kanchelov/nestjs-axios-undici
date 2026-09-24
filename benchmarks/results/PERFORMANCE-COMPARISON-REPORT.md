@@ -116,11 +116,8 @@ Overhead = how much slower the average response gets when interceptors are added
 
 - **Load Pattern**: 0 → 50 → 100 virtual users over 70 seconds per configuration
 - **Workload**: each request triggers 5 parallel HTTP calls to a mock service
-- **Environment**: Docker containers with isolated networking, one stack per Node.js version
+- **Environment**: Local run on a single shared cloud VM (apps on native Node.js, k6 in Docker, same host) - compare configurations, not absolute ms, against Docker CI results
+- **Library build**: nestjs-undici-interceptors@0.5.5 (npm)
 - **Test Tool**: k6
-- **Packages**: nestjs-undici ^0.2.60, nestjs-undici-interceptors ^0.5.5, undici ^7.29.1, @nestjs/axios ^4.0.1, axios ^1.20.0, @nestjs/core ^11.2.6
+- **Packages**: nestjs-undici 0.2.60, nestjs-undici-interceptors 0.5.5, undici 7.29.1, @nestjs/axios 4.0.1, axios 1.20.0, @nestjs/core 11.2.6
 - **Test Runs**: 2026-09-24
-
-
----
-*Last updated: 2026-09-24 21:53:53 UTC*

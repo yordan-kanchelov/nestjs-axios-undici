@@ -2,17 +2,21 @@
 
 * Getting Started
   * [Introduction](/)
+  * [What's New in This Fork](/docs/features.md)
+  * [Migration from @nestjs/axios](/docs/migration-guide.md)
 
 * Guides
-  * [Configuration](/guides/configuration)
-  * [Making Requests](/guides/making-requests)
-  * [Interceptors](/guides/interceptors)
-  * [Error Handling](/guides/error-handling)
-  * [Testing](/guides/testing)
-  * [Migration from @nestjs/axios](/migration-guide)
-  * [Interceptor Patterns](/interceptor-patterns)
-  * [Supported Axios Options](/axios-supported-options)
+  * [Configuration](/docs/guides/configuration.md)
+  * [Making Requests](/docs/guides/making-requests.md)
+  * [Interceptors](/docs/guides/interceptors.md)
+  * [Interceptor Patterns](/docs/interceptor-patterns.md)
+  * [Error Handling](/docs/guides/error-handling.md)
+  * [Testing](/docs/guides/testing.md)
+  * [Supported Axios Options](/docs/axios-supported-options.md)
+
+* Performance
+  * [Benchmarks](/docs/benchmarks.md)
 
 * API Reference
-  * [HttpModule](/http/http.module)
-  * [HttpService](/http/http.service)
+  * [HttpModule](/docs/http/http.module.md)
+  * [HttpService](/docs/http/http.service.md)
