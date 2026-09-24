@@ -1,0 +1,47 @@
+{
+  "name": "@test/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "./typecheck.sh",
+    "serve:all": "nx run-many --target=serve --all --parallel"
+  },
+  "private": true,
+  "devDependencies": {
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@nx/esbuild": "21.2.0",
+    "@nx/js": "21.2.0",
+    "@nx/nest": "^21.2.0",
+    "@nx/node": "^21.2.0",
+    "@nx/web": "21.2.0",
+    "@nx/webpack": "21.2.0",
+    "@swc-node/register": "~1.9.1",
+    "@swc/core": "~1.5.7",
+    "@swc/helpers": "~0.5.11",
+    "@types/node": "~18.16.9",
+    "esbuild": "^0.19.2",
+    "nx": "21.2.0",
+    "prettier": "^2.6.2",
+    "tslib": "^2.3.0",
+    "typescript": "~5.8.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "dependencies": {
+    "@nestjs/axios": "^4.0.1",
+    "@nestjs/common": "^11.2.6",
+    "@nestjs/core": "^11.2.6",
+    "@nestjs/platform-express": "^11.2.6",
+    "axios": "^1.20.0",
+    "nestjs-undici": "^0.2.60",
+    "nestjs-undici-interceptors": "^0.5.5",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "tough-cookie": "^5.1.2",
+    "undici": "^7.29.1"
+  }
+}

@@ -1,0 +1,114 @@
+services:
+  mock-service-node22:
+    build:
+      context: .
+      dockerfile: apps/mock-service/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3011:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-fastify-axios-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-fastify-axios/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3012:3002"
+    environment:
+      - PORT=3002
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-fastify-undici-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-fastify-undici/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3013:3003"
+    environment:
+      - PORT=3003
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-express-axios-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-express-axios/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3014:3004"
+    environment:
+      - PORT=3004
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-express-axios-interceptor-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-express-axios-interceptor/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3015:3005"
+    environment:
+      - PORT=3005
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-fastify-axios-interceptor-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-fastify-axios-interceptor/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3016:3006"
+    environment:
+      - PORT=3006
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+  nestjs-fastify-undici-interceptor-node22:
+    build:
+      context: .
+      dockerfile: apps/nestjs-fastify-undici-interceptor/Dockerfile
+      args:
+        NODE_VERSION: 22
+    ports:
+      - "3017:3007"
+    environment:
+      - PORT=3007
+      - MOCK_SERVICE_URL=http://mock-service-node22:3001/api/data
+    depends_on:
+      - mock-service-node22
+    networks:
+      - nestjs-benchmark-node22
+
+networks:
+  nestjs-benchmark-node22:
+    driver: bridge

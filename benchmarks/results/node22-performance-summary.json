@@ -1,0 +1,118 @@
+{
+  "test_info": {
+    "node_version": "Node.js 22",
+    "timestamp": "2026-09-24T21:23:43.519Z",
+    "duration_seconds": 445,
+    "scenarios": [
+      "express_axios",
+      "fastify_axios",
+      "fastify_undici",
+      "express_axios_interceptor",
+      "fastify_axios_interceptor",
+      "fastify_undici_interceptor"
+    ],
+    "max_vus": 100
+  },
+  "results": {
+    "express_axios": {
+      "requests": 45420,
+      "duration_avg": 98.86845302135687,
+      "duration_med": 81.7623245,
+      "duration_p95": 202.82471854999994,
+      "duration_p99": 306.80271751999976,
+      "duration_min": 1.623206,
+      "duration_max": 487.630883,
+      "error_rate": 0,
+      "rps": 648.8571428571429
+    },
+    "fastify_axios": {
+      "requests": 53565,
+      "duration_avg": 83.81017062789184,
+      "duration_med": 71.245157,
+      "duration_p95": 175.79705359999934,
+      "duration_p99": 263.81792704000003,
+      "duration_min": 1.486256,
+      "duration_max": 394.525492,
+      "error_rate": 0,
+      "rps": 765.2142857142857
+    },
+    "fastify_undici": {
+      "requests": 182411,
+      "duration_avg": 24.487808450257518,
+      "duration_med": 21.137182,
+      "duration_p95": 45.170009,
+      "duration_p99": 56.53178199999998,
+      "duration_min": 0.55598,
+      "duration_max": 118.685287,
+      "error_rate": 0,
+      "rps": 2605.8714285714286
+    },
+    "express_axios_interceptor": {
+      "requests": 36207,
+      "duration_avg": 124.11171507040028,
+      "duration_med": 110.276202,
+      "duration_p95": 243.9257476,
+      "duration_p99": 369.5191796600006,
+      "duration_min": 1.984002,
+      "duration_max": 494.507565,
+      "error_rate": 0,
+      "rps": 517.2428571428571
+    },
+    "fastify_axios_interceptor": {
+      "requests": 43599,
+      "duration_avg": 103.02487829631468,
+      "duration_med": 89.239802,
+      "duration_p95": 190.32847220000002,
+      "duration_p99": 305.1540037399996,
+      "duration_min": 1.73751,
+      "duration_max": 486.774989,
+      "error_rate": 0,
+      "rps": 622.8428571428572
+    },
+    "fastify_undici_interceptor": {
+      "requests": 97746,
+      "duration_avg": 45.83314728045126,
+      "duration_med": 38.94872650000001,
+      "duration_p95": 81.96763125,
+      "duration_p99": 102.89501625000035,
+      "duration_min": 0.858587,
+      "duration_max": 238.182742,
+      "error_rate": 0,
+      "rps": 1396.3714285714286
+    }
+  },
+  "comparison": {
+    "fastify_axios_vs_express_axios": {
+      "throughput_improvement": "17.93%",
+      "avg_response_improvement": "15.23%",
+      "p95_response_improvement": "13.33%",
+      "p99_response_improvement": "14.01%"
+    },
+    "fastify_undici_vs_express_axios": {
+      "throughput_improvement": "301.61%",
+      "avg_response_improvement": "75.23%",
+      "p95_response_improvement": "77.73%",
+      "p99_response_improvement": "81.57%"
+    },
+    "fastify_undici_vs_fastify_axios": {
+      "throughput_improvement": "240.54%",
+      "avg_response_improvement": "70.78%",
+      "p95_response_improvement": "74.31%",
+      "p99_response_improvement": "78.57%"
+    },
+    "interceptor_overhead": {
+      "express_axios": {
+        "throughput_impact": "-20.28%",
+        "avg_response_impact": "20.34%"
+      },
+      "fastify_axios": {
+        "throughput_impact": "-18.61%",
+        "avg_response_impact": "18.65%"
+      },
+      "fastify_undici": {
+        "throughput_impact": "-46.41%",
+        "avg_response_impact": "46.57%"
+      }
+    }
+  }
+}

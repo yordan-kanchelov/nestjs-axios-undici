@@ -1,0 +1,205 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      node_versions:
+        description: 'Node.js versions to test (comma-separated, e.g., 20,22,24,26)'
+        required: false
+        default: '20,22,24,26'
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ${{ fromJSON(format('[{0}]', github.event.inputs.node_versions || '20,22,24,26')) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22' # Use Node 22 for running scripts, Docker will use matrix version
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm i
+          
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+          
+      - name: Verify Docker is available
+        run: |
+          docker --version
+          docker compose version || docker-compose --version
+          docker system info
+
+      - name: Build and start services for Node ${{ matrix.node-version }}
+        run: |
+          # Determine which docker-compose file to use
+          if [ "${{ matrix.node-version }}" = "20" ]; then
+            COMPOSE_FILE="docker-compose.yml"
+          else
+            COMPOSE_FILE="docker-compose-node${{ matrix.node-version }}.yml"
+          fi
+
+          echo "Using $COMPOSE_FILE for Node.js ${{ matrix.node-version }}"
+          docker compose -f $COMPOSE_FILE up -d --build
+
+          # Wait for services to be healthy
+          echo "Waiting for services to be healthy..."
+          COUNTER=0
+          while [ $COUNTER -lt 60 ]; do
+            if docker compose -f $COMPOSE_FILE ps | grep -E "(unhealthy|starting)" > /dev/null; then
+              echo "Services still starting... ($COUNTER/60)"
+              sleep 5
+              COUNTER=$((COUNTER + 5))
+            else
+              echo "All services are ready!"
+              docker compose -f $COMPOSE_FILE ps
+              break
+            fi
+          done
+          if [ $COUNTER -ge 60 ]; then
+            echo "Services failed to become healthy"
+            docker compose -f $COMPOSE_FILE logs
+            exit 1
+          fi
+
+      - name: Run performance tests for Node ${{ matrix.node-version }}
+        run: |
+          k6 run k6-scripts/test-node${{ matrix.node-version }}.js
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results-node${{ matrix.node-version }}
+          path: |
+            results/node${{ matrix.node-version }}-performance-comparison.csv
+            results/node${{ matrix.node-version }}-performance-summary.json
+          retention-days: 30
+
+      - name: Stop services
+        if: always()
+        run: |
+          if [ "${{ matrix.node-version }}" = "20" ]; then
+            docker compose down
+          else
+            docker compose -f docker-compose-node${{ matrix.node-version }}.yml down
+          fi
+
+  consolidate-results:
+    needs: performance-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Consolidate results and generate report
+        run: |
+          mkdir -p consolidated-results
+          # Copy all per-version results next to the committed ones so the report
+          # covers every Node.js version from this run
+          find artifacts -name "*.csv" -o -name "*.json" | while read file; do
+            cp "$file" consolidated-results/
+            cp "$file" results/
+          done
+          node generate-comparison-report.js
+          cp results/PERFORMANCE-COMPARISON-REPORT.md consolidated-results/
+          echo "=== Consolidated Performance Test Results ==="
+          ls -la consolidated-results/
+
+      - name: Upload consolidated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-performance-results
+          path: consolidated-results/
+          retention-days: 30
+      
+      - name: Commit results to repository (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          # Configure git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add timestamp to the report
+          DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          echo -e "\n\n---\n*Last updated: $DATE*" >> results/PERFORMANCE-COMPARISON-REPORT.md
+
+          # Update README summary table from the fresh results
+          node generate-comparison-report.js --update-readme
+
+          # Check if there are changes
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add results/ README.md
+            git commit -m "chore: Update performance test results [skip ci]
+            
+            Performance tests run: ${{ github.run_number }}
+            Commit: ${{ github.sha }}"
+            
+            git push origin main
+          fi
+
+      - name: Comment PR with results (if PR)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Read the performance comparison report
+            let reportContent = '';
+            const reportPath = 'consolidated-results/PERFORMANCE-COMPARISON-REPORT.md';
+
+            if (fs.existsSync(reportPath)) {
+              reportContent = fs.readFileSync(reportPath, 'utf8');
+
+              // Truncate if too long for PR comment
+              if (reportContent.length > 65000) {
+                reportContent = reportContent.substring(0, 65000) + '\n\n... (truncated)';
+              }
+              // Create PR comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 🚀 Performance Test Results\n\n${reportContent}\n\n[View full results in artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+              });
+            }

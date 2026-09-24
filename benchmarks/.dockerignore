@@ -1,0 +1,13 @@
+node_modules
+.git
+.gitignore
+.nx
+dist
+.DS_Store
+*.log
+.vscode
+.idea
+coverage
+.env.local
+k6-scripts
+results
