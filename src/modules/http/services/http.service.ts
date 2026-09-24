@@ -1,5 +1,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { request, ProxyAgent, Agent as UndiciAgent } from 'undici';
+import {
+  request,
+  getGlobalDispatcher,
+  interceptors as undiciInterceptors,
+  ProxyAgent,
+  Agent as UndiciAgent,
+} from 'undici';
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
@@ -35,6 +41,7 @@ export class HttpService {
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
   private cookieJar?: CookieJar;
+  private redirectDispatchers = new WeakMap<Dispatcher, Map<number, Dispatcher>>();
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -117,7 +124,10 @@ export class HttpService {
       Dispatcher.RequestOptions,
       'origin' | 'path' | 'method'
     > &
-      Partial<Pick<Dispatcher.RequestOptions, 'method'>> & { timeout?: number },
+      Partial<Pick<Dispatcher.RequestOptions, 'method'>> & {
+        timeout?: number;
+        maxRedirections?: number;
+      },
   ): Observable<AxiosLikeResponse<T>> {
     // Handle timeout option for axios compatibility
     const { timeout, ...restOptions } = options || {};
@@ -177,11 +187,19 @@ export class HttpService {
     return defer(() => {
       return new Observable<Dispatcher.ResponseData>(subscriber => {
         // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
+        const { maxRedirections, ...requestOptions } =
+          interceptorRequest.options as typeof interceptorRequest.options & {
+            maxRedirections?: number;
+          };
+        const dispatcher =
+          this.customDispatcher ||
+          requestOptions.dispatcher ||
+          this.instanceOptions.dispatcher;
         const options = {
-          ...interceptorRequest.options,
-          dispatcher: this.customDispatcher || interceptorRequest.options.dispatcher || this.instanceOptions.dispatcher
+          ...requestOptions,
+          ...this.resolveRedirectOptions(dispatcher, maxRedirections),
         };
-        
+
         const response = request(
           interceptorRequest.url,
           options,
@@ -196,6 +214,47 @@ export class HttpService {
           });
       });
     });
+  }
+
+  /**
+   * Undici >= 7 rejects the `maxRedirections` request option and requires the
+   * redirect interceptor instead. Compose it onto the dispatcher when
+   * available (cached per dispatcher), otherwise fall back to the legacy
+   * request option supported by older undici versions.
+   */
+  private resolveRedirectOptions(
+    dispatcher: Dispatcher | undefined,
+    maxRedirections: number | undefined,
+  ): { dispatcher?: Dispatcher; maxRedirections?: number } {
+    if (maxRedirections === undefined || maxRedirections === null) {
+      return { dispatcher };
+    }
+
+    const base = dispatcher || getGlobalDispatcher();
+    if (
+      typeof undiciInterceptors?.redirect !== 'function' ||
+      typeof base.compose !== 'function'
+    ) {
+      return { dispatcher, maxRedirections };
+    }
+
+    // Without redirect handling the 3xx response is returned as-is, which
+    // matches axios' `maxRedirects: 0` behaviour.
+    if (maxRedirections <= 0) {
+      return { dispatcher };
+    }
+
+    let byLimit = this.redirectDispatchers.get(base);
+    if (!byLimit) {
+      byLimit = new Map();
+      this.redirectDispatchers.set(base, byLimit);
+    }
+    let composed = byLimit.get(maxRedirections);
+    if (!composed) {
+      composed = base.compose(undiciInterceptors.redirect({ maxRedirections }));
+      byLimit.set(maxRedirections, composed);
+    }
+    return { dispatcher: composed };
   }
 
   private executeInterceptorChain<T = any>(
