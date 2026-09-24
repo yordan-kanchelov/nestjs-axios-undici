@@ -18,7 +18,7 @@ this.httpService.axiosRef.interceptors.response.use(response => {
 
 ## Native Interceptors
 
-Native interceptors wrap the request as an Observable chain. They see the raw undici response before it is converted to the axios format.
+Native interceptors wrap the request as an Observable chain. They run outside the built-in axios response adapter, so the response they receive is already axios-compatible (`status`, `data`, `headers`, ...).
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -32,7 +32,7 @@ export class LoggingInterceptor implements HttpInterceptor {
   intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler) {
     const start = Date.now();
     return next.handle(request).pipe(
-      tap(response => this.logger.log(`${request.url} ${response.statusCode} ${Date.now() - start}ms`))
+      tap(response => this.logger.log(`${request.url} ${response.status} ${Date.now() - start}ms`))
     );
   }
 }
