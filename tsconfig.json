@@ -7,7 +7,7 @@
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
-    "target": "es6",
+    "target": "es2020",
     "sourceMap": false,
     "outDir": "./lib",
     "rootDir": "src",

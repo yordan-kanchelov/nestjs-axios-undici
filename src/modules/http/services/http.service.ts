@@ -9,7 +9,7 @@ import {
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
-import { Observable, defer, of } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 
 import {
@@ -37,7 +37,8 @@ import {
   normalizeAxiosRequest,
   toUrlEncodedForm,
 } from '../adapters/axios-request.adapter';
-import { axiosResponseAdapter } from '../interceptors/axios-response-adapter.interceptor';
+import { toAxiosLikeResponse } from '../adapters/axios-response.adapter';
+import { toAxiosError } from '../errors/axios-error';
 
 @Injectable()
 export class HttpService {
@@ -196,38 +197,39 @@ export class HttpService {
     return this.executeInterceptorChain(interceptorRequest);
   }
 
-  private executeRequest<T = any>(
+  /**
+   * End of the interceptor chain: performs the undici request and converts
+   * the response to the axios-compatible format (the built-in axios response
+   * adapter, applied inline to avoid an extra Observable/operator layer per
+   * request).
+   */
+  private executeRequest(
     interceptorRequest: HttpInterceptorRequest,
-  ): Observable<Dispatcher.ResponseData> {
-    return defer(() => {
-      return new Observable<Dispatcher.ResponseData>(subscriber => {
-        // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
-        const { maxRedirections, ...requestOptions } =
-          interceptorRequest.options as typeof interceptorRequest.options & {
-            maxRedirections?: number;
-          };
-        const dispatcher =
-          this.customDispatcher ||
-          requestOptions.dispatcher ||
-          this.instanceOptions.dispatcher;
-        const options = {
-          ...requestOptions,
-          ...this.resolveRedirectOptions(dispatcher, maxRedirections),
+  ): Observable<AxiosLikeResponse> {
+    return new Observable<AxiosLikeResponse>(subscriber => {
+      // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
+      const { maxRedirections, ...requestOptions } =
+        interceptorRequest.options as typeof interceptorRequest.options & {
+          maxRedirections?: number;
         };
+      const dispatcher =
+        this.customDispatcher ||
+        requestOptions.dispatcher ||
+        this.instanceOptions.dispatcher;
+      const options = {
+        ...requestOptions,
+        ...this.resolveRedirectOptions(dispatcher, maxRedirections),
+      };
 
-        const response = request(
-          interceptorRequest.url,
-          options,
-        );
-        response
-          .then(res => {
-            subscriber.next(res);
-            subscriber.complete();
-          })
-          .catch(error => {
-            subscriber.error(error);
-          });
-      });
+      request(interceptorRequest.url, options)
+        .then(res => toAxiosLikeResponse(interceptorRequest, res))
+        .then(res => {
+          subscriber.next(res);
+          subscriber.complete();
+        })
+        .catch(error => {
+          subscriber.error(toAxiosError(error, interceptorRequest));
+        });
     });
   }
 
@@ -275,9 +277,8 @@ export class HttpService {
   private executeInterceptorChain<T = any>(
     request: HttpInterceptorRequest,
   ): Observable<any> {
-    // Always include axios response adapter as the last interceptor
-    const allInterceptors = [...this.interceptors, axiosResponseAdapter];
-    const handler = this.createInterceptorHandler<T>(0, allInterceptors);
+    // The axios response adapter always runs last, inside executeRequest()
+    const handler = this.createInterceptorHandler<T>(0, this.interceptors);
     return handler.handle(request);
   }
 
@@ -289,7 +290,7 @@ export class HttpService {
       // End of chain - execute the actual request
       return {
         handle: (request: HttpInterceptorRequest) =>
-          this.executeRequest<T>(request),
+          this.executeRequest(request),
       };
     }
 
