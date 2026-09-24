@@ -136,8 +136,11 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
 
   // Decompress
   if (axiosConfig.decompress !== undefined) {
-    // Undici handles decompression automatically
-    console.info('decompress option is handled automatically by undici');
+    // undici.request() does not decompress responses and no Accept-Encoding
+    // header is sent by default, so servers normally reply uncompressed.
+    console.info(
+      'decompress option is ignored: responses are not decompressed (no Accept-Encoding is sent by default)',
+    );
   }
 
   // Validate status - this is handled at the interceptor level

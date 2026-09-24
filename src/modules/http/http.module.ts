@@ -39,6 +39,85 @@ const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
 })
 export class HttpModule {
   static register(config: HttpModuleOptions & any = {}): DynamicModule {
+    const processedConfig = HttpModule.processAxiosConfig(config);
+
+    // Extract interceptors - axios response adapter will be added in the service
+    const interceptors = processedConfig.interceptors || [];
+
+    const { interceptors: _, global: _global, ...undiciOptions } = processedConfig;
+
+    // Separate function and class interceptors
+    const functionInterceptors: HttpInterceptorFunction[] = [];
+    const classInterceptors: Type<HttpInterceptor>[] = [];
+
+    interceptors.forEach(interceptor => {
+      if (typeof interceptor === 'function') {
+        // Check if it's a class constructor by looking for class syntax markers
+        // Classes have toString() that starts with 'class' or have constructor in prototype
+        const isClass = interceptor.toString().startsWith('class') ||
+                       (interceptor.prototype &&
+                        interceptor.prototype.constructor === interceptor &&
+                        Object.getOwnPropertyNames(interceptor.prototype).includes('intercept'));
+
+        if (isClass) {
+          classInterceptors.push(interceptor as Type<HttpInterceptor>);
+        } else {
+          functionInterceptors.push(interceptor as HttpInterceptorFunction);
+        }
+      }
+    });
+
+    // Create providers for class interceptors
+    const interceptorProviders = classInterceptors.map(InterceptorClass => ({
+      provide: InterceptorClass,
+      useClass: InterceptorClass,
+    }));
+
+    return {
+      module: HttpModule,
+      global: config.global,
+      providers: [
+        {
+          provide: UNDICI_INSTANCE_TOKEN,
+          useValue: undiciOptions,
+        },
+        {
+          provide: HTTP_MODULE_OPTIONS,
+          useValue: { ...processedConfig, interceptors: functionInterceptors },
+        },
+        {
+          provide: HTTP_MODULE_ID,
+          useValue: randomStringGenerator(),
+        },
+        ...interceptorProviders,
+        {
+          provide: HTTP_SERVICE_INTERCEPTORS,
+          useFactory: (...args: any[]) => {
+            // The injected arguments are the instantiated interceptors
+            const interceptorInstances = args;
+            return [...functionInterceptors, ...interceptorInstances];
+          },
+          inject: classInterceptors,
+        },
+        {
+          provide: HttpService,
+          useFactory: (options: UndiciRequestOptionsType, moduleOptions: HttpModuleOptions, interceptors: Array<HttpInterceptor | HttpInterceptorFunction>) => {
+            const service = new HttpService(options, moduleOptions);
+            service.setInterceptors(interceptors);
+            return service;
+          },
+          inject: [UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS, HTTP_SERVICE_INTERCEPTORS],
+        },
+      ],
+      exports: [HttpService],
+    };
+  }
+
+  /**
+   * Detects axios-style options (register() and registerAsync()) and maps
+   * them to undici options plus interceptors (transforms, size limits, ...).
+   */
+  private static processAxiosConfig(config: HttpModuleOptions & any = {}): HttpModuleOptions & any {
     // Check if this looks like axios configuration
     const hasAxiosOptions = !!(
       config.httpAgent || 
@@ -126,87 +205,20 @@ export class HttpModule {
       };
     }
     
-    // Extract interceptors - axios response adapter will be added in the service
-    const interceptors = processedConfig.interceptors || [];
-    
-    const { interceptors: _, ...undiciOptions } = processedConfig;
-    
-    // Separate function and class interceptors
-    const functionInterceptors: HttpInterceptorFunction[] = [];
-    const classInterceptors: Type<HttpInterceptor>[] = [];
-    
-    interceptors.forEach(interceptor => {
-      if (typeof interceptor === 'function') {
-        // Check if it's a class constructor by looking for class syntax markers
-        // Classes have toString() that starts with 'class' or have constructor in prototype
-        const isClass = interceptor.toString().startsWith('class') || 
-                       (interceptor.prototype && 
-                        interceptor.prototype.constructor === interceptor &&
-                        Object.getOwnPropertyNames(interceptor.prototype).includes('intercept'));
-        
-        if (isClass) {
-          classInterceptors.push(interceptor as Type<HttpInterceptor>);
-        } else {
-          functionInterceptors.push(interceptor as HttpInterceptorFunction);
-        }
-      }
-    });
-    
-    // Create providers for class interceptors
-    const interceptorProviders = classInterceptors.map(InterceptorClass => ({
-      provide: InterceptorClass,
-      useClass: InterceptorClass,
-    }));
-    
-    return {
-      module: HttpModule,
-      providers: [
-        {
-          provide: UNDICI_INSTANCE_TOKEN,
-          useValue: undiciOptions,
-        },
-        {
-          provide: HTTP_MODULE_OPTIONS,
-          useValue: { ...processedConfig, interceptors: functionInterceptors },
-        },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomStringGenerator(),
-        },
-        ...interceptorProviders,
-        {
-          provide: HTTP_SERVICE_INTERCEPTORS,
-          useFactory: (...args: any[]) => {
-            // The injected arguments are the instantiated interceptors
-            const interceptorInstances = args;
-            return [...functionInterceptors, ...interceptorInstances];
-          },
-          inject: classInterceptors,
-        },
-        {
-          provide: HttpService,
-          useFactory: (options: UndiciRequestOptionsType, moduleOptions: HttpModuleOptions, interceptors: Array<HttpInterceptor | HttpInterceptorFunction>) => {
-            const service = new HttpService(options, moduleOptions);
-            service.setInterceptors(interceptors);
-            return service;
-          },
-          inject: [UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS, HTTP_SERVICE_INTERCEPTORS],
-        },
-      ],
-      exports: [HttpService],
-    };
+    return processedConfig;
   }
 
   static registerAsync(options: HttpModuleAsyncOptions): DynamicModule {
     return {
       module: HttpModule,
+      global: options.global,
       imports: options.imports,
       providers: [
         ...this.createAsyncProviders(options),
         {
           provide: UNDICI_INSTANCE_TOKEN,
           useFactory: (config: HttpModuleOptions) => {
-            const { interceptors, ...undiciOptions } = config;
+            const { interceptors, global: _global, ...undiciOptions } = config;
             return undiciOptions;
           },
           inject: [HTTP_MODULE_OPTIONS],
@@ -258,16 +270,18 @@ export class HttpModule {
     options: HttpModuleAsyncOptions,
   ): Provider {
     if (options.useFactory) {
+      const useFactory = options.useFactory;
       return {
         provide: HTTP_MODULE_OPTIONS,
-        useFactory: options.useFactory,
+        useFactory: async (...args: any[]) =>
+          HttpModule.processAxiosConfig(await useFactory(...args)),
         inject: options.inject || [],
       };
     }
     return {
       provide: HTTP_MODULE_OPTIONS,
       useFactory: async (optionsFactory: HttpModuleOptionsFactory) =>
-        optionsFactory.createHttpOptions(),
+        HttpModule.processAxiosConfig(await optionsFactory.createHttpOptions()),
       inject: [options.useExisting || options.useClass],
     };
   }

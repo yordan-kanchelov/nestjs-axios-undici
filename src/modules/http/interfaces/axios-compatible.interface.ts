@@ -42,13 +42,80 @@ export interface UndiciResponseWithParsedBody extends Dispatcher.ResponseData {
 }
 
 /**
- * Axios-compatible request options that can be used with HttpService methods
- * This extends Undici's RequestOptions with axios-specific options like timeout
+ * axios `paramsSerializer`: a function or an options object
+ */
+export type AxiosParamsSerializer =
+  | ((params: any) => string)
+  | {
+      serialize?: (params: any, options?: any) => string;
+      encode?: (value: any) => string;
+      /** `false` (default): `a[]=1`, `true`: `a[0]=1`, `null`: `a=1` */
+      indexes?: boolean | null;
+      dots?: boolean;
+    };
+
+/**
+ * Minimal shape of an axios `CancelToken` (deprecated in axios, still common)
+ */
+export interface AxiosCancelTokenLike {
+  reason?: any;
+  promise?: Promise<any>;
+  subscribe?(listener: (reason: any) => void): void;
+}
+
+export type AxiosResponseType =
+  | 'json'
+  | 'text'
+  | 'stream'
+  | 'arraybuffer'
+  | 'blob'
+  | 'document';
+
+/**
+ * Axios-compatible request options that can be used with HttpService methods.
+ * Extends Undici's RequestOptions with the per-request axios options this
+ * library understands.
  */
 export interface AxiosCompatibleRequestOptions
   extends Omit<
     Dispatcher.RequestOptions,
-    'origin' | 'path' | 'method' | 'body'
+    'origin' | 'path' | 'method' | 'body' | 'headers'
   > {
+  headers?:
+    | Dispatcher.RequestOptions['headers']
+    | AxiosHeaders
+    | RawAxiosHeaders
+    | Record<string, string | string[] | number | boolean | null | undefined>;
+  body?: Dispatcher.RequestOptions['body'];
   timeout?: number;
+  baseURL?: string;
+  params?: any;
+  paramsSerializer?: AxiosParamsSerializer;
+  /** Request body, serialised like axios (object => JSON, URLSearchParams, FormData, Buffer, string) */
+  data?: any;
+  auth?: { username: string; password: string };
+  responseType?: AxiosResponseType;
+  validateStatus?: ((status: number) => boolean) | null;
+  maxRedirects?: number;
+  maxContentLength?: number;
+  cancelToken?: AxiosCancelTokenLike;
 }
+
+/**
+ * Config accepted by `httpService.request(config)`, mirroring
+ * `@nestjs/axios`' `request<T>(config: AxiosRequestConfig)`.
+ */
+export interface AxiosCompatibleRequestConfig extends AxiosCompatibleRequestOptions {
+  url: string | URL;
+  method?: string;
+}
+
+/**
+ * Options accepted by `httpService.request(url, options)`: undici request
+ * options plus the supported axios per-request options.
+ */
+export type HttpRequestOptions = AxiosCompatibleRequestOptions & {
+  dispatcher?: Dispatcher;
+  method?: string;
+  maxRedirections?: number;
+};

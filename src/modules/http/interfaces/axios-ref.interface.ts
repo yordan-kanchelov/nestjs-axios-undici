@@ -1,6 +1,12 @@
 import type { Observable } from 'rxjs';
 import type { HttpInterceptor, HttpInterceptorFunction } from './http-interceptor.interface';
-import type { AxiosLikeRequestConfig, AxiosLikeResponse } from './axios-compatible.interface';
+import type {
+  AxiosCompatibleRequestConfig,
+  AxiosCompatibleRequestOptions,
+  AxiosLikeRequestConfig,
+  AxiosLikeResponse,
+} from './axios-compatible.interface';
+import type { AxiosHeaderValue } from './axios-headers';
 
 /**
  * Axios-style interceptor manager interface
@@ -29,15 +35,48 @@ export interface AxiosInterceptorManager<T> {
   clear(): void;
 }
 
+type HeaderMap = Record<string, AxiosHeaderValue>;
+
 /**
- * Axios-compatible reference interface
- * Provides axios-style API for interceptor management
+ * Subset of axios' `instance.defaults` that is honoured at request time.
+ * Mutations (e.g. `defaults.headers.common['Authorization'] = token`) apply
+ * to every subsequent request made through the HttpService.
+ */
+export interface AxiosRefDefaults {
+  baseURL?: string;
+  timeout?: number;
+  headers: {
+    common: HeaderMap;
+    get: HeaderMap;
+    delete: HeaderMap;
+    head: HeaderMap;
+    options: HeaderMap;
+    post: HeaderMap;
+    put: HeaderMap;
+    patch: HeaderMap;
+    [header: string]: AxiosHeaderValue | HeaderMap;
+  };
+}
+
+/**
+ * Axios-compatible reference, mirroring the parts of the `AxiosInstance`
+ * exposed by `@nestjs/axios`' `httpService.axiosRef` that are commonly used:
+ * interceptors, defaults and the promise-based request methods.
  */
 export interface AxiosRef {
   interceptors: {
     request: AxiosInterceptorManager<AxiosLikeRequestConfig>;
     response: AxiosInterceptorManager<AxiosLikeResponse>;
   };
+  defaults: AxiosRefDefaults;
+  request<T = any>(config: AxiosCompatibleRequestConfig): Promise<AxiosLikeResponse<T>>;
+  get<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  delete<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  head<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  options<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  post<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  put<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  patch<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
 }
 
 /**

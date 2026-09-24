@@ -25,14 +25,18 @@ import type {
   HttpInterceptorFunction,
   HttpInterceptorHandler,
   HttpInterceptorRequest,
+  AxiosCompatibleRequestConfig,
   AxiosCompatibleRequestOptions,
+  HttpRequestOptions,
   AxiosLikeResponse,
   AxiosRef,
 } from '../interfaces';
+import { createAxiosRef } from '../adapters/axios-ref.factory';
 import {
-  createAxiosRequestInterceptorManager,
-  createAxiosResponseInterceptorManager,
-} from '../adapters/axios-interceptor.adapter';
+  mergeHeaders,
+  normalizeAxiosRequest,
+  toUrlEncodedForm,
+} from '../adapters/axios-request.adapter';
 import { axiosResponseAdapter } from '../interceptors/axios-response-adapter.interceptor';
 
 @Injectable()
@@ -59,13 +63,12 @@ export class HttpService {
         .map(interceptor => interceptor as HttpInterceptorFunction);
     }
 
-    // Initialize axios-compatible interceptor managers
-    this._axiosRef = {
-      interceptors: {
-        request: createAxiosRequestInterceptorManager((interceptor) => this.addInterceptor(interceptor)),
-        response: createAxiosResponseInterceptorManager((interceptor) => this.addInterceptor(interceptor)),
-      },
-    };
+    // Initialize axios-compatible axiosRef (interceptors, defaults, promise methods)
+    this._axiosRef = createAxiosRef(
+      this,
+      interceptor => this.addInterceptor(interceptor),
+      this.instanceOptions,
+    );
 
     // Setup custom dispatcher based on axios compatibility options
     this.setupDispatcher();
@@ -118,17 +121,29 @@ export class HttpService {
     this.instanceOptions.dispatcher = dispatcher;
   }
 
+  /**
+   * Axios-style call form, as in `@nestjs/axios`: `request({ url, method, data, params, ... })`
+   */
+  public request<T = any>(
+    config: AxiosCompatibleRequestConfig,
+  ): Observable<AxiosLikeResponse<T>>;
   public request<T = any>(
     url: string | URL | UrlObject,
-    options?: { dispatcher?: Dispatcher } & Omit<
-      Dispatcher.RequestOptions,
-      'origin' | 'path' | 'method'
-    > &
-      Partial<Pick<Dispatcher.RequestOptions, 'method'>> & {
-        timeout?: number;
-        maxRedirections?: number;
-      },
+    options?: HttpRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  public request<T = any>(
+    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
+    requestOptions?: HttpRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
+    // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
+    const { url, options } = normalizeAxiosRequest(urlOrConfig, requestOptions, {
+      defaults: this._axiosRef.defaults,
+      instanceOptions: this.instanceOptions,
+    }) as {
+      url: string | URL | UrlObject;
+      options: Omit<HttpRequestOptions, 'headers'> & Pick<Dispatcher.RequestOptions, 'headers'>;
+    };
+
     // Handle timeout option for axios compatibility
     const { timeout, ...restOptions } = options || {};
     const mergedOptions = {
@@ -347,20 +362,7 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = data
-      ? typeof data === 'string'
-        ? data
-        : JSON.stringify(data)
-      : undefined;
-    return this.request(url, {
-      ...config,
-      method: 'POST',
-      body,
-      headers: {
-        'Content-Type': 'application/json',
-        ...config?.headers,
-      },
-    });
+    return this.request(url, { ...config, method: 'POST', data });
   }
 
   /**
@@ -375,20 +377,7 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = data
-      ? typeof data === 'string'
-        ? data
-        : JSON.stringify(data)
-      : undefined;
-    return this.request(url, {
-      ...config,
-      method: 'PUT',
-      body,
-      headers: {
-        'Content-Type': 'application/json',
-        ...config?.headers,
-      },
-    });
+    return this.request(url, { ...config, method: 'PUT', data });
   }
 
   /**
@@ -416,20 +405,7 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = data
-      ? typeof data === 'string'
-        ? data
-        : JSON.stringify(data)
-      : undefined;
-    return this.request(url, {
-      ...config,
-      method: 'PATCH',
-      body,
-      headers: {
-        'Content-Type': 'application/json',
-        ...config?.headers,
-      },
-    });
+    return this.request(url, { ...config, method: 'PATCH', data });
   }
 
   /**
@@ -470,16 +446,7 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = this.createFormData(data);
-    return this.request(url, {
-      ...config,
-      method: 'POST',
-      body,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers,
-      },
-    });
+    return this.formRequest('POST', url, data, config);
   }
 
   /**
@@ -494,16 +461,7 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = this.createFormData(data);
-    return this.request(url, {
-      ...config,
-      method: 'PUT',
-      body,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers,
-      },
-    });
+    return this.formRequest('PUT', url, data, config);
   }
 
   /**
@@ -518,30 +476,33 @@ export class HttpService {
     data?: any,
     config?: AxiosCompatibleRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    const body = this.createFormData(data);
-    return this.request(url, {
-      ...config,
-      method: 'PATCH',
-      body,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers,
-      },
-    });
+    return this.formRequest('PATCH', url, data, config);
   }
 
   /**
-   * Helper method to create form data string from object
+   * Shared implementation of postForm/putForm/patchForm. FormData bodies are
+   * sent as multipart; everything else is url-encoded.
    */
-  private createFormData(data: any): string {
-    if (!data) return '';
-    if (typeof data === 'string') return data;
-
-    return Object.entries(data)
-      .map(
-        ([key, value]) =>
-          `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
-      )
-      .join('&');
+  private formRequest<T = any>(
+    method: 'POST' | 'PUT' | 'PATCH',
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
+    const isMultipart =
+      data?.[Symbol.toStringTag] === 'FormData' ||
+      typeof data?.getHeaders === 'function';
+    if (isMultipart) {
+      return this.request(url, { ...config, method, data });
+    }
+    return this.request(url, {
+      ...config,
+      method,
+      data: toUrlEncodedForm(data),
+      headers: mergeHeaders(
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+        config?.headers,
+      ),
+    });
   }
 }
