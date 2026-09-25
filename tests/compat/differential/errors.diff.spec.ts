@@ -5,7 +5,6 @@
 import axios from 'axios';
 import { differential, Ctx } from './harness';
 
-const REDIRECTS = 'plan.md phase 2: fix: follow redirects by default (21)';
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
 
 const routes = {
@@ -238,14 +237,56 @@ differential('Differential: errors, timeouts, cancellation', routes, [
       requests: o.requests.map((r: any) => ({ method: r.method, url: r.url })),
       ok: !!o.result,
     }),
-    // this library defaults to zero redirects (documented); axios follows up to 21.
-    knownDifference: name.startsWith('GET 302 default') ? REDIRECTS : undefined,
   })),
   {
     name: 'redirect loop exceeds maxRedirects',
     run: (s, ctx) => s.get(`${ctx.base}/redirect-loop`, { maxRedirects: 3 }),
     normalize: (o: any) => ({ code: o.error?.code, hops: o.requests.length }),
-    knownDifference: ERRORS,
+  },
+  {
+    // No `maxRedirects` set anywhere: both must default to 21 and reject on
+    // the 22nd hop.
+    name: 'redirect loop exceeds the default limit (21 vs 22)',
+    run: (s, ctx) => s.get(`${ctx.base}/redirect-loop`),
+    normalize: (o: any) => ({ code: o.error?.code, hops: o.requests.length }),
+  },
+  {
+    name: 'redirect: maxRedirects 0 returns the 3xx response as-is',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=/echo`, {
+        maxRedirects: 0,
+        validateStatus: () => true,
+      }),
+    normalize: (o: any) => ({
+      status: o.result?.status,
+      location: o.result?.headers?.location,
+      hops: o.requests.length,
+    }),
+  },
+  {
+    // A relative `Location` with no leading slash resolves against the
+    // *current* URL's path (dropping its last segment), not the origin root.
+    name: 'redirect: relative Location without a leading slash',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=${encodeURIComponent('echo/after')}`),
+    normalize: (o: any) => o.requests.map((r: any) => r.url),
+  },
+  {
+    name: 'redirect: cross-host drops Authorization/Cookie',
+    run: (s: any, ctx: Ctx) =>
+      s.get(
+        `${ctx.base}/redirect?to=${encodeURIComponent(`${ctx.other}/echo`)}`,
+        { headers: { Authorization: 'Bearer secret', Cookie: 'a=b' } },
+      ),
+  },
+  {
+    name: 'redirect: beforeRedirect can rewrite headers for the next hop',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=/echo`, {
+        beforeRedirect: (options: any) => {
+          options.headers = { ...options.headers, 'X-B': 'hooked' };
+        },
+      }),
   },
   // ---- size limits per request
   {
