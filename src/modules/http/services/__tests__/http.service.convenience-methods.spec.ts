@@ -168,19 +168,25 @@ describe('HttpService Convenience Methods', () => {
   });
 
   describe('Form methods', () => {
+    // postForm/putForm/patchForm send multipart/form-data by default, like
+    // axios' own postForm (plan.md phase 2 "feat(axiosRef): make it a real
+    // axios instance") - previously (a documented gap) this library sent
+    // url-encoded data instead. `post()`/`put()`/`patch()` with
+    // `data: new URLSearchParams(...)` still sends url-encoded, unaffected.
     it('should make POST request with form data', async () => {
       const formData = { username: 'john', password: 'secret' };
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('POST');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
 
         let body = '';
         req.on('data', chunk => (body += chunk));
         req.on('end', () => {
-          expect(body).toBe('username=john&password=secret');
+          expect(body).toContain('name="username"');
+          expect(body).toContain('john');
+          expect(body).toContain('name="password"');
+          expect(body).toContain('secret');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true }));
         });
@@ -197,14 +203,15 @@ describe('HttpService Convenience Methods', () => {
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PUT');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
 
         let body = '';
         req.on('data', chunk => (body += chunk));
         req.on('end', () => {
-          expect(body).toBe('id=123&name=updated%20name');
+          expect(body).toContain('name="id"');
+          expect(body).toContain('123');
+          expect(body).toContain('name="name"');
+          expect(body).toContain('updated name');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ updated: true }));
         });
@@ -221,9 +228,7 @@ describe('HttpService Convenience Methods', () => {
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PATCH');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ patched: true }));
       });

@@ -242,6 +242,117 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
     },
     normalize: (o: any) => o.result,
   },
+  {
+    name: 'axiosRef(config) - the instance is callable, like axios(config)',
+    run: (s: any, ctx: Ctx) =>
+      s
+        .axiosRef({ url: `${ctx.base}/echo`, method: 'get' })
+        .then((r: any) => ({
+          status: r.status,
+          method: r.data.method,
+          url: r.data.url,
+        })),
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'axiosRef(url, config) - callable with the (url, config) shape',
+    run: (s: any, ctx: Ctx) =>
+      s
+        .axiosRef(`${ctx.base}/echo`, { method: 'get' })
+        .then((r: any) => ({
+          status: r.status,
+          method: r.data.method,
+          url: r.data.url,
+        })),
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'axiosRef.getUri: baseURL + params, without sending the request',
+    run: (s: any, ctx: Ctx) =>
+      s.axiosRef.getUri({
+        url: '/echo',
+        baseURL: ctx.base,
+        params: { a: 1, b: 'x y' },
+      }),
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'axiosRef.postForm sends a multipart form, like axios',
+    run: (s: any, ctx: Ctx) =>
+      s
+        .axiosRef.postForm(`${ctx.base}/echo`, { a: '1', b: '2' })
+        .then((r: any) => ({
+          status: r.status,
+          method: r.data.method,
+          contentType: String(r.data.headers['content-type']).split(';')[0],
+        })),
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'axiosRef.create() inherits defaults and can override them',
+    run: (s: any, ctx: Ctx) => {
+      s.axiosRef.defaults.baseURL = ctx.base;
+      s.axiosRef.defaults.headers.common['X-Parent'] = 'p';
+      const child = s.axiosRef.create({
+        headers: { 'X-Child': 'c' },
+        baseURL: ctx.other,
+      });
+      // The child shares the parent's transport but has independent
+      // defaults/interceptors: it keeps the inherited X-Parent header, adds
+      // its own X-Child header, and overrides baseURL - none of which
+      // affect the parent.
+      return Promise.all([
+        child.get('/echo'),
+        s.axiosRef.get(`${ctx.base}/echo`),
+      ]).then(([childRes, parentRes]: any[]) => ({
+        childUrl: childRes.data.url,
+        childHeaders: {
+          xParent: childRes.data.headers['x-parent'],
+          xChild: childRes.data.headers['x-child'],
+        },
+        parentHasChildHeader: 'x-child' in parentRes.data.headers,
+      }));
+    },
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'runtime axiosRef.defaults.validateStatus is honoured on a plain request',
+    run: (s: any, ctx: Ctx) => {
+      s.axiosRef.defaults.validateStatus = (status: number) => status < 500;
+      return firstValueFrom(s.get(`${ctx.base}/raw?status=404`)).then(
+        (r: any) => r.status,
+      );
+    },
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'runtime axiosRef.defaults.params is merged into a plain request, with request params winning',
+    run: (s: any, ctx: Ctx) => {
+      s.axiosRef.defaults.params = { a: 'default', shared: 'default' };
+      return firstValueFrom(
+        s.get(`${ctx.base}/echo`, { params: { shared: 'request' } }),
+      ).then((r: any) => r.data.url);
+    },
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'runtime axiosRef.defaults.responseType is honoured on a plain request',
+    run: (s: any, ctx: Ctx) => {
+      s.axiosRef.defaults.responseType = 'arraybuffer';
+      return firstValueFrom(s.get(`${ctx.base}/echo`)).then(
+        (r: any) => r.data.constructor.name,
+      );
+    },
+    normalize: (o: any) => o.result,
+  },
+  {
+    name: 'header casing in response.config.headers.toJSON() matches what was set',
+    run: (s: any, ctx: Ctx) =>
+      firstValueFrom(
+        s.get(`${ctx.base}/echo`, { headers: { 'X-Custom-Case': 'v' } }),
+      ).then((r: any) => Object.keys(r.config.headers.toJSON())),
+    normalize: (o: any) => o.result.includes('X-Custom-Case'),
+  },
 ]);
 
 differential(

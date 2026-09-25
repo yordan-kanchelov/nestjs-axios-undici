@@ -222,13 +222,39 @@ export function toUrlEncodedForm(data: any): string {
 }
 
 /**
- * Shared `postForm`/`putForm`/`patchForm` config-building: a `FormData`-like
- * body (the global `FormData`, or the `form-data` package) is sent as
- * multipart as-is; anything else is url-encoded, with the matching
- * `Content-Type` set (unless already present). Used by both
- * `HttpService.postForm`/`putForm`/`patchForm` and `axiosRef.postForm`/
- * `putForm`/`patchForm` (`axios-ref.factory.ts`), so both build the exact
- * same request.
+ * A plain object/array turned into a global `FormData`, one `append()` per
+ * flattened `[key, value]` pair (same flattening `params`/url-encoded
+ * bodies use - nested objects/arrays as `a[b]=1`/`a[]=1`). Lets
+ * `buildFormRequestConfig` hand the *existing* global-`FormData` body path
+ * (`serializeRequestData`'s `isGlobalFormData` branch, `globalFormDataToStream`)
+ * do the actual multipart encoding (boundary, `Content-Type`) - exactly as
+ * it already does for a `FormData` instance a caller builds by hand.
+ */
+function toGlobalFormData(data: any): FormData {
+  const form = new FormData();
+  if (data != null) {
+    for (const [key, value] of flattenParams(data, {})) {
+      form.append(key, value);
+    }
+  }
+  return form;
+}
+
+/**
+ * Shared `postForm`/`putForm`/`patchForm` config-building, matching axios'
+ * own `generateHTTPMethod(isForm=true)`: a `FormData`-like body (the global
+ * `FormData`, or the `form-data` package) is sent as multipart as-is.
+ * Anything else (a plain object/array) is *also* sent as multipart, like
+ * axios (`Content-Type: multipart/form-data`, the object converted with
+ * `toGlobalFormData` above) - even when the caller's own `config.headers`
+ * names a different `Content-Type` (confirmed against real axios: an
+ * explicit `Content-Type: application/x-www-form-urlencoded` passed to
+ * `postForm` is still sent as multipart - the method's own default headers
+ * win). A caller who actually wants url-encoded form data uses `post()`
+ * with `data: new URLSearchParams(...)` instead, not `postForm()`. Used by
+ * both `HttpService.postForm`/`putForm`/`patchForm` and
+ * `axiosRef.postForm`/`putForm`/`patchForm` (`axios-ref.factory.ts`), so
+ * both build the exact same request.
  */
 export function buildFormRequestConfig<D = any>(
   method: 'POST' | 'PUT' | 'PATCH',
@@ -236,21 +262,22 @@ export function buildFormRequestConfig<D = any>(
   data: D | undefined,
   config: AxiosLikeRequestConfig<D> | undefined,
 ): AxiosLikeRequestConfig<D> {
-  const isMultipart =
+  const isFormDataLike =
     (data as any)?.[Symbol.toStringTag] === 'FormData' ||
-    typeof (data as any)?.getHeaders === 'function';
-  if (isMultipart) {
+    typeof (data as any)?.getHeaders === 'function' ||
+    isGlobalFormData(data);
+  if (isFormDataLike) {
     return { ...config, url: url as any, method, data };
   }
+
+  // Multipart by default, like axios' postForm - `data` becomes a real
+  // FormData, and the existing global-FormData body path sets the
+  // `Content-Type`/boundary itself (no header set here).
   return {
     ...config,
     url: url as any,
     method,
-    data: toUrlEncodedForm(data) as any,
-    headers: mergeHeaders(
-      { 'Content-Type': FORM_URLENCODED },
-      config?.headers,
-    ),
+    data: toGlobalFormData(data) as any,
   };
 }
 
