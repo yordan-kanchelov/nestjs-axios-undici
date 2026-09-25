@@ -124,7 +124,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
 
-- [~] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase. (`claude/fix-response-decoding`, PR open)
+- [x] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase. (PR #14, merged; also rejects on corrupt compressed bodies)
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
 - [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
@@ -205,3 +205,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #13 (E, `claude/perf-check`) merged: CPU-per-request regression check, 5 scenarios, pooled re-measure, 1.5x threshold for interceptors. Noise and sensitivity measured, see item E above.
 - 2026-09-25: Owner decisions recorded: withCredentials becomes a no-op with an explicit cookieJar; redirects follow axios (21 by default); trim the API where nothing is lost; benchmarks cover Express and Fastify.
 - 2026-09-25: `claude/fix-response-decoding` (phase 2 fix(response)) open: `+json` content types, JSON-looking text/no-content-type/octet-stream/javascript/x-www-form-urlencoded/svg decode like axios, gzip/br/deflate decompression honouring `decompress`, `blob` as a string, `statusText` from the real reason phrase. Fixes all 19 tracked `knownDifference` cases in `response.diff.spec.ts`.
+- 2026-09-25: PR #14 merged: response decoding matches axios (19 known differences fixed, 58 left; corrupt gzip now rejects). The abort-on-unsubscribe worker is running.
