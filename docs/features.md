@@ -21,7 +21,7 @@ npm install nestjs-axios-undici undici
 | Axios configuration auto-mapping in `register()` and `registerAsync()` | ❌ | ✅ |
 | `AxiosHeaders` class | ❌ | ✅ |
 | Typed module (`TypedHttpModule`) | ❌ | ✅ |
-| Tested on Node.js 20, 22, 24 and 26 | - | ✅ |
+| Tested on Node.js 22, 24 and 26 | - | ✅ |
 
 See the [benchmarks](/docs/benchmarks.md) for how it compares to `@nestjs/axios`.
 

@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    # Documentation-only changes never need a release or a test run
+    paths-ignore:
+      - 'docs/**'
+      - 'docsify/**'
+      - 'index.html'
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -16,6 +21,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,8 +44,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The one test run on main (Coverage and Example Tests run on pull requests)
       - name: Lint and test
-        run: npm run lint && npm run test:unit
+        run: npm run lint && npm run test:unit -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       # Pending changesets -> open/update the "chore: version packages" PR.
       # No pending changesets and an unpublished version -> publish to npm
@@ -65,3 +78,24 @@ jobs:
         run: |
           echo "## Published" >> "$GITHUB_STEP_SUMMARY"
           echo '${{ steps.changesets.outputs.publishedPackages }}' >> "$GITHUB_STEP_SUMMARY"
+
+  # After a version is published: benchmark it once, then redeploy the docs
+  # site with the new results (commits made with GITHUB_TOKEN don't trigger
+  # push workflows, so these are called explicitly).
+  benchmarks:
+    name: Benchmark the release
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/benchmarks.yml
+
+  docs:
+    name: Deploy docs
+    needs: [release, benchmarks]
+    if: ${{ !cancelled() && needs.release.outputs.published == 'true' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

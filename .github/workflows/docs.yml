@@ -9,12 +9,9 @@ on:
       - 'index.html'
       - 'README.md'
       - '.github/workflows/docs.yml'
-  # Results committed by the Benchmarks workflow don't trigger push workflows,
-  # so redeploy after it finishes.
-  workflow_run:
-    workflows: [Benchmarks]
-    types: [completed]
-    branches: [main]
+  # Called by the Release workflow after a release's benchmark results are
+  # committed (commits made with GITHUB_TOKEN don't trigger push workflows).
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -22,14 +19,13 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

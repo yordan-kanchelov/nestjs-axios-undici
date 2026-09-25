@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to test performance across Node.js 20, 22, 24, and 26 with health checks
+# Script to test performance across Node.js 22, 24, and 26 with health checks
 
 echo "======================================"
 echo "NestJS Performance Test - All Node Versions"
@@ -53,11 +53,10 @@ check_service_health() {
 }
 
 # Node.js versions under test and their host port base (ports base+1 .. base+7)
-NODE_VERSIONS=(20 22 24 26)
+NODE_VERSIONS=(22 24 26)
 
 port_base_for() {
     case "$1" in
-        20) echo 3000 ;;
         22) echo 3010 ;;
         24) echo 3020 ;;
         26) echo 3030 ;;
@@ -66,11 +65,7 @@ port_base_for() {
 }
 
 compose_file_for() {
-    if [ "$1" = "20" ]; then
-        echo "docker-compose.yml"
-    else
-        echo "docker-compose-node$1.yml"
-    fi
+    echo "docker-compose-node$1.yml"
 }
 
 # Function to check all services for a Node version
