@@ -45,5 +45,4 @@ HttpModule.register(refModuleOptions);
 
 // ...and HttpModuleAsyncOptions by registerAsync().
 declare const refModuleAsyncOptions: RefHttpModuleAsyncOptions;
-// @ts-expect-error -- our HttpModuleAsyncOptions/HttpModuleOptions aren't structurally identical to @nestjs/axios'; tracked in plan.md phase 2 "types: axios interop" (typed HttpModuleOptions)
 HttpModule.registerAsync(refModuleAsyncOptions);

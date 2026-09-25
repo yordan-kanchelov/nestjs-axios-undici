@@ -22,7 +22,7 @@ describe('axios errors', () => {
       status: 404,
       statusText: 'Not Found',
       headers: {},
-      config: {},
+      config: { headers: {} },
     };
     const error = createStatusError(response);
     expect(error).toBeInstanceOf(AxiosError);
@@ -87,12 +87,67 @@ describe('axios errors', () => {
   });
 
   it('toJSON returns a serialisable snapshot', () => {
-    const error = new AxiosError('boom', 'ERR_X', { url: '/x', method: 'GET' });
+    const error = new AxiosError('boom', 'ERR_X', {
+      url: '/x',
+      method: 'GET',
+      headers: {},
+    });
     expect(error.toJSON()).toMatchObject({
       message: 'boom',
       name: 'AxiosError',
       code: 'ERR_X',
       config: { url: '/x' },
     });
+  });
+});
+
+// plan.md phase 2 "types: axios interop": optional `axios` peer, linked
+// lazily at module load (`linkOptionalAxiosPeer` in ../axios-error.ts).
+describe('optional axios peer', () => {
+  it('makes our errors instanceof axios.AxiosError when axios is installed', () => {
+    // `axios` is a devDependency here, so it's installed and
+    // `linkOptionalAxiosPeer` (run once when ../axios-error.ts first loaded)
+    // already re-pointed AxiosError's prototype onto axios' own.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- exercising the same lazy load the module itself does
+    const axios = require('axios');
+
+    const error = new AxiosError('boom', 'ERR_X');
+    expect(error).toBeInstanceOf(axios.AxiosError);
+
+    // CanceledError extends AxiosError, so it's instanceof axios.AxiosError
+    // too, transitively - see the doc comment on linkOptionalAxiosPeer for
+    // why instanceof axios.CanceledError specifically does NOT hold.
+    const canceled = new CanceledError('stopped');
+    expect(canceled).toBeInstanceOf(axios.AxiosError);
+    // Our own errors, and isAxiosError()/isCancel() (duck-typed, not
+    // instanceof), still work exactly as before either way.
+    expect(canceled).toBeInstanceOf(CanceledError);
+    expect(canceled).toBeInstanceOf(AxiosError);
+    expect(isAxiosError(canceled)).toBe(true);
+    expect(isCancel(canceled)).toBe(true);
+  });
+
+  it('loads fine, with our own AxiosError/CanceledError unaffected, when axios is not installed', () => {
+    try {
+      jest.isolateModules(() => {
+        jest.doMock('axios', () => {
+          throw new Error("Cannot find module 'axios'");
+        });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- fresh module graph with axios' require mocked to fail
+        const isolated = require('../axios-error');
+        const error = new isolated.AxiosError('boom', 'ERR_X');
+        expect(error).toBeInstanceOf(isolated.AxiosError);
+        expect(isolated.isAxiosError(error)).toBe(true);
+        const canceled = new isolated.CanceledError();
+        expect(canceled).toBeInstanceOf(isolated.CanceledError);
+        expect(canceled).toBeInstanceOf(isolated.AxiosError);
+        expect(isolated.isCancel(canceled)).toBe(true);
+      });
+    } finally {
+      // See tests/transport-cookie-jar.e2e.spec.ts for why this is needed:
+      // `jest.doMock` registers into the shared mock registry, which
+      // `isolateModules` doesn't undo on its own.
+      jest.dontMock('axios');
+    }
   });
 });

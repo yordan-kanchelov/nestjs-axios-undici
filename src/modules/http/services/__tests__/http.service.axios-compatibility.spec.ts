@@ -220,7 +220,7 @@ describe('HttpService - Axios Compatibility', () => {
             maxRedirects: 10,
             validateStatus: status => status < 500,
             // These should trigger warnings
-            httpAgent: { keepAlive: true },
+            httpAgent: { keepAlive: true } as unknown as http.Agent,
             proxy: { host: 'proxy.example.com', port: 8080 },
           }),
         ],

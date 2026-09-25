@@ -8,8 +8,8 @@ import {
 import { buildLazyAxiosConfig } from './axios-request.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
-  AxiosLikeRequestConfig,
   AxiosLikeResponse,
+  InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 
 /**
@@ -29,7 +29,7 @@ const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
 class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
   // `config` is a plain own property, as in axios, so it survives
   // `{ ...response }`, `JSON.stringify` and `structuredClone`.
-  public config: AxiosLikeRequestConfig;
+  public config: InternalAxiosLikeRequestConfig;
   public request: any = RESPONSE_REQUEST_PLACEHOLDER;
 
   constructor(

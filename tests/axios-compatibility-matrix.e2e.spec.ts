@@ -612,11 +612,15 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(isCancel(canceled)).toBe(true);
     });
 
-    it('documented difference: not an instance of the axios package AxiosError class', async () => {
+    it('is an instance of the axios package AxiosError class when axios is installed (optional peer)', async () => {
+      // Fixed by plan.md phase 2 "types: axios interop" - `axios` is now an
+      // optional peer, and this package links its own AxiosError's
+      // prototype onto axios' own AxiosError (lazily, at module load) when
+      // axios is present, so `instanceof axios.AxiosError` holds too.
       const error = await errorOf(
         firstValueFrom(undiciService.get(`${base}/status?code=400`)),
       );
-      expect(error instanceof axios.AxiosError).toBe(false);
+      expect(error instanceof axios.AxiosError).toBe(true);
       expect(axios.isAxiosError(error)).toBe(true);
     });
   });

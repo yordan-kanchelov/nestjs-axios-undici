@@ -1,13 +1,7 @@
-import type { Observable } from 'rxjs';
 import type {
-  HttpInterceptor,
-  HttpInterceptorFunction,
-} from './http-interceptor.interface';
-import type {
-  AxiosCompatibleRequestConfig,
-  AxiosCompatibleRequestOptions,
   AxiosLikeRequestConfig,
   AxiosLikeResponse,
+  InternalAxiosLikeRequestConfig,
 } from './axios-compatible.interface';
 import type { AxiosHeaderValue } from './axios-headers';
 
@@ -18,7 +12,7 @@ import type { AxiosHeaderValue } from './axios-headers';
  */
 export interface AxiosInterceptorOptions {
   synchronous?: boolean;
-  runWhen?: (config: AxiosLikeRequestConfig) => boolean;
+  runWhen?: (config: InternalAxiosLikeRequestConfig) => boolean;
 }
 
 /**
@@ -33,8 +27,8 @@ export interface AxiosInterceptorManager<T> {
    * @returns Interceptor ID for later ejection
    */
   use(
-    onFulfilled?: (value: T) => T | Promise<T>,
-    onRejected?: (error: any) => any,
+    onFulfilled?: ((value: T) => T | Promise<T>) | null,
+    onRejected?: ((error: any) => any) | null,
     options?: AxiosInterceptorOptions,
   ): number;
 
@@ -78,47 +72,51 @@ export interface AxiosRefDefaults {
  * Axios-compatible reference, mirroring the parts of the `AxiosInstance`
  * exposed by `@nestjs/axios`' `httpService.axiosRef` that are commonly used:
  * interceptors, defaults and the promise-based request methods.
+ *
+ * Not a full `AxiosInstance` yet (not callable, missing `getUri`/`create`/
+ * `*Form`/`query`) - plan.md phase 2 "feat(axiosRef): make it a real axios
+ * instance".
  */
 export interface AxiosRef {
   interceptors: {
-    request: AxiosInterceptorManager<AxiosLikeRequestConfig>;
+    request: AxiosInterceptorManager<InternalAxiosLikeRequestConfig>;
     response: AxiosInterceptorManager<AxiosLikeResponse>;
   };
   defaults: AxiosRefDefaults;
-  request<T = any>(
-    config: AxiosCompatibleRequestConfig,
-  ): Promise<AxiosLikeResponse<T>>;
-  get<T = any>(
+  request<T = any, D = any>(
+    config: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  get<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  delete<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  delete<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  head<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  head<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  options<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  options<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  post<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  post<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  put<T = any>(
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  put<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
-  patch<T = any>(
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
+  patch<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Promise<AxiosLikeResponse<T>>;
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
 }
 
 /**

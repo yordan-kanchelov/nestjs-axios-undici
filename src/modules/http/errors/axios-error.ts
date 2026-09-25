@@ -1,7 +1,7 @@
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
-  AxiosLikeRequestConfig,
   AxiosLikeResponse,
+  InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 import { buildLazyAxiosConfig } from '../adapters/axios-request.adapter';
 
@@ -41,12 +41,12 @@ export class AxiosError<T = any> extends Error {
   public override cause?: unknown;
 
   // A plain own property, as in axios, so it survives spreading and cloning.
-  public config?: AxiosLikeRequestConfig;
+  public config?: InternalAxiosLikeRequestConfig;
 
   constructor(
     message?: string,
     code?: string,
-    config?: AxiosLikeRequestConfig,
+    config?: InternalAxiosLikeRequestConfig,
     request?: any,
     response?: AxiosLikeResponse<T>,
   ) {
@@ -76,7 +76,7 @@ export class AxiosError<T = any> extends Error {
   static from<T = any>(
     error: any,
     code?: string,
-    config?: AxiosLikeRequestConfig,
+    config?: InternalAxiosLikeRequestConfig,
     request?: any,
     response?: AxiosLikeResponse<T>,
   ): AxiosError<T> {
@@ -121,7 +121,7 @@ export class CanceledError<T = any> extends AxiosError<T> {
 
   constructor(
     message?: string | null,
-    config?: AxiosLikeRequestConfig,
+    config?: InternalAxiosLikeRequestConfig,
     request?: any,
   ) {
     super(
@@ -133,6 +133,52 @@ export class CanceledError<T = any> extends AxiosError<T> {
     this.name = 'CanceledError';
   }
 }
+
+/**
+ * When the optional `axios` peer is installed, re-points `AxiosError`'s
+ * prototype chain onto axios' own `AxiosError` class, so
+ * `error instanceof axios.AxiosError` holds for errors this library throws
+ * too - without importing axios' types or values anywhere else (`axios`
+ * stays a purely optional peer; this package works fully without it
+ * installed).
+ *
+ * `require('axios')` runs lazily, inside this function, called exactly once
+ * below at module load - never as a top-level `import`/`require`, which
+ * would throw for every consumer without `axios` installed. A missing or
+ * broken `axios` package is swallowed: our own classes are simply left as
+ * they are (`instanceof AxiosError` (ours) and `isAxiosError()`/`isCancel()`
+ * keep working regardless either way).
+ *
+ * `CanceledError extends AxiosError` (this package's own hierarchy, set up
+ * by `class CanceledError extends AxiosError` below), so re-pointing only
+ * `AxiosError.prototype` already makes `canceledError instanceof
+ * axios.AxiosError` true too, transitively, through the existing chain
+ * (`CanceledError.prototype` -> `AxiosError.prototype` -> now
+ * `axios.AxiosError.prototype`). Deliberately *not* also re-pointing
+ * `CanceledError.prototype` straight at `axios.CanceledError.prototype`:
+ * a prototype chain is linear, so doing that would replace, not extend,
+ * `CanceledError.prototype`'s link to `AxiosError.prototype` (ours) -
+ * silently dropping this package's own `AxiosError.prototype` methods
+ * (`_setLazyConfig`, `toJSON`) for every `CanceledError` instance. The
+ * trade-off: `error instanceof axios.CanceledError` (the narrower check)
+ * does not hold, only `instanceof axios.AxiosError` (the one axios' own
+ * docs recommend, and what `error.isAxiosError`/`isAxiosError()` already
+ * duck-type) - use `isCancel()` (from either package; duck-typed, not
+ * `instanceof`) to detect cancellation specifically.
+ */
+function linkOptionalAxiosPeer(): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy load of an optional peer, see the doc comment above
+    const axios = require('axios');
+    const theirAxiosError = axios?.AxiosError;
+    if (typeof theirAxiosError === 'function' && theirAxiosError.prototype) {
+      Object.setPrototypeOf(AxiosError.prototype, theirAxiosError.prototype);
+    }
+  } catch {
+    // `axios` isn't installed (or failed to load) - nothing to link.
+  }
+}
+linkOptionalAxiosPeer();
 
 /**
  * Same contract as `axios.isAxiosError()`.
