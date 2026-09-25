@@ -1,0 +1,69 @@
+# Sketch: compatibility + package checks (to merge into tests.yml). Paths assume the
+# prototypes are moved to scripts/consumer/ and tests/compat/ in the repo.
+name: Compatibility
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1' # weekly: catches new Nest/undici/axios releases inside the peer ranges
+permissions:
+  contents: read
+jobs:
+  package:
+    name: Package (publint, attw, declared deps)
+    runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - id: pack
+        run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
+      - run: node scripts/consumer/check-declared-deps.cjs .
+      - run: npx -y publint@0.3 ${{ steps.pack.outputs.tarball }} --strict
+      - run: npx -y @arethetypeswrong/cli@0.18 ${{ steps.pack.outputs.tarball }}
+      - uses: actions/upload-artifact@v4
+        with: { name: tarball, path: '*.tgz' }
+
+  jest:
+    name: Jest (Node ${{ matrix.node }}, Nest ${{ matrix.nest }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node: 22, nest: 11, overlay: '@nestjs/common@11 @nestjs/core@11 @nestjs/testing@11 @nestjs/platform-express@11 @nestjs/axios@4' }
+          - { node: 22, nest: 10, overlay: '@nestjs/common@10 @nestjs/core@10 @nestjs/testing@10 @nestjs/platform-express@10 @nestjs/axios@4' }
+          - { node: 24, nest: 12 } # lockfile (devDeps on the latest Nest)
+          - { node: 26, nest: 12 }
+    env:
+      # Jest's require(esm) for ESM-only Nest 12 needs Node >= 24.9 and this flag
+      NODE_OPTIONS: ${{ matrix.node != 22 && '--experimental-vm-modules' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node }}', cache: npm }
+      - run: npm ci
+      - if: matrix.overlay
+        run: npm i --no-save ${{ matrix.overlay }}
+      - run: npx jest --coverage=${{ matrix.node == 24 }}
+
+  consumer:
+    name: Consumer smoke (Node ${{ matrix.node }})
+    needs: package
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.17', 22, 24, 26] # 22.17 = lowest Node 22 where an ESM app loads Nest 12 + this CJS lib (22.12-22.16 fail)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node }}' }
+      - uses: actions/cache@v4
+        with: { path: ~/.npm, key: consumer-npm-${{ hashFiles('scripts/consumer/run-matrix.mjs') }} }
+      - uses: actions/download-artifact@v4
+        with: { name: tarball }
+      - run: node scripts/consumer/run-matrix.mjs --tarball "$(ls *.tgz)"
