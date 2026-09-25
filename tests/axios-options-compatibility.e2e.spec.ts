@@ -12,7 +12,7 @@ describe('Axios Options Compatibility - Fixed', () => {
   let serverPort: number;
 
   // Create a test server that handles all our test cases
-  beforeAll((done) => {
+  beforeAll(async () => {
     server = http.createServer((req, res) => {
       const url = req.url || '';
       
@@ -57,14 +57,18 @@ describe('Axios Options Compatibility - Fixed', () => {
       }
     });
 
-    server.listen(0, () => {
-      serverPort = (server.address() as any).port;
-      done();
+    await new Promise<void>(resolve => {
+      server.listen(0, () => {
+        serverPort = (server.address() as any).port;
+        resolve();
+      });
     });
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close(err => (err ? reject(err) : resolve()));
+    });
   });
 
   afterEach(async () => {

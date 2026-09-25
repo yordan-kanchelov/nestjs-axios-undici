@@ -20,7 +20,7 @@ jest.mock("@opentelemetry/api", () => ({
   },
 }));
 
-export type HttpConfig = {
+type HttpConfig = {
   timeout?: number;
   maxRedirects?: number;
   keepAlive?: boolean;
@@ -31,7 +31,7 @@ export type HttpConfig = {
 
 @Global()
 @Module({})
-export class HttpConfigModule implements OnModuleInit {
+class HttpConfigModule implements OnModuleInit {
   private static httpAgent: http.Agent;
   private static httpsAgent: https.Agent;
 

@@ -13,6 +13,7 @@ import { map, catchError, mergeMap } from 'rxjs/operators';
 import { of, throwError } from 'rxjs';
 import * as http from 'http';
 import { AddressInfo } from 'net';
+import axios from 'axios';
 import type {
   HttpInterceptor,
   HttpInterceptorHandler,
@@ -51,13 +52,9 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-axios-undici', () => {
 
   // Clean up axios interceptors after each test to prevent pollution
   afterEach(() => {
-    // Import axios to access the default instance used by @nestjs/axios
-    const axios = require('axios').default || require('axios');
-    // Clear all interceptors from the default axios instance
-    if (axios.interceptors) {
-      axios.interceptors.request.handlers.length = 0;
-      axios.interceptors.response.handlers.length = 0;
-    }
+    // Clear all interceptors from the default axios instance used by @nestjs/axios
+    axios.interceptors.request.clear();
+    axios.interceptors.response.clear();
   });
 
   describe('Request Interceptors', () => {
@@ -500,27 +497,22 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-axios-undici', () => {
 
       it('should handle errors consistently in interceptors', async () => {
         // Test Axios error handling
-        try {
-          await firstValueFrom(axiosService.get(`${serverUrl}/error`));
-          fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error.response.status).toBe(500);
-          expect(error.customError).toBe(true);
-          expect(error.handledBy).toBe('axios-interceptor');
-        }
+        await expect(
+          firstValueFrom(axiosService.get(`${serverUrl}/error`)),
+        ).rejects.toMatchObject({
+          response: { status: 500 },
+          customError: true,
+          handledBy: 'axios-interceptor',
+        });
 
-        // Test Undici Axios-compatible error handling
-        try {
-          await firstValueFrom(
-            undiciAxiosCompatService.get(`${serverUrl}/error`),
-          );
-          fail('Should have thrown an error');
-        } catch (error: any) {
-          // Check for error structure consistency
-          expect(error.response?.status).toBe(500);
-          expect(error.customError).toBe(true);
-          expect(error.handledBy).toBe('undici-interceptor');
-        }
+        // Test Undici Axios-compatible error handling (same error structure)
+        await expect(
+          firstValueFrom(undiciAxiosCompatService.get(`${serverUrl}/error`)),
+        ).rejects.toMatchObject({
+          response: { status: 500 },
+          customError: true,
+          handledBy: 'undici-interceptor',
+        });
       });
     });
   });

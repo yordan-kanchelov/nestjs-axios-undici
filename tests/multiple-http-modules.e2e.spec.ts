@@ -83,8 +83,9 @@ describe('Multiple HttpModule Imports Issue', () => {
     await module.close();
   });
 
-  it('should reproduce the UNDICI_INSTANCE_TOKEN error', async () => {
-    // Try to create a scenario that causes the error
+  it('should not throw the UNDICI_INSTANCE_TOKEN error when importing the HttpModule class directly', async () => {
+    // Regression: importing the bare HttpModule class (without register())
+    // used to fail to resolve UNDICI_INSTANCE_TOKEN
     @Module({
       imports: [HttpModule], // Import the module class directly
       providers: [{
@@ -95,21 +96,19 @@ describe('Multiple HttpModule Imports Issue', () => {
     })
     class BrokenModule {}
 
-    try {
-      const module = await Test.createTestingModule({
-        imports: [BrokenModule],
-      }).compile();
-      
-      await module.close();
-      console.log('No error - this pattern works');
-    } catch (error) {
-      console.log('Error reproduced:', error.message);
-      expect(error.message).toContain('UNDICI_INSTANCE_TOKEN');
-    }
+    const module = await Test.createTestingModule({
+      imports: [BrokenModule],
+    }).compile();
+
+    const brokenService = module.get('BROKEN_SERVICE');
+    expect(brokenService.httpService).toBeInstanceOf(HttpService);
+
+    await module.close();
   });
 
   it('should test HttpModule import without register()', async () => {
-    // This might be the issue - importing HttpModule without calling register()
+    // Importing HttpModule without calling register() and re-exporting it
+    // from a global module must still expose HttpService
     @Global()
     @Module({})
     class ConfigModule {
@@ -122,18 +121,13 @@ describe('Multiple HttpModule Imports Issue', () => {
       }
     }
 
-    try {
-      const module = await Test.createTestingModule({
-        imports: [ConfigModule.forRoot()],
-      }).compile();
-      
-      // Try to get HttpService
-      const httpService = module.get(HttpService);
-      console.log('HttpService retrieved:', !!httpService);
-      
-      await module.close();
-    } catch (error) {
-      console.log('Error with bare HttpModule import:', error.message);
-    }
+    const module = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot()],
+    }).compile();
+
+    const httpService = module.get(HttpService);
+    expect(httpService).toBeInstanceOf(HttpService);
+
+    await module.close();
   });
 });
