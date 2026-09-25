@@ -28,20 +28,127 @@ import type {
   HttpInterceptorRequest,
   AxiosCompatibleRequestConfig,
   AxiosCompatibleRequestOptions,
+  AxiosLikeRequestConfig,
   HttpRequestOptions,
   AxiosLikeResponse,
   AxiosRef,
 } from '../interfaces';
 import { createAxiosRef } from '../adapters/axios-ref.factory';
 import {
+  createInterceptorStore,
+  type AxiosInterceptorEntry,
+  type AxiosInterceptorStore,
+} from '../adapters/axios-interceptor.adapter';
+import {
+  buildAxiosConfig,
+  isAxiosRequestConfig,
   mergeHeaders,
   normalizeAxiosRequest,
+  serializeAxiosConfig,
   toUrlEncodedForm,
 } from '../adapters/axios-request.adapter';
 import { toAxiosLikeResponse } from '../adapters/axios-response.adapter';
 import { toAxiosError } from '../errors/axios-error';
 
 let fallbackAgent: UndiciAgent | undefined;
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    !!value && typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
+/**
+ * Chains one axiosRef interceptor entry onto `source`, matching a single
+ * `promise.then(onFulfilled, onRejected)` link in axios' own request/response
+ * interceptor chain: `onRejected` only sees a rejection of `source` itself,
+ * never one `onFulfilled` raises (that propagates to the *next* link, or
+ * uncaught), and an entry with neither handler is a no-op pass-through.
+ * Built on real Observables (not Promises) so unsubscribing the outer
+ * Observable still tears down (and aborts) an in-flight dispatch reached
+ * through one or more interceptors.
+ */
+function chainStep<T>(
+  source: Observable<T>,
+  onFulfilled?: (value: T) => T | Promise<T>,
+  onRejected?: (error: any) => any,
+): Observable<T> {
+  if (!onFulfilled && !onRejected) return source;
+  return new Observable<T>(subscriber => {
+    // Suppresses `source`'s own (synchronous) completion while an async
+    // `onFulfilled`/`onRejected` result is still pending, so a same-tick
+    // source (e.g. the first link, `of(config)`) can't complete this
+    // subscriber before the eventual `.then()` delivers its value.
+    let resolving = false;
+    const settle = (result: T | Promise<T>): void => {
+      if (isPromiseLike<T>(result)) {
+        resolving = true;
+        result.then(
+          value => {
+            subscriber.next(value);
+            subscriber.complete();
+          },
+          error => subscriber.error(error),
+        );
+      } else {
+        subscriber.next(result);
+        subscriber.complete();
+      }
+    };
+    const subscription = source.subscribe({
+      next: value => {
+        if (!onFulfilled) {
+          subscriber.next(value);
+          return;
+        }
+        try {
+          settle(onFulfilled(value));
+        } catch (error) {
+          subscriber.error(error);
+        }
+      },
+      error: error => {
+        if (!onRejected) {
+          subscriber.error(error);
+          return;
+        }
+        try {
+          settle(onRejected(error));
+        } catch (rejectedError) {
+          subscriber.error(rejectedError);
+        }
+      },
+      complete: () => {
+        if (!resolving) subscriber.complete();
+      },
+    });
+    return () => subscription.unsubscribe();
+  });
+}
+
+/**
+ * The interceptors that actually run for this request, in axios' own
+ * execution order: request interceptors last-registered-first (LIFO, axios'
+ * default `legacyInterceptorReqResOrdering`), response interceptors
+ * first-registered-first (FIFO). `runWhen` (request interceptors only, as in
+ * axios) is evaluated once here, against the config as built - before any
+ * interceptor in the chain has run - exactly like axios' own filtering pass.
+ */
+function activeAxiosInterceptors<T>(
+  entries: ReadonlyArray<AxiosInterceptorEntry<T> | null>,
+  isRequest: boolean,
+  config?: AxiosLikeRequestConfig,
+): AxiosInterceptorEntry<T>[] {
+  const active: AxiosInterceptorEntry<T>[] = [];
+  for (const entry of entries) {
+    if (!entry) continue;
+    if (isRequest && entry.runWhen && entry.runWhen(config) === false) {
+      continue;
+    }
+    active.push(entry);
+  }
+  return isRequest ? active.reverse() : active;
+}
 
 /**
  * The global dispatcher, when it comes from this copy of undici. Another copy
@@ -99,14 +206,23 @@ export class HttpService {
   // Perf item 2: `createInterceptorHandler` builds a linked list of one
   // handler object per interceptor; that chain never changes shape between
   // requests unless `this.interceptors` itself is replaced or grown, so it's
-  // built once and reused until `interceptorsVersion` says otherwise
-  // (bumped by `addInterceptor`/`setInterceptors`, which covers axiosRef's
-  // `use()` too - `eject()`/`clear()` don't touch `this.interceptors`, they
-  // just make the existing chain entry for that id a pass-through, so they
-  // need no invalidation).
+  // built once and reused until `interceptorsVersion` says otherwise (bumped
+  // by `addInterceptor`/`setInterceptors`, module-registered interceptors
+  // only - axiosRef's own request/response interceptors run through
+  // `runAxiosPipeline` instead, over `axiosRequestInterceptors`/
+  // `axiosResponseInterceptors` directly, so they need no such cache).
   private interceptorsVersion = 0;
   private cachedInterceptorHandler?: HttpInterceptorHandler;
   private cachedInterceptorHandlerVersion = -1;
+  // axiosRef's own request/response interceptors (registered through
+  // `axiosRef.interceptors.request/response.use()`). Unlike `this.interceptors`
+  // above, these run over the single axios-shaped config object built by
+  // `buildAxiosConfig`/`serializeAxiosConfig`, in axios' own order - see
+  // `runAxiosPipeline`.
+  private readonly axiosRequestInterceptors =
+    createInterceptorStore<AxiosLikeRequestConfig>();
+  private readonly axiosResponseInterceptors =
+    createInterceptorStore<AxiosLikeResponse>();
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -127,7 +243,8 @@ export class HttpService {
     // Initialize axios-compatible axiosRef (interceptors, defaults, promise methods)
     this._axiosRef = createAxiosRef(
       this,
-      interceptor => this.addInterceptor(interceptor),
+      this.axiosRequestInterceptors,
+      this.axiosResponseInterceptors,
       this.instanceOptions,
     );
 
@@ -202,8 +319,104 @@ export class HttpService {
     // matters for `get().pipe(retry())`: each attempt must build its own
     // headers/config rather than reusing the first attempt's.
     return defer(() => {
-      // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
-      const { url, options } = normalizeAxiosRequest(
+      if (!this.hasAxiosPipeline(urlOrConfig, requestOptions)) {
+        return this.dispatchFastPath<T>(urlOrConfig, requestOptions);
+      }
+      // axiosRef request/response interceptors (or a transformRequest/
+      // transformResponse) are in play: build the single axios-shaped config
+      // object up front and run it through the axios pipeline, instead of
+      // the undici-options fast path below.
+      const config = buildAxiosConfig(urlOrConfig, requestOptions, {
+        defaults: this._axiosRef.defaults,
+        instanceOptions: this.instanceOptions,
+      });
+      return this.runAxiosPipeline<T>(config);
+    });
+  }
+
+  /**
+   * True when this request needs the axiosRef pipeline (`runAxiosPipeline`):
+   * a live axiosRef request/response interceptor, or a `transformRequest`/
+   * `transformResponse` (module- or request-level). A plain request with
+   * none of these keeps the fast path below, which never builds a full axios
+   * config object.
+   */
+  private hasAxiosPipeline(
+    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
+    requestOptions?: HttpRequestOptions,
+  ): boolean {
+    if (
+      this.axiosRequestInterceptors.entries.some(Boolean) ||
+      this.axiosResponseInterceptors.entries.some(Boolean)
+    ) {
+      return true;
+    }
+    const moduleOpts = this.moduleOptions as any;
+    if (moduleOpts?.transformRequest || moduleOpts?.transformResponse) {
+      return true;
+    }
+    const configForm: any = isAxiosRequestConfig(urlOrConfig)
+      ? urlOrConfig
+      : undefined;
+    const opts: any = requestOptions;
+    return !!(
+      configForm?.transformRequest ||
+      configForm?.transformResponse ||
+      opts?.transformRequest ||
+      opts?.transformResponse
+    );
+  }
+
+  /**
+   * The axiosRef pipeline: run the axios-shaped config through the request
+   * interceptors (LIFO), dispatch it, then the response interceptors (FIFO) -
+   * see `chainStep`/`activeAxiosInterceptors`. Any module-registered generic
+   * interceptor (`this.interceptors`, e.g. size limits) still runs around the
+   * actual dispatch, via `executeInterceptorChain`.
+   */
+  private runAxiosPipeline<T = any>(
+    config: AxiosLikeRequestConfig,
+  ): Observable<AxiosLikeResponse<T>> {
+    const requestChain = activeAxiosInterceptors(
+      this.axiosRequestInterceptors.entries,
+      true,
+      config,
+    );
+    const responseChain = activeAxiosInterceptors(
+      this.axiosResponseInterceptors.entries,
+      false,
+    );
+
+    let config$: Observable<AxiosLikeRequestConfig> = of(config);
+    for (const entry of requestChain) {
+      config$ = chainStep(config$, entry.fulfilled, entry.rejected);
+    }
+
+    let response$: Observable<AxiosLikeResponse> = config$.pipe(
+      mergeMap(finalConfig =>
+        this.executeInterceptorChain(serializeAxiosConfig(finalConfig)),
+      ),
+    );
+    for (const entry of responseChain) {
+      response$ = chainStep(response$, entry.fulfilled, entry.rejected);
+    }
+    return response$ as Observable<AxiosLikeResponse<T>>;
+  }
+
+  /**
+   * The existing fast path (no axiosRef interceptors, no transforms): builds
+   * the undici dispatch options directly, without ever materialising a full
+   * axios config object. `response.config`/`error.config` are still correct
+   * when read - `dispatchFastPath` attaches the cheap fields
+   * `normalizeAxiosRequest` already computed so the config can be built
+   * lazily (see `attachLazyAxiosConfig`), on first access.
+   */
+  private dispatchFastPath<T = any>(
+    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
+    requestOptions?: HttpRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
+    // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
+    const { url, options, raw } = normalizeAxiosRequest(
         urlOrConfig,
         requestOptions,
         {
@@ -214,6 +427,7 @@ export class HttpService {
         url: string | URL | UrlObject;
         options: Omit<HttpRequestOptions, 'headers'> &
           Pick<Dispatcher.RequestOptions, 'headers'>;
+        raw: { url: any; baseURL?: string; params?: any; method: string };
       };
 
       // Handle timeout option for axios compatibility
@@ -267,10 +481,13 @@ export class HttpService {
         url: finalUrl,
         options: mergedOptions,
       };
+      // Cheap fields for a lazily-built `response.config`/`error.config`
+      // (see `attachLazyAxiosConfig`) - no AxiosHeaders wrap, no combined
+      // URL, just the references `normalizeAxiosRequest` already computed.
+      (interceptorRequest as any).raw = raw;
 
       // Create the interceptor chain (always includes axios adapter)
       return this.executeInterceptorChain(interceptorRequest);
-    });
   }
 
   /**
@@ -469,8 +686,13 @@ export class HttpService {
   }
 
   public get interceptorCount(): number {
-    // Include the axios response adapter which is always added
-    return this.interceptors.length + 1;
+    // Module-registered interceptors, plus live axiosRef request/response
+    // interceptors (which no longer live in `this.interceptors` - see
+    // `runAxiosPipeline`), plus the axios response adapter, always added.
+    const axiosCount =
+      this.axiosRequestInterceptors.entries.filter(Boolean).length +
+      this.axiosResponseInterceptors.entries.filter(Boolean).length;
+    return this.interceptors.length + axiosCount + 1;
   }
 
   /**

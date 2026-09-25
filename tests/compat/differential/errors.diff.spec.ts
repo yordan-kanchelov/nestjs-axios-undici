@@ -105,14 +105,12 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     run: (s, ctx) =>
       s.get(`${ctx.base}/raw?status=404&ct=application/json&body={"e":1}`),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: '500 error shape',
     run: (s, ctx) =>
       s.get(`${ctx.base}/raw?status=500&ct=text/plain&body=boom`),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'ECONNREFUSED',
@@ -147,7 +145,6 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     name: 'AbortSignal already aborted',
     run: (s, ctx) => s.get(`${ctx.base}/echo`, { signal: AbortSignal.abort() }),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'AbortSignal aborted mid-flight',

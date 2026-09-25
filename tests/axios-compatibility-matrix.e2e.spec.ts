@@ -561,7 +561,8 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         undiciService.get(`${base}/echo`, { headers: { 'X-A': '1' } }),
       );
       expect(response.config.url).toBe(`${base}/echo`);
-      expect(response.config.method).toBe('GET');
+      // `config.method` is always lower-case, matching axios.
+      expect(response.config.method).toBe('get');
       expect(response.config.headers).toMatchObject({ 'X-A': '1' });
     });
   });
@@ -716,7 +717,7 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(response.data).toBe('{"status":404}');
     });
 
-    it('documented difference: request interceptors run FIFO (axios: LIFO) and response interceptors LIFO (axios: FIFO)', async () => {
+    it('axiosRef interceptors run in axios order: request LIFO, response FIFO', async () => {
       const service = (await compile([UndiciHttpModule.register({})])).get(
         UndiciHttpService,
       );
@@ -734,7 +735,7 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         response => (order.push('res2'), response),
       );
       await firstValueFrom(service.get(`${base}/echo`));
-      expect(order).toEqual(['req1', 'req2', 'res2', 'res1']);
+      expect(order).toEqual(['req2', 'req1', 'res1', 'res2']);
     });
 
     it('unsubscribing aborts the in-flight request (fixed: previously ran to completion)', async () => {
@@ -859,7 +860,7 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(UndiciHttpModule.register({ global: true }).global).toBe(true);
     });
 
-    it('documented difference: transformRequest/transformResponse see serialized/parsed data (axios: raw data/raw string)', async () => {
+    it('transformRequest/transformResponse see raw data/raw string, like axios', async () => {
       const seen: Record<string, unknown[]> = { axios: [], undici: [] };
       const options = (key: string) => ({
         transformRequest: [
@@ -878,10 +879,12 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ).get(UndiciHttpService);
       await firstValueFrom(axiosModuleService.post(`${base}/echo`, { a: 1 }));
       await firstValueFrom(undiciModuleService.post(`${base}/echo`, { a: 1 }));
+      // transformRequest gets the raw, unserialised data (an object)...
       expect(seen.axios[0]).toEqual({ a: 1 });
-      expect(seen.undici[0]).toBe('{"a":1}');
+      expect(seen.undici[0]).toEqual({ a: 1 });
+      // ...and transformResponse gets the raw, unparsed body (a string).
       expect(typeof seen.axios[1]).toBe('string');
-      expect(typeof seen.undici[1]).toBe('object');
+      expect(typeof seen.undici[1]).toBe('string');
     });
 
     it('options(url, config) (not available in @nestjs/axios)', async () => {

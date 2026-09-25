@@ -3,12 +3,19 @@ import { createStatusError } from '../errors/axios-error';
 import {
   readBodyAsResponseType,
   readDefaultBody,
+  readText,
 } from './axios-response-type.adapter';
+import { attachLazyAxiosConfig } from './axios-request.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
-import type {
-  AxiosLikeResponse,
-  AxiosLikeRequestConfig,
-} from '../interfaces/axios-compatible.interface';
+import type { AxiosLikeResponse } from '../interfaces/axios-compatible.interface';
+
+/**
+ * Shared, frozen placeholder for `response.request`: axios sets it to the
+ * underlying `http.ClientRequest`; we don't have an equivalent undici object
+ * worth exposing, so callers get a cheap, always-truthy stand-in (matching
+ * axios on `!!response.request`) instead of `undefined`.
+ */
+const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
 
 /**
  * HTTP status text mapping
@@ -101,9 +108,26 @@ export async function toAxiosLikeResponse(
   const contentEncoding = Array.isArray(contentEncodingHeader)
     ? contentEncodingHeader[0]
     : contentEncodingHeader;
+  // A custom `transformResponse` (module- or request-level, only ever set
+  // when the axiosRef pipeline built this request - see `hasAxiosPipeline`)
+  // *replaces* default parsing, same as axios: it gets the raw decoded body
+  // (decompressed, not yet JSON-parsed), not the already-parsed value.
+  const transformResponse = request.axiosConfig?.transformResponse;
 
   try {
-    if (responseType && undiciResponse.body) {
+    if (transformResponse) {
+      const raw = undiciResponse.body
+        ? await readText(undiciResponse.body, { contentEncoding, decompress })
+        : '';
+      const transforms = Array.isArray(transformResponse)
+        ? transformResponse
+        : [transformResponse];
+      parsedData = transforms.reduce(
+        (value: any, fn: any) =>
+          fn.call(request.axiosConfig, value, undiciResponse.headers, undiciResponse.statusCode),
+        raw,
+      );
+    } else if (responseType && undiciResponse.body) {
       parsedData = await readBodyAsResponseType(
         undiciResponse.body,
         responseType,
@@ -139,16 +163,11 @@ export async function toAxiosLikeResponse(
     }
   }
 
-  // Create Axios-compatible request config from original request
-  const config: AxiosLikeRequestConfig = {
-    url: typeof request.url === 'string' ? request.url : request.url.toString(),
-    method: request.options.method || 'GET',
-    headers: request.options.headers as Record<string, string | string[]>,
-    timeout: request.options.headersTimeout || request.options.bodyTimeout,
-    validateStatus: request.options.validateStatus,
-  };
-
-  // Transform to Axios-compatible response
+  // Transform to Axios-compatible response. `config` is attached lazily
+  // (see `attachLazyAxiosConfig`): `request.axiosConfig` already holds the
+  // final, interceptor-mutated config when the axiosRef pipeline built this
+  // request, and is otherwise built - correctly shaped, but only if/when
+  // read - from the cheap fields `normalizeAxiosRequest` computed.
   const axiosLikeResponse: AxiosLikeResponse = {
     data: parsedData,
     status: undiciResponse.statusCode,
@@ -160,14 +179,16 @@ export async function toAxiosLikeResponse(
       STATUS_TEXT_MAP[undiciResponse.statusCode] ||
       'Unknown',
     headers: undiciResponse.headers as Record<string, string | string[]>,
-    config,
+    config: undefined as any,
+    request: RESPONSE_REQUEST_PLACEHOLDER,
   };
+  attachLazyAxiosConfig(axiosLikeResponse, request);
 
   // Axios throws errors for 4xx and 5xx status codes by default
   // Unless validateStatus says otherwise
   // Note: Axios also treats 3xx codes as errors by default
   const validateStatus =
-    config.validateStatus ||
+    (request.options as any)?.validateStatus ||
     ((status: number) => {
       // Default axios behavior: only 2xx are valid
       return status >= 200 && status < 300;
@@ -175,7 +196,7 @@ export async function toAxiosLikeResponse(
   const isValidStatus = validateStatus(undiciResponse.statusCode);
 
   if (!isValidStatus) {
-    throw createStatusError(axiosLikeResponse, config);
+    throw createStatusError(axiosLikeResponse, request);
   }
 
   return axiosLikeResponse;

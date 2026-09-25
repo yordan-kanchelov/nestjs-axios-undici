@@ -117,8 +117,6 @@ allow(
     'concat',
     'toString',
     'getSetCookie',
-    'getContentType',
-    'setContentType',
     'hasContentType',
     'getContentLength',
     'setContentLength',
@@ -133,12 +131,11 @@ allow(
     'setUserAgent',
     'hasUserAgent',
     'getAuthorization',
-    'setAuthorization',
     'hasAuthorization',
   ],
   {
     reason:
-      'our AxiosHeaders is a minimal stand-in: no format/shorthand helpers (concat, getSetCookie, get/set/hasContentType, ...)',
+      'our AxiosHeaders is a minimal stand-in: no format/shorthand helpers (concat, getSetCookie, get/set/hasContentType, ...); setContentType/setAuthorization/getContentType exist (needed for the axiosRef config pipeline)',
     tracked:
       'plan.md phase 2 "types: axios interop" (Full AxiosHeaders, with response.headers as AxiosHeaders)',
   },

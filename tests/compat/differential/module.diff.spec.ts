@@ -18,8 +18,6 @@ import {
 import { differential, Ctx } from './harness';
 
 const CONFIG = 'plan.md phase 2: fix(config): transport options';
-const REFACTOR =
-  'plan.md phase 2: refactor(axiosRef): one config object (interceptors/response.config/error.config)';
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
 const COOKIE_JAR =
   'plan.md phase 2: breaking: withCredentials becomes a no-op; add cookieJar';
@@ -152,7 +150,6 @@ differential('Differential: HttpModule.register() options', routes, [
     normalize: (o: any) => o.result?.data,
     // module-level transformResponse should replace default parsing and receive the raw
     // string; here the default JSON parse already ran, so it receives an object instead.
-    knownDifference: REFACTOR,
   },
   {
     name: 'transformResponse receives headers and status',
@@ -166,7 +163,6 @@ differential('Differential: HttpModule.register() options', routes, [
     },
     run: (s, ctx: Ctx) => s.get(`${ctx.base}/raw?ct=application/json&body={}`),
     normalize: (o: any) => o.result?.data,
-    knownDifference: REFACTOR,
   },
   {
     name: 'transformResponse chained after axios defaults',
@@ -195,7 +191,6 @@ differential('Differential: HttpModule.register() options', routes, [
       const r = o.requests[o.requests.length - 1];
       return r && { ct: r.headers['content-type'], body: r.body };
     },
-    knownDifference: REFACTOR,
   },
   {
     name: 'transformRequest per request',
@@ -206,7 +201,6 @@ differential('Differential: HttpModule.register() options', routes, [
         { transformRequest: [(d: any) => 'x=' + d.a] },
       ),
     normalize: (o: any) => o.requests[o.requests.length - 1]?.body,
-    knownDifference: REFACTOR,
   },
   {
     name: 'transformResponse per request',
@@ -215,7 +209,6 @@ differential('Differential: HttpModule.register() options', routes, [
         transformResponse: [(d: any) => 'raw:' + d],
       }),
     normalize: (o: any) => o.result?.data,
-    knownDifference: REFACTOR,
   },
   {
     name: 'httpAgent keepAlive:false still works (maps to pipelining 0)',

@@ -440,7 +440,9 @@ describe('Axios Full Compatibility E2E Tests', () => {
 
       expect(undiciRes.config).toBeDefined();
       expect(undiciRes.config.url).toBe(serverUrl);
-      expect(undiciRes.config.method).toBe('GET');
+      // `config.method` is always lower-case, matching axios.
+      expect(axiosRes.config.method).toBe('get');
+      expect(undiciRes.config.method).toBe('get');
     });
   });
 

@@ -258,8 +258,6 @@ differential('Differential: response decoding', routes, [
         hasRequest: !!o.result?.request,
       };
     },
-    knownDifference:
-      'plan.md phase 2: refactor(axiosRef): one config object (interceptors/response.config/error.config)',
   },
   // ---- decompression
   ...['/gzip', '/br', '/deflate'].map(path => ({

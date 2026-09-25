@@ -3,6 +3,7 @@ import type {
   AxiosLikeRequestConfig,
   AxiosLikeResponse,
 } from '../interfaces/axios-compatible.interface';
+import { attachLazyAxiosConfig } from '../adapters/axios-request.adapter';
 
 /**
  * Axios-compatible error class.
@@ -149,51 +150,44 @@ const TIMEOUT_CODES = new Set([
 ]);
 
 /**
- * Builds the axios-like `config` object attached to errors and responses.
- */
-export function buildAxiosErrorConfig(
-  request: HttpInterceptorRequest,
-): AxiosLikeRequestConfig {
-  const options: any = request.options || {};
-  return {
-    url: typeof request.url === 'string' ? request.url : String(request.url),
-    method: options.method || 'GET',
-    headers: options.headers,
-    timeout: options.headersTimeout || options.bodyTimeout,
-    validateStatus: options.validateStatus,
-  };
-}
-
-/**
  * Creates the error axios throws when `validateStatus` rejects a response.
+ * `config` is attached lazily (see `attachLazyAxiosConfig`): cheap when
+ * nobody reads `error.config`, correctly shaped (raw `url`/`baseURL`/
+ * `params`, lower-case `method`, `AxiosHeaders`) when they do.
  */
 export function createStatusError<T = any>(
   response: AxiosLikeResponse<T>,
-  request?: any,
+  request?: HttpInterceptorRequest,
 ): AxiosError<T> {
-  return new AxiosError<T>(
+  const error = new AxiosError<T>(
     `Request failed with status code ${response.status}`,
     response.status >= 400 && response.status < 500
       ? AxiosError.ERR_BAD_REQUEST
       : AxiosError.ERR_BAD_RESPONSE,
-    response.config,
-    request,
+    undefined,
+    response.request,
     response,
   );
+  if (request) attachLazyAxiosConfig(error, request);
+  else error.config = response.config;
+  return error;
 }
 
 /**
  * Converts an error raised by undici (network failure, timeout, abort, ...)
  * into an axios-compatible error with the same `code` axios would use.
- * Errors that are already axios errors are returned unchanged.
+ * Errors that are already axios errors are returned unchanged. `config` is
+ * attached lazily (see `attachLazyAxiosConfig`) on every branch, so a request
+ * that fails but is never inspected for its config (the common case in a
+ * hot path) never pays to build one.
  */
 export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
   if (isAxiosError(error)) {
     return error;
   }
 
-  const config = buildAxiosErrorConfig(request);
-  const signal: AbortSignal | undefined = (request.options as any)?.signal;
+  const options: any = request.options || {};
+  const signal: AbortSignal | undefined = options.signal;
 
   // Cancellation (AbortController / CancelToken)
   if (
@@ -203,7 +197,8 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
     (signal?.aborted && error === signal.reason)
   ) {
     const message = isCancel(error) ? error.message : undefined;
-    const canceled = new CanceledError(message, config);
+    const canceled = new CanceledError(message);
+    attachLazyAxiosConfig(canceled, request);
     Object.defineProperty(canceled, 'cause', {
       value: error,
       writable: true,
@@ -214,14 +209,12 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
   }
 
   if (error && TIMEOUT_CODES.has(error.code)) {
-    const timeoutError = AxiosError.from(
-      error,
-      AxiosError.ECONNABORTED,
-      config,
-    );
+    const timeoutError = AxiosError.from(error, AxiosError.ECONNABORTED);
+    attachLazyAxiosConfig(timeoutError, request);
     timeoutError.name = 'AxiosError';
-    timeoutError.message = config.timeout
-      ? `timeout of ${config.timeout}ms exceeded`
+    const timeout = options.headersTimeout || options.bodyTimeout;
+    timeoutError.message = timeout
+      ? `timeout of ${timeout}ms exceeded`
       : 'timeout exceeded';
     return timeoutError;
   }
@@ -231,7 +224,9 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
     // errors keep their code like in axios; undici socket errors map to the
     // closest axios code.
     const code = error.code === 'UND_ERR_SOCKET' ? 'ECONNRESET' : error.code;
-    return AxiosError.from(error, code, config);
+    const axiosError = AxiosError.from(error, code);
+    attachLazyAxiosConfig(axiosError, request);
+    return axiosError;
   }
 
   // Anything else (e.g. errors thrown by user interceptors) passes through

@@ -2,9 +2,12 @@ import { PassThrough, Readable } from 'stream';
 import type { UrlObject } from 'node:url';
 import type {
   AxiosCancelTokenLike,
+  AxiosLikeRequestConfig,
   AxiosParamsSerializer,
 } from '../interfaces/axios-compatible.interface';
 import type { AxiosRefDefaults } from '../interfaces/axios-ref.interface';
+import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
+import { AxiosHeaders } from '../interfaces/axios-headers';
 
 /**
  * Per-service context used when normalising a request.
@@ -673,11 +676,23 @@ export function isAxiosRequestConfig(
  * Module-level values are read from the raw module options, so they apply to
  * both `register()` and `registerAsync()`.
  */
+/**
+ * Cheap, mostly-by-reference fields captured while normalising a request,
+ * enough to lazily build a correctly-shaped `response.config` / `error.config`
+ * (see `buildLazyAxiosConfig`) without paying for it on every request.
+ */
+export interface NormalizedRequestSeed {
+  url: Url;
+  baseURL?: string;
+  params?: any;
+  method: string;
+}
+
 export function normalizeAxiosRequest(
   urlOrConfig: Url | ({ url?: Url } & Record<string, any>),
   requestOptions: Record<string, any> | undefined,
   context: AxiosRequestContext = {},
-): { url: Url; options: Record<string, any> } {
+): { url: Url; options: Record<string, any>; raw: NormalizedRequestSeed } {
   let url: Url;
   let input: Record<string, any>;
   if (isAxiosRequestConfig(urlOrConfig)) {
@@ -727,9 +742,14 @@ export function normalizeAxiosRequest(
       ? headerBase.hasWork
       : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
   if (!needsWork) {
-    return { url, options: input };
+    return {
+      url,
+      options: input,
+      raw: { url, baseURL: undefined, params: undefined, method: lowerMethod },
+    };
   }
 
+  const rawUrl = url;
   const {
     url: _url,
     baseURL: _baseURL,
@@ -814,5 +834,291 @@ export function normalizeAxiosRequest(
   const signal = resolveSignal(options.signal, cancelToken);
   if (signal) options.signal = signal;
 
-  return { url, options };
+  return {
+    url,
+    options,
+    raw: { url: rawUrl, baseURL, params: mergedParams, method: lowerMethod },
+  };
+}
+
+/**
+ * Lazily builds the axios-shaped config for `response.config` / `error.config`
+ * from a `HttpInterceptorRequest`, memoising the result on the request object
+ * so repeated access (e.g. both a response and a later replay) is free.
+ * Prefers the already-normalised `raw` seed a request built through
+ * `normalizeAxiosRequest` carries (cheap: no combined URL, no serialisation);
+ * falls back to reconstructing from `options` for requests that reach here
+ * some other way (e.g. the standalone `AxiosResponseAdapterInterceptor`).
+ */
+export function attachLazyAxiosConfig(
+  target: { config?: AxiosLikeRequestConfig },
+  request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
+): void {
+  if (request.axiosConfig !== undefined) {
+    target.config = request.axiosConfig;
+    return;
+  }
+  Object.defineProperty(target, 'config', {
+    configurable: true,
+    enumerable: true,
+    get(): AxiosLikeRequestConfig {
+      const value = buildLazyAxiosConfig(request);
+      Object.defineProperty(target, 'config', {
+        value,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+      return value;
+    },
+  });
+}
+
+function buildLazyAxiosConfig(
+  request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
+): AxiosLikeRequestConfig {
+  const options: any = request.options || {};
+  const raw = request.raw;
+  const url = raw ? raw.url : request.url;
+  const method = raw ? raw.method : String(options.method || 'GET').toLowerCase();
+  const headers = new AxiosHeaders(
+    options.headers && typeof options.headers === 'object'
+      ? (options.headers as Record<string, string | string[]>)
+      : undefined,
+  );
+  return {
+    url: typeof url === 'string' ? url : String(url),
+    baseURL: raw?.baseURL,
+    params: raw?.params,
+    method,
+    data: options.body,
+    headers,
+    timeout: options.headersTimeout || options.bodyTimeout,
+    maxRedirects: options.maxRedirections,
+    validateStatus: options.validateStatus,
+    responseType: options.responseType,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The axiosRef interceptor pipeline: build a raw (unserialised) axios config,
+// let request interceptors see/mutate it, then serialise it into undici
+// dispatch options. Used only when the service has axiosRef request/response
+// interceptors or a `transformRequest`/`transformResponse` in play - see
+// `HttpService.request()`, which otherwise keeps the fast path above.
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the single, mutable, axios-shaped config object that flows through
+ * axiosRef request interceptors, dispatch, and `response.config` /
+ * `error.config`: raw `data`, `params`, `baseURL` and `url` as given, a
+ * lower-case `method`, and `headers` as `AxiosHeaders`. Mirrors axios'
+ * `mergeConfig(this.defaults, config)` step (defaults + module + per-request
+ * merged, nothing serialised or combined yet).
+ */
+export function buildAxiosConfig(
+  urlOrConfig: Url | ({ url?: Url } & Record<string, any>),
+  requestOptions: Record<string, any> | undefined,
+  context: AxiosRequestContext = {},
+): AxiosLikeRequestConfig {
+  let url: Url;
+  let input: Record<string, any>;
+  if (isAxiosRequestConfig(urlOrConfig)) {
+    input = { ...urlOrConfig, ...requestOptions };
+    url = urlOrConfig.url ?? '';
+  } else {
+    input = requestOptions || {};
+    url = urlOrConfig as Url;
+  }
+
+  const defaults = context.defaults;
+  const instance: Record<string, any> = context.instanceOptions || {};
+  const method = String(input.method || 'GET').toUpperCase();
+  const lowerMethod = method.toLowerCase();
+
+  const defaultHeaders = defaults?.headers as Record<string, any> | undefined;
+  const instanceHeaders = instance.headers as Record<string, any> | undefined;
+  const headerBase = getHeaderBase(
+    defaults ?? instance,
+    defaultHeaders,
+    instanceHeaders,
+    lowerMethod as any,
+  );
+
+  const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
+  const auth = input.auth ?? instance.auth;
+  const defaultTimeout =
+    defaults?.timeout ??
+    (instance.headersTimeout === undefined ? instance.timeout : undefined);
+  const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
+
+  const {
+    url: _url,
+    baseURL: _baseURL,
+    params,
+    paramsSerializer,
+    data,
+    auth: _auth,
+    cancelToken,
+    maxRedirects: _maxRedirects,
+    headers: inputHeaders,
+    method: _method,
+    ...rest
+  } = input;
+
+  const mergedParams =
+    isPlainObject(instance.params) && isPlainObject(params)
+      ? { ...instance.params, ...params }
+      : (params ?? instance.params);
+
+  const headerPlain = headerBase
+    ? inputHeaders === undefined
+      ? { ...headerBase.base }
+      : mergeHeaders(headerBase.base, inputHeaders)
+    : mergeHeaders(
+        defaultHeaders?.common,
+        defaultHeaders?.[lowerMethod],
+        flatDefaultHeaders(defaultHeaders),
+        instanceHeaders?.common,
+        instanceHeaders?.[lowerMethod],
+        flatDefaultHeaders(instanceHeaders),
+        inputHeaders,
+      );
+
+  const headers = new AxiosHeaders(headerPlain);
+
+  if (auth) {
+    const token = Buffer.from(
+      `${auth.username || ''}:${auth.password || ''}`,
+    ).toString('base64');
+    headers.setAuthorization(`Basic ${token}`);
+  }
+
+  const config: AxiosLikeRequestConfig = {
+    ...rest,
+    url: typeof url === 'string' ? url : String(url),
+    baseURL,
+    params: mergedParams,
+    paramsSerializer: paramsSerializer ?? instance.paramsSerializer,
+    method: lowerMethod,
+    data,
+    headers,
+    auth,
+    cancelToken,
+    timeout: input.timeout ?? defaultTimeout,
+    maxRedirects,
+    validateStatus: input.validateStatus ?? instance.validateStatus,
+    responseType: input.responseType ?? instance.responseType,
+    decompress: input.decompress ?? instance.decompress,
+    maxContentLength: input.maxContentLength ?? instance.maxContentLength,
+    maxBodyLength: input.maxBodyLength ?? instance.maxBodyLength,
+    transformRequest: input.transformRequest ?? instance.transformRequest,
+    transformResponse: input.transformResponse ?? instance.transformResponse,
+  };
+
+  return config;
+}
+
+/**
+ * Serialises a (possibly interceptor-mutated) axios config into the
+ * undici-level `{ url, options }` pair `executeRequest` dispatches, mutating
+ * `config.data` to the final serialised body and `config.headers` to a
+ * canonical `AxiosHeaders` instance - exactly like axios' `dispatchRequest`
+ * mutating the same config object in place. The returned request carries the
+ * config back for `response.config` / `error.config`.
+ */
+export function serializeAxiosConfig(
+  config: AxiosLikeRequestConfig,
+): HttpInterceptorRequest {
+  const headers =
+    config.headers instanceof AxiosHeaders
+      ? config.headers
+      : new AxiosHeaders(config.headers as any);
+  config.headers = headers;
+
+  const lowerMethod = String(config.method || 'get').toLowerCase();
+  const upperMethod = lowerMethod.toUpperCase();
+  config.method = lowerMethod;
+
+  let dispatchUrl: Url = config.url ?? '';
+  if (
+    typeof dispatchUrl === 'string' &&
+    config.baseURL &&
+    !isAbsoluteURL(dispatchUrl)
+  ) {
+    dispatchUrl = combineURLs(config.baseURL, dispatchUrl);
+  }
+  if (config.params) {
+    dispatchUrl = buildURL(
+      dispatchUrl.toString(),
+      config.params,
+      config.paramsSerializer,
+    );
+  }
+
+  if (config.auth) {
+    const token = Buffer.from(
+      `${config.auth.username || ''}:${config.auth.password || ''}`,
+    ).toString('base64');
+    headers.setAuthorization(`Basic ${token}`);
+  }
+
+  let body: any;
+  if (config.transformRequest) {
+    const transforms = Array.isArray(config.transformRequest)
+      ? config.transformRequest
+      : [config.transformRequest];
+    body = transforms.reduce(
+      (value: any, fn: any) => fn.call(config, value, headers),
+      config.data,
+    );
+  } else {
+    body = serializeRequestData(config.data, headers as any, upperMethod);
+  }
+  config.data = body;
+
+  const options: Record<string, any> = {
+    method: upperMethod,
+    body,
+    headers: headers.toJSON(),
+  };
+
+  if (config.timeout !== undefined) {
+    options.headersTimeout = config.timeout;
+    options.bodyTimeout = config.timeout;
+  }
+  if (config.maxRedirects !== undefined) {
+    options.maxRedirections = config.maxRedirects;
+  }
+  if (config.validateStatus !== undefined) {
+    options.validateStatus = config.validateStatus;
+  }
+  if (config.responseType !== undefined) {
+    options.responseType = config.responseType;
+  }
+  if (config.decompress !== undefined) {
+    options.decompress = config.decompress;
+  }
+  if (config.maxContentLength !== undefined) {
+    options.maxContentLength = config.maxContentLength;
+  }
+  if (config.maxBodyLength !== undefined) {
+    options.maxBodyLength = config.maxBodyLength;
+  }
+  if ((config as any).dispatcher !== undefined) {
+    options.dispatcher = (config as any).dispatcher;
+  }
+
+  const signal = resolveSignal(
+    (config as any).signal,
+    config.cancelToken as any,
+  );
+  if (signal) options.signal = signal;
+
+  const interceptorRequest: HttpInterceptorRequest = {
+    url: dispatchUrl,
+    options,
+    axiosConfig: config,
+  };
+  return interceptorRequest;
 }

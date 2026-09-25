@@ -98,22 +98,26 @@ describe('HttpService - Axios Compatibility', () => {
     it('should support error handling in request interceptors', async () => {
       let errorHandled = false;
 
-      service.axiosRef.interceptors.request.use(
-        config => {
-          throw new Error('Request interceptor error');
-        },
-        error => {
-          errorHandled = true;
-          // Return a modified config to continue
-          const headers = new AxiosHeaders();
-          headers.set('X-Error-Handled', 'true');
-          return {
-            url: `${serverUrl}/test`,
-            method: 'GET',
-            headers,
-          };
-        },
-      );
+      // As in axios, an interceptor's `onRejected` only sees a rejection
+      // that reached it from an *earlier* link in the chain - never its own
+      // `onFulfilled` throwing. Request interceptors run last-registered-
+      // first (LIFO), so registering the recovering interceptor first (it
+      // runs last) and the throwing one second (it runs first) puts the
+      // throw ahead of the recovery in execution order.
+      service.axiosRef.interceptors.request.use(undefined, error => {
+        errorHandled = true;
+        // Return a modified config to continue
+        const headers = new AxiosHeaders();
+        headers.set('X-Error-Handled', 'true');
+        return {
+          url: `${serverUrl}/test`,
+          method: 'GET',
+          headers,
+        };
+      });
+      service.axiosRef.interceptors.request.use(() => {
+        throw new Error('Request interceptor error');
+      });
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
       expect(errorHandled).toBe(true);
@@ -196,10 +200,10 @@ describe('HttpService - Axios Compatibility', () => {
       });
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
-      // Note: In axios, response interceptors run in reverse order (LIFO)
-      // But in our implementation, they run in FIFO order
-      // This is a minor difference but doesn't affect functionality
-      expect(order).toEqual(['request1', 'request2', 'response2', 'response1']);
+      // Matches axios' own interceptor order: request interceptors run
+      // last-registered-first (LIFO), response interceptors run
+      // first-registered-first (FIFO).
+      expect(order).toEqual(['request2', 'request1', 'response1', 'response2']);
       expect(response.data.headers['x-first']).toBe('first');
       expect(response.data.headers['x-second']).toBe('second');
     });

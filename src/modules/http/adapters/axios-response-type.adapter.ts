@@ -187,7 +187,7 @@ async function readBuffer(
  * defers to undici's own `.text()` (which already strips a BOM), so the
  * common, uncompressed path costs nothing extra.
  */
-async function readText(
+export async function readText(
   body: Dispatcher.ResponseData['body'],
   options: BodyDecodeOptions,
 ): Promise<string> {
