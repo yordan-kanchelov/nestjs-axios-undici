@@ -62,7 +62,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 ### Phase 1: automation and compatibility foundation (first)
 
-- [~] **A. ci: package integrity checks and consumer smoke matrix** (`claude/package-checks`)
+- [~] **A. ci: package integrity checks and consumer smoke matrix** (`claude/package-checks`, PR #10, in review; engines set to >=22.17.0)
   - The packed tarball is checked for declared dependencies, and passed through publint and attw.
   - A consumer matrix installs it with only its peers: Nest 10/11/12 × undici 7/8, on Node 22.x-min/22/24/26, loaded as CJS and as ESM, and type-checked.
   - It runs weekly, so new upstream releases within the peer ranges get tested.
