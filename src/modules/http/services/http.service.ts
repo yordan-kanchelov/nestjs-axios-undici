@@ -96,6 +96,17 @@ export class HttpService {
     Dispatcher,
     Map<number, Dispatcher>
   >();
+  // Perf item 2: `createInterceptorHandler` builds a linked list of one
+  // handler object per interceptor; that chain never changes shape between
+  // requests unless `this.interceptors` itself is replaced or grown, so it's
+  // built once and reused until `interceptorsVersion` says otherwise
+  // (bumped by `addInterceptor`/`setInterceptors`, which covers axiosRef's
+  // `use()` too - `eject()`/`clear()` don't touch `this.interceptors`, they
+  // just make the existing chain entry for that id a pass-through, so they
+  // need no invalidation).
+  private interceptorsVersion = 0;
+  private cachedInterceptorHandler?: HttpInterceptorHandler;
+  private cachedInterceptorHandlerVersion = -1;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -312,17 +323,29 @@ export class HttpService {
         signal: abortSignal as any,
       };
 
-      request(interceptorRequest.url, options)
-        .then(res => toAxiosLikeResponse(interceptorRequest, res))
-        .then(res => {
+      // Perf item 4: one `.then(onFulfilled, onRejected)` registration
+      // instead of `.then().then().catch()` (3 registrations, each its own
+      // Promise and microtask hop). `request(...)` itself stays a bare,
+      // un-awaited call: if it throws *synchronously* (e.g. an invalid URL),
+      // that must keep propagating straight out of this subscriber function
+      // for rxjs' Observable constructor to catch and forward raw, exactly
+      // as `@nestjs/axios` leaves it un-wrapped for the same input - wrapping
+      // it in a try/catch here (or an `await`) would route it through
+      // `fail`/`toAxiosError` instead, an observable behaviour change.
+      const fail = (error: unknown): void => {
+        settled = true;
+        subscriber.error(toAxiosError(error, interceptorRequest));
+      };
+      request(interceptorRequest.url, options).then(async res => {
+        try {
+          const axiosRes = await toAxiosLikeResponse(interceptorRequest, res);
           settled = true;
-          subscriber.next(res);
+          subscriber.next(axiosRes);
           subscriber.complete();
-        })
-        .catch(error => {
-          settled = true;
-          subscriber.error(toAxiosError(error, interceptorRequest));
-        });
+        } catch (error) {
+          fail(error);
+        }
+      }, fail);
 
       return () => {
         if (!settled) abortSignal.abort();
@@ -377,8 +400,17 @@ export class HttpService {
     request: HttpInterceptorRequest,
   ): Observable<any> {
     // The axios response adapter always runs last, inside executeRequest()
-    const handler = this.createInterceptorHandler<T>(0, this.interceptors);
-    return handler.handle(request);
+    if (
+      !this.cachedInterceptorHandler ||
+      this.cachedInterceptorHandlerVersion !== this.interceptorsVersion
+    ) {
+      this.cachedInterceptorHandler = this.createInterceptorHandler<T>(
+        0,
+        this.interceptors,
+      );
+      this.cachedInterceptorHandlerVersion = this.interceptorsVersion;
+    }
+    return this.cachedInterceptorHandler.handle(request);
   }
 
   private createInterceptorHandler<T = any>(
@@ -426,12 +458,14 @@ export class HttpService {
     interceptor: HttpInterceptor | HttpInterceptorFunction,
   ): void {
     this.interceptors.push(interceptor);
+    this.interceptorsVersion++;
   }
 
   public setInterceptors(
     interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
   ): void {
     this.interceptors = interceptors;
+    this.interceptorsVersion++;
   }
 
   public get interceptorCount(): number {

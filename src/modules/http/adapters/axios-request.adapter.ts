@@ -501,6 +501,153 @@ function flatDefaultHeaders(
   return flat;
 }
 
+// ---------------------------------------------------------------------------
+// Per-method default/module header cache
+//
+// The default + module headers for a method (`defaults.headers` common /
+// method / flat, then module `headers` common / method / flat) rarely change,
+// so their 6-source merge is cached per `defaults` object and method. Rather
+// than tracking writes (which can't see every mutation path), each request
+// re-checks the sources: the same objects, holding the same keys in the same
+// order with identical primitive values, merge to the same result. Anything
+// else, including a source that isn't a plain object or a header value that
+// isn't a primitive, skips the cache and merges as before.
+// ---------------------------------------------------------------------------
+
+interface HeaderSourceSnapshot {
+  source: unknown;
+  keys: string[];
+  values: unknown[];
+}
+
+interface HeaderBaseCache {
+  sources: HeaderSourceSnapshot[];
+  /** Merged default + module headers for this method, excluding per-request headers. */
+  base: HeaderRecord;
+  hasWork: boolean;
+}
+
+const headerBaseCaches = new WeakMap<object, Map<string, HeaderBaseCache>>();
+
+function headerSources(
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
+  lowerMethod: string,
+): unknown[] {
+  return [
+    defaultHeaders,
+    defaultHeaders?.common,
+    defaultHeaders?.[lowerMethod],
+    instanceHeaders,
+    instanceHeaders?.common,
+    instanceHeaders?.[lowerMethod],
+  ];
+}
+
+/** `container` sources (`headers` itself) may hold method buckets by reference. */
+function snapshotHeaderSource(
+  source: unknown,
+  container: boolean,
+): HeaderSourceSnapshot | undefined {
+  if (source === undefined || source === null) {
+    return { source, keys: [], values: [] };
+  }
+  if (!isPlainObject(source)) return undefined;
+  const keys: string[] = [];
+  const values: unknown[] = [];
+  for (const key in source) {
+    const value = source[key];
+    if (
+      value !== null &&
+      (typeof value === 'object' || typeof value === 'function') &&
+      !(container && METHOD_HEADER_KEYS.has(key))
+    ) {
+      return undefined;
+    }
+    keys.push(key);
+    values.push(value);
+  }
+  return { source, keys, values };
+}
+
+function matchesHeaderSnapshot(
+  source: any,
+  snapshot: HeaderSourceSnapshot,
+): boolean {
+  if (source !== snapshot.source) return false;
+  if (source === undefined || source === null) return true;
+  const { keys, values } = snapshot;
+  let i = 0;
+  for (const key in source) {
+    if (i >= keys.length || keys[i] !== key || source[key] !== values[i]) {
+      return false;
+    }
+    i++;
+  }
+  return i === keys.length;
+}
+
+function getHeaderBase(
+  owner: object,
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
+  lowerMethod: string,
+): HeaderBaseCache | undefined {
+  const sources = headerSources(defaultHeaders, instanceHeaders, lowerMethod);
+
+  let byMethod = headerBaseCaches.get(owner);
+  const cached = byMethod?.get(lowerMethod);
+  if (cached) {
+    let valid = true;
+    for (let i = 0; i < sources.length && valid; i++) {
+      valid = matchesHeaderSnapshot(sources[i], cached.sources[i]);
+    }
+    if (valid) return cached;
+  }
+
+  const snapshots: HeaderSourceSnapshot[] = [];
+  for (let i = 0; i < sources.length; i++) {
+    const snapshot = snapshotHeaderSource(sources[i], i === 0 || i === 3);
+    if (!snapshot) {
+      byMethod?.delete(lowerMethod);
+      return undefined;
+    }
+    snapshots.push(snapshot);
+  }
+
+  const entry: HeaderBaseCache = {
+    sources: snapshots,
+    base: mergeHeaders(
+      defaultHeaders?.common,
+      defaultHeaders?.[lowerMethod],
+      flatDefaultHeaders(defaultHeaders),
+      instanceHeaders?.common,
+      instanceHeaders?.[lowerMethod],
+      flatDefaultHeaders(instanceHeaders),
+    ),
+    hasWork: headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod),
+  };
+  if (!byMethod) {
+    byMethod = new Map();
+    headerBaseCaches.set(owner, byMethod);
+  }
+  byMethod.set(lowerMethod, entry);
+  return entry;
+}
+
+function headersHaveWork(
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
+  lowerMethod: string,
+): boolean {
+  return (
+    hasOwnKeys(defaultHeaders?.common) ||
+    hasOwnKeys(defaultHeaders?.[lowerMethod]) ||
+    flatDefaultHeaders(defaultHeaders) !== undefined ||
+    hasOwnKeys(instanceHeaders)
+  );
+}
+
 /**
  * Detects the `request(config)` call form (`{ url, method, ... }`), as opposed
  * to `request(url, options)` where `url` may also be a URL or UrlObject.
@@ -543,18 +690,18 @@ export function normalizeAxiosRequest(
 
   const defaults = context.defaults;
   const instance = context.instanceOptions || {};
-  const defaultHeaders = defaults?.headers;
-  const instanceHeaders = instance.headers as Record<string, any> | undefined;
   const method = String(input.method || 'GET').toUpperCase();
   const lowerMethod = method.toLowerCase() as 'get';
-  const methodHeaders = defaultHeaders?.[lowerMethod];
-  const flatHeaders = flatDefaultHeaders(defaultHeaders);
-  // Module (`register()`/`registerAsync()`) headers may use the same
-  // axios-style `{ common: {...}, post: {...}, 'X-Flat': '...' }` shape as
-  // `axiosRef.defaults.headers` (item 11: they must be flattened per method,
-  // not sent as literal `common`/`post` headers).
-  const instanceMethodHeaders = instanceHeaders?.[lowerMethod];
-  const instanceFlatHeaders = flatDefaultHeaders(instanceHeaders);
+
+  const defaultHeaders = defaults?.headers as Record<string, any> | undefined;
+  const instanceHeaders = instance.headers as Record<string, any> | undefined;
+  // See "Per-method default/module header cache" above.
+  const headerBase = getHeaderBase(
+    defaults ?? instance,
+    defaultHeaders,
+    instanceHeaders,
+    lowerMethod,
+  );
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
   const auth = input.auth ?? instance.auth;
@@ -576,10 +723,9 @@ export function normalizeAxiosRequest(
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
-    hasOwnKeys(defaultHeaders?.common) ||
-    hasOwnKeys(methodHeaders) ||
-    flatHeaders !== undefined ||
-    hasOwnKeys(instanceHeaders);
+    (headerBase
+      ? headerBase.hasWork
+      : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
   if (!needsWork) {
     return { url, options: input };
   }
@@ -619,15 +765,21 @@ export function normalizeAxiosRequest(
   // Each axios-style source is itself `common` -> `<method>` -> flat, so a
   // header set for one method (or unqualified) is overridden by a more
   // specific one from the same source before the next source is applied.
-  const headers = mergeHeaders(
-    defaultHeaders?.common,
-    methodHeaders,
-    flatHeaders,
-    instanceHeaders?.common,
-    instanceMethodHeaders,
-    instanceFlatHeaders,
-    options.headers,
-  );
+  // `base` is already merged (one casing per header, string values), so
+  // with no per-request headers a shallow copy gives the same result.
+  const headers = headerBase
+    ? options.headers === undefined
+      ? { ...headerBase.base }
+      : mergeHeaders(headerBase.base, options.headers)
+    : mergeHeaders(
+        defaultHeaders?.common,
+        defaultHeaders?.[lowerMethod],
+        flatDefaultHeaders(defaultHeaders),
+        instanceHeaders?.common,
+        instanceHeaders?.[lowerMethod],
+        flatDefaultHeaders(instanceHeaders),
+        options.headers,
+      );
 
   // `auth` overrides any Authorization header, as in axios
   if (auth) {
