@@ -36,6 +36,12 @@ jobs:
             echo "No package changes; changeset not required"
             exit 0
           fi
+          # Changes to a version that isn't on npm yet ship with that pending release
+          PKG="$(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")"
+          if ! npm view "$PKG" version > /dev/null 2>&1; then
+            echo "$PKG is not published yet; changes ride along with its release, changeset not required"
+            exit 0
+          fi
           if ! npx changeset status --since=origin/${{ github.base_ref }}; then
             echo "::error::This PR changes the published package but has no changeset. Run 'npx changeset' (or 'npx changeset --empty' if it should not be released) and commit the file."
             exit 1
