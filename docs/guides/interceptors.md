@@ -30,7 +30,19 @@ export class ApiService implements OnModuleInit {
 }
 ```
 
-One difference from axios: request interceptors run in registration order and response interceptors in reverse registration order (axios does the opposite). See [Supported Axios Options](/docs/axios-supported-options.md#axiosref).
+Interceptors run in axios' own order: request interceptors last-registered-first, response interceptors first-registered-first. `runWhen` and `synchronous` (the 3rd argument to `use()`) are honoured too. The config object an interceptor sees (and `response.config`/`error.config`) carries raw `data`, `params` and `baseURL`, a lower-case `method`, `headers` as `AxiosHeaders`, and any custom field you set on it (for example a retry flag) - so the common "retry once on 401" pattern works:
+
+```typescript
+this.httpService.axiosRef.interceptors.response.use(undefined, error => {
+  if (error.response?.status === 401 && !error.config._retry) {
+    error.config._retry = true;
+    return this.httpService.axiosRef.request(error.config);
+  }
+  return Promise.reject(error);
+});
+```
+
+See [Supported Axios Options](/docs/axios-supported-options.md#axiosref).
 
 ## Native Interceptors
 

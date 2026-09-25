@@ -95,17 +95,17 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
-  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 184 scenarios, 55 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
+  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts`, `retry-once.diff.spec.ts` — 188 scenarios, 28 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
     - fix(response): decode bodies like axios: 0 (fixed by `claude/fix-response-decoding`)
     - feat: axios default headers: 0 (was 9, plus 2 in `response.diff.spec.ts`; fixed by `claude/feat-default-headers`)
     - fix(observable): abort on unsubscribe and run request interceptors per subscription: 0 (was 4; fixed)
-    - refactor(axiosRef): one config object from interceptors to response.config / error.config: 11
+    - refactor(axiosRef): one config object from interceptors to response.config / error.config: 0 (was 11; fixed by `claude/refactor-axiosref-config`, plus the 4 new `retry-once.diff.spec.ts` cases, all passing)
     - fix: follow redirects by default (21): 1
     - fix(config): transport options: 1 (was 2; the method-keyed module headers case was actually the default-headers item and is fixed by `claude/feat-default-headers`)
     - breaking: withCredentials becomes a no-op; add cookieJar: 1
     - types: axios interop: 3
     - feat(axiosRef): make it a real axios instance: 3
-    - fix(errors): match axios errors: 23 (was 22; gained the retagged case above)
+    - fix(errors): match axios errors: 20 (was 23; 3 cases - 404/500 error shape, AbortSignal already aborted - turned out to differ only on `config.method`'s casing, which `claude/refactor-axiosref-config` also fixed as an unavoidable side effect of "always lower-case `method`")
     - Progress callbacks / formSerializer: not covered (no deterministic, fast repro found; left for the PR that implements it)
   - Follow-ups from the PR #12 review (not blocking):
     - Our side reuses the global undici Agent across scenarios; give each scenario a fresh dispatcher, the way the axios side gets its own `register({})`.
@@ -131,7 +131,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
     - `resolveSignal` in axios-request.adapter.ts leaves a listener on `signal` when combined with a legacy `cancelToken`.
     - `toAxiosError` checks `options.signal` (the user's) instead of the per-request signal; it works only via the AbortError/UND_ERR_ABORTED fallback.
     - Performance: cache the interceptor handler chain until interceptors change; skip the `defer()` config re-normalisation when no interceptors are registered; merge the two `.then()` calls.
-- [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
+- [~] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.** PR open (`claude/refactor-axiosref-config`).
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
 - [ ] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.)

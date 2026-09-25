@@ -5,9 +5,12 @@ import {
   readDefaultBody,
   readText,
 } from './axios-response-type.adapter';
-import { attachLazyAxiosConfig } from './axios-request.adapter';
+import { buildLazyAxiosConfig } from './axios-request.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
-import type { AxiosLikeResponse } from '../interfaces/axios-compatible.interface';
+import type {
+  AxiosLikeRequestConfig,
+  AxiosLikeResponse,
+} from '../interfaces/axios-compatible.interface';
 
 /**
  * Shared, frozen placeholder for `response.request`: axios sets it to the
@@ -16,6 +19,41 @@ import type { AxiosLikeResponse } from '../interfaces/axios-compatible.interface
  * axios on `!!response.request`) instead of `undefined`.
  */
 const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
+
+/**
+ * `AxiosLikeResponse` with `config` built lazily, from a `config` getter on
+ * the prototype (defined once) rather than a `Object.defineProperty` call
+ * per instance - the getter itself costs nothing until `.config` is read,
+ * unlike installing a per-instance accessor on every response.
+ */
+class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
+  public request: any = RESPONSE_REQUEST_PLACEHOLDER;
+  private _config?: AxiosLikeRequestConfig;
+  private _configRequest?: HttpInterceptorRequest;
+
+  constructor(
+    public data: T,
+    public status: number,
+    public statusText: string,
+    public headers: any,
+    configRequest: HttpInterceptorRequest,
+  ) {
+    this._configRequest = configRequest;
+  }
+
+  get config(): AxiosLikeRequestConfig {
+    if (this._config === undefined) {
+      this._config = buildLazyAxiosConfig(this._configRequest!);
+      this._configRequest = undefined;
+    }
+    return this._config;
+  }
+
+  set config(value: AxiosLikeRequestConfig) {
+    this._config = value;
+    this._configRequest = undefined;
+  }
+}
 
 /**
  * HTTP status text mapping
@@ -168,26 +206,23 @@ export async function toAxiosLikeResponse(
     }
   }
 
-  // Transform to Axios-compatible response. `config` is attached lazily
-  // (see `attachLazyAxiosConfig`): `request.axiosConfig` already holds the
-  // final, interceptor-mutated config when the axiosRef pipeline built this
+  // Transform to Axios-compatible response. `config` is built lazily (see
+  // `AxiosLikeResponseImpl`): `request.axiosConfig` already holds the final,
+  // interceptor-mutated config when the axiosRef pipeline built this
   // request, and is otherwise built - correctly shaped, but only if/when
   // read - from the cheap fields `normalizeAxiosRequest` computed.
-  const axiosLikeResponse: AxiosLikeResponse = {
-    data: parsedData,
-    status: undiciResponse.statusCode,
+  const axiosLikeResponse = new AxiosLikeResponseImpl(
+    parsedData,
+    undiciResponse.statusCode,
     // undici exposes the server's actual reason phrase (matching axios, which
     // reads Node's `res.statusMessage`); the table is only a fallback for a
     // dispatcher that doesn't provide one (e.g. HTTP/2, which has none).
-    statusText:
-      undiciResponse.statusText ||
+    undiciResponse.statusText ||
       STATUS_TEXT_MAP[undiciResponse.statusCode] ||
       'Unknown',
-    headers: undiciResponse.headers as Record<string, string | string[]>,
-    config: undefined as any,
-    request: RESPONSE_REQUEST_PLACEHOLDER,
-  };
-  attachLazyAxiosConfig(axiosLikeResponse, request);
+    undiciResponse.headers as Record<string, string | string[]>,
+    request,
+  );
 
   // Axios throws errors for 4xx and 5xx status codes by default
   // Unless validateStatus says otherwise

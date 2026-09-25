@@ -843,40 +843,21 @@ export function normalizeAxiosRequest(
 
 /**
  * Lazily builds the axios-shaped config for `response.config` / `error.config`
- * from a `HttpInterceptorRequest`, memoising the result on the request object
- * so repeated access (e.g. both a response and a later replay) is free.
- * Prefers the already-normalised `raw` seed a request built through
- * `normalizeAxiosRequest` carries (cheap: no combined URL, no serialisation);
- * falls back to reconstructing from `options` for requests that reach here
- * some other way (e.g. the standalone `AxiosResponseAdapterInterceptor`).
+ * from a `HttpInterceptorRequest`. Prefers the already-normalised `raw` seed
+ * a request built through `normalizeAxiosRequest` carries (cheap: no combined
+ * URL, no serialisation, no `AxiosHeaders` wrap); falls back to reconstructing
+ * from `options` for requests that reach here some other way (e.g. the
+ * standalone `AxiosResponseAdapterInterceptor`).
+ *
+ * Callers (`AxiosLikeResponseImpl`, `AxiosError`) call this from a `config`
+ * getter on first read and cache the result themselves - *not* from a
+ * per-instance `Object.defineProperty`, which measurably costs more than a
+ * plain field write on every request, defeating the point of being lazy.
  */
-export function attachLazyAxiosConfig(
-  target: { config?: AxiosLikeRequestConfig },
-  request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
-): void {
-  if (request.axiosConfig !== undefined) {
-    target.config = request.axiosConfig;
-    return;
-  }
-  Object.defineProperty(target, 'config', {
-    configurable: true,
-    enumerable: true,
-    get(): AxiosLikeRequestConfig {
-      const value = buildLazyAxiosConfig(request);
-      Object.defineProperty(target, 'config', {
-        value,
-        writable: true,
-        configurable: true,
-        enumerable: true,
-      });
-      return value;
-    },
-  });
-}
-
-function buildLazyAxiosConfig(
+export function buildLazyAxiosConfig(
   request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
 ): AxiosLikeRequestConfig {
+  if (request.axiosConfig !== undefined) return request.axiosConfig;
   const options: any = request.options || {};
   const raw = request.raw;
   const url = raw ? raw.url : request.url;

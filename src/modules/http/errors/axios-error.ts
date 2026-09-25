@@ -3,7 +3,7 @@ import type {
   AxiosLikeRequestConfig,
   AxiosLikeResponse,
 } from '../interfaces/axios-compatible.interface';
-import { attachLazyAxiosConfig } from '../adapters/axios-request.adapter';
+import { buildLazyAxiosConfig } from '../adapters/axios-request.adapter';
 
 /**
  * Axios-compatible error class.
@@ -34,11 +34,18 @@ export class AxiosError<T = any> extends Error {
 
   public readonly isAxiosError = true;
   public code?: string;
-  public config?: AxiosLikeRequestConfig;
   public request?: any;
   public response?: AxiosLikeResponse<T>;
   public status?: number;
   public override cause?: unknown;
+
+  // `config` is a getter/setter (defined once, on the prototype) rather than
+  // a plain field so a config built lazily - via `_setLazyConfig`, from a
+  // `HttpInterceptorRequest` - costs nothing until first read. A plain
+  // per-instance `Object.defineProperty` accessor was tried first and
+  // measurably cost more than building the config eagerly would have.
+  private _config?: AxiosLikeRequestConfig;
+  private _configRequest?: HttpInterceptorRequest;
 
   constructor(
     message?: string,
@@ -50,12 +57,35 @@ export class AxiosError<T = any> extends Error {
     super(message);
     this.name = 'AxiosError';
     if (code) this.code = code;
-    if (config) this.config = config;
+    if (config) this._config = config;
     if (request) this.request = request;
     if (response) {
       this.response = response;
       this.status = response.status;
     }
+  }
+
+  get config(): AxiosLikeRequestConfig | undefined {
+    if (this._config === undefined && this._configRequest) {
+      this._config = buildLazyAxiosConfig(this._configRequest);
+      this._configRequest = undefined;
+    }
+    return this._config;
+  }
+
+  set config(value: AxiosLikeRequestConfig | undefined) {
+    this._config = value;
+    this._configRequest = undefined;
+  }
+
+  /**
+   * Internal: defers building `config` until first read (see
+   * `buildLazyAxiosConfig`), instead of paying for it on every error
+   * regardless of whether anyone reads `.config`.
+   */
+  _setLazyConfig(request: HttpInterceptorRequest): void {
+    this._configRequest = request;
+    this._config = undefined;
   }
 
   /**
@@ -151,7 +181,7 @@ const TIMEOUT_CODES = new Set([
 
 /**
  * Creates the error axios throws when `validateStatus` rejects a response.
- * `config` is attached lazily (see `attachLazyAxiosConfig`): cheap when
+ * `config` is built lazily (see `AxiosError._setLazyConfig`): cheap when
  * nobody reads `error.config`, correctly shaped (raw `url`/`baseURL`/
  * `params`, lower-case `method`, `AxiosHeaders`) when they do.
  */
@@ -168,7 +198,7 @@ export function createStatusError<T = any>(
     response.request,
     response,
   );
-  if (request) attachLazyAxiosConfig(error, request);
+  if (request) error._setLazyConfig(request);
   else error.config = response.config;
   return error;
 }
@@ -177,9 +207,9 @@ export function createStatusError<T = any>(
  * Converts an error raised by undici (network failure, timeout, abort, ...)
  * into an axios-compatible error with the same `code` axios would use.
  * Errors that are already axios errors are returned unchanged. `config` is
- * attached lazily (see `attachLazyAxiosConfig`) on every branch, so a request
- * that fails but is never inspected for its config (the common case in a
- * hot path) never pays to build one.
+ * built lazily (see `AxiosError._setLazyConfig`) on every branch, so a
+ * request that fails but is never inspected for its config (the common case
+ * in a hot path) never pays to build one.
  */
 export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
   if (isAxiosError(error)) {
@@ -198,7 +228,7 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
   ) {
     const message = isCancel(error) ? error.message : undefined;
     const canceled = new CanceledError(message);
-    attachLazyAxiosConfig(canceled, request);
+    canceled._setLazyConfig(request);
     Object.defineProperty(canceled, 'cause', {
       value: error,
       writable: true,
@@ -210,7 +240,7 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
 
   if (error && TIMEOUT_CODES.has(error.code)) {
     const timeoutError = AxiosError.from(error, AxiosError.ECONNABORTED);
-    attachLazyAxiosConfig(timeoutError, request);
+    timeoutError._setLazyConfig(request);
     timeoutError.name = 'AxiosError';
     const timeout = options.headersTimeout || options.bodyTimeout;
     timeoutError.message = timeout
@@ -225,7 +255,7 @@ export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
     // closest axios code.
     const code = error.code === 'UND_ERR_SOCKET' ? 'ECONNRESET' : error.code;
     const axiosError = AxiosError.from(error, code);
-    attachLazyAxiosConfig(axiosError, request);
+    axiosError._setLazyConfig(request);
     return axiosError;
   }
 

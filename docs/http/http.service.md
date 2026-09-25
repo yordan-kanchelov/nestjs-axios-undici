@@ -48,7 +48,7 @@ All methods return `Observable<AxiosLikeResponse<T>>`.
 | `data` | Parsed body: JSON for JSON content types, a string for text, a `Buffer` for binary content. |
 | `status`, `statusText` | HTTP status code and text. |
 | `headers` | Response headers, with lower-case names. |
-| `config` | The request `url`, `method`, `headers`, `timeout` and `validateStatus`. |
+| `config` | The request config: `url` and `baseURL` as given (not combined), `params` as given, a lower-case `method`, `headers` as `AxiosHeaders`, `data` (the serialised body), `timeout`, `validateStatus`, and any custom field set by a request interceptor. Built lazily (only when read) unless axiosRef interceptors or a `transformRequest`/`transformResponse` are in play. |
 
 ## `axiosRef`
 
@@ -80,7 +80,7 @@ See [Interceptors](/docs/guides/interceptors.md).
 
 ## `interceptorCount`
 
-Read-only. The number of interceptors in this service's chain.
+Read-only. The number of interceptors in this service's chain: native interceptors (`addInterceptor`/module `interceptors`), live `axiosRef` request/response interceptors, and the axios response adapter (always present).
 
 ## `setGlobalDispatcher(dispatcher)`
 

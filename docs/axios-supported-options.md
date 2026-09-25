@@ -19,7 +19,7 @@ Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ no
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| `axiosRef.interceptors.request/response.use()` | ⚠️ | Request interceptors run in registration order (axios: reverse order); response interceptors run in reverse registration order (axios: registration order). |
+| `axiosRef.interceptors.request/response.use()` | ✅ | Runs in axios' own order: request interceptors last-registered-first, response interceptors first-registered-first. `runWhen`/`synchronous` (3rd argument) are honoured. |
 | `interceptors.*.eject(id)` / `clear()` | ✅ | |
 | `axiosRef.defaults.headers.common[...]`, `.get/.post/...[...]` | ✅ | Applied to every later request. |
 | `axiosRef.defaults.baseURL` / `.timeout` | ✅ | |
@@ -47,7 +47,8 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `responseType: 'json' \| 'text' \| 'arraybuffer' \| 'blob' \| 'stream'` | ✅ | `arraybuffer` gives a `Buffer`; `blob` gives a UTF-8 string, matching axios in Node.js (no native `Blob` decoding there); `stream` gives the undici body (a Node.js `Readable`, transparently decompressed like axios). |
 | `maxContentLength` | ⚠️ | Enforced, but the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). |
 | `decompress` | ✅ | gzip/br/deflate are decompressed when `Content-Encoding` is set. `decompress: false` returns the raw compressed body, as in axios. |
-| `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength`, `transformRequest`, `transformResponse` per request | ❌ | Module-level only (see below). |
+| `transformRequest` / `transformResponse` per request | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` gets the raw `data`; `transformResponse` gets the raw response body (not yet JSON-parsed). |
+| `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength` per request | ❌ | Module-level only (see below). |
 | `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress`, `adapter` | ❌ | |
 
 ## Response
@@ -101,7 +102,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType` | ✅ | Applied to every request; per-request values win (headers and params are merged). `timeout` maps to undici's `headersTimeout`/`bodyTimeout`. `headers` accepts axios' method-keyed shape (`{ common: {...}, post: {...}, 'X-Flat': '...' }`), flattened per method at setup. |
 | `maxRedirects` | ⚠️ | Applied to every request through undici's redirect interceptor. Without it redirects are not followed (see [Request config](#request-config)). |
 | `maxBodyLength` / `maxContentLength` | ⚠️ | Size-limit checks (see error code note above). |
-| `transformRequest` / `transformResponse` | ⚠️ | Run as interceptors: `transformRequest` receives the already-serialized body (axios: the raw `data`), `transformResponse` receives the parsed `data` (axios: the raw string). |
+| `transformRequest` / `transformResponse` | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` receives the raw `data`, `transformResponse` receives the raw response body (not yet JSON-parsed). |
 | `httpAgent` / `httpsAgent` | ⚠️ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts. Other agent options are ignored. |
 | `proxy` | ⚠️ | Creates an undici `ProxyAgent` (with basic auth). `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables are not read. |
 | `withCredentials` | ⚠️ | Enables a cookie jar (`http-cookie-agent` + `tough-cookie`) that stores and resends cookies, which axios does not do in Node.js. |
