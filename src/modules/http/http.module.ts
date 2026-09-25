@@ -1,6 +1,6 @@
 import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { randomStringGenerator } from '@nestjs/common/utils/random-string-generator.util';
+import { randomUUID } from 'node:crypto';
 import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
@@ -101,7 +101,7 @@ export class HttpModule {
         },
         {
           provide: HTTP_MODULE_ID,
-          useValue: randomStringGenerator(),
+          useValue: randomUUID(),
         },
         ...interceptorProviders,
         {
@@ -239,7 +239,7 @@ export class HttpModule {
         },
         {
           provide: HTTP_MODULE_ID,
-          useValue: randomStringGenerator(),
+          useValue: randomUUID(),
         },
         {
           provide: HTTP_SERVICE_INTERCEPTORS,

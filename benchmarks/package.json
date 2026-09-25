@@ -22,7 +22,7 @@
     "@nestjs/platform-fastify": "^11.2.6",
     "axios": "^1.20.0",
     "fastify": "^5.12.5",
-    "http-cookie-agent": "^7.0.1",
+    "http-cookie-agent": "^8.0.0",
     "nestjs-undici": "^0.2.60",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

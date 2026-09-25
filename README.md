@@ -25,6 +25,8 @@
 npm install nestjs-axios-undici undici
 ```
 
+Requires Node.js 22.12+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
+
 ## Migrating from @nestjs/axios
 
 ```typescript

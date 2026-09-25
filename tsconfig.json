@@ -1,20 +1,28 @@
 {
+  // Editor, ts-jest and `npm run typecheck` (src + tests). The build uses tsconfig.build.json.
   "compilerOptions": {
-    "module": "commonjs",
-    "declaration": true,
-    "removeComments": true,
-    "noLib": false,
-    "emitDecoratorMetadata": true,
-    "esModuleInterop": true,
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "node20",
+    "types": ["node", "jest"],
+
     "experimentalDecorators": true,
-    "target": "es2020",
-    "sourceMap": false,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+
+    "strict": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
     "outDir": "./lib",
-    "rootDir": "src",
-    "skipLibCheck": true
+    "rootDir": ".",
+    "noEmit": true
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": ["node_modules", "**/*.spec.ts", "__tests__", "coverage"]
+  "include": ["src", "tests"]
 }

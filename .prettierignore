@@ -1,0 +1,7 @@
+lib/
+coverage/
+benchmarks/
+package-lock.json
+CHANGELOG.md
+.changeset/*.md
+docs/

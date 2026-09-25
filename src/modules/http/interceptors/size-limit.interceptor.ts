@@ -44,12 +44,10 @@ export class SizeLimitInterceptor implements HttpInterceptor {
         if (this.options.maxContentLength && response.body) {
           // For axios compatibility, we need to check the response size
           // This is tricky because the body might be a stream
-          let contentLength = 0;
-          
           // Check Content-Length header first
           const contentLengthHeader = response.headers['content-length'];
           if (contentLengthHeader) {
-            contentLength = parseInt(contentLengthHeader as string, 10);
+            const contentLength = parseInt(contentLengthHeader as string, 10);
             if (contentLength > this.options.maxContentLength) {
               const error: any = new Error(
                 `Response content size (${contentLength} bytes) exceeds maxContentLength (${this.options.maxContentLength} bytes)`

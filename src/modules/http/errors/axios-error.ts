@@ -37,7 +37,7 @@ export class AxiosError<T = any> extends Error {
   public request?: any;
   public response?: AxiosLikeResponse<T>;
   public status?: number;
-  public cause?: unknown;
+  public override cause?: unknown;
 
   constructor(
     message?: string,
