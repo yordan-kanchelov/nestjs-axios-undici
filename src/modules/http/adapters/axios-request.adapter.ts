@@ -501,6 +501,79 @@ function flatDefaultHeaders(
   return flat;
 }
 
+// ---------------------------------------------------------------------------
+// Per-method default/module header cache (perf item 1)
+//
+// `defaults.headers.common` (and friends) never change on most requests, and
+// module (`register()`/`registerAsync()`) headers never change at all after
+// setup, so the 6-source merge below (default common/method/flat + module
+// common/method/flat) is wasted work on every single request. It's cached
+// per `defaults` object (one per HttpService, via `createAxiosRefDefaults`)
+// and per HTTP method, and only recomputed when `HEADERS_VERSION` (bumped by
+// `trackHeaders` on any write to `defaults.headers`) changes - so mutating
+// `axiosRef.defaults.headers.common[...]` at runtime still takes effect on
+// the next request. `defaults` objects not built by `createAxiosRefDefaults`
+// (e.g. plain object literals in unit tests) have no version counter and are
+// simply never cached - `normalizeAxiosRequest` falls back to the uncached
+// per-source merge for those, unchanged from before this cache existed.
+// ---------------------------------------------------------------------------
+
+/**
+ * Non-enumerable key holding a `{ v: number }` counter on a `defaults` object
+ * created by `createAxiosRefDefaults` (axios-ref.factory.ts), bumped there on
+ * every mutation of `defaults.headers`. Defined here (rather than in
+ * axios-ref.factory.ts, which already depends on this module transitively
+ * through axios-interceptor.adapter.ts) to avoid a module cycle.
+ */
+export const HEADERS_VERSION = Symbol('headersVersion');
+
+interface MethodHeaderCache {
+  /** Merged default + module headers for this method, excluding per-request headers. */
+  base: HeaderRecord;
+  hasWork: boolean;
+}
+
+interface DefaultsHeaderCache {
+  version: number;
+  byMethod: Map<string, MethodHeaderCache>;
+}
+
+const defaultsHeaderCaches = new WeakMap<object, DefaultsHeaderCache>();
+
+function getMethodHeaderCache(
+  defaults: AxiosRefDefaults | undefined,
+  instance: Record<string, any>,
+  lowerMethod: string,
+): MethodHeaderCache | undefined {
+  if (!defaults) return undefined;
+  const versionRef = (defaults as any)[HEADERS_VERSION] as
+    { v: number } | undefined;
+  if (!versionRef) return undefined;
+
+  let entry = defaultsHeaderCaches.get(defaults);
+  if (!entry || entry.version !== versionRef.v) {
+    entry = { version: versionRef.v, byMethod: new Map() };
+    defaultsHeaderCaches.set(defaults, entry);
+  }
+
+  let cached = entry.byMethod.get(lowerMethod);
+  if (!cached) {
+    const defaultHeaders = defaults.headers;
+    const instanceHeaders = instance.headers as Record<string, any> | undefined;
+    const base = mergeHeaders(
+      defaultHeaders?.common,
+      (defaultHeaders as any)?.[lowerMethod],
+      flatDefaultHeaders(defaultHeaders),
+      instanceHeaders?.common,
+      instanceHeaders?.[lowerMethod],
+      flatDefaultHeaders(instanceHeaders),
+    );
+    cached = { base, hasWork: Object.keys(base).length > 0 };
+    entry.byMethod.set(lowerMethod, cached);
+  }
+  return cached;
+}
+
 /**
  * Detects the `request(config)` call form (`{ url, method, ... }`), as opposed
  * to `request(url, options)` where `url` may also be a URL or UrlObject.
@@ -543,18 +616,18 @@ export function normalizeAxiosRequest(
 
   const defaults = context.defaults;
   const instance = context.instanceOptions || {};
-  const defaultHeaders = defaults?.headers;
-  const instanceHeaders = instance.headers as Record<string, any> | undefined;
   const method = String(input.method || 'GET').toUpperCase();
   const lowerMethod = method.toLowerCase() as 'get';
-  const methodHeaders = defaultHeaders?.[lowerMethod];
-  const flatHeaders = flatDefaultHeaders(defaultHeaders);
-  // Module (`register()`/`registerAsync()`) headers may use the same
-  // axios-style `{ common: {...}, post: {...}, 'X-Flat': '...' }` shape as
-  // `axiosRef.defaults.headers` (item 11: they must be flattened per method,
-  // not sent as literal `common`/`post` headers).
-  const instanceMethodHeaders = instanceHeaders?.[lowerMethod];
-  const instanceFlatHeaders = flatDefaultHeaders(instanceHeaders);
+
+  // Perf item 1: the default + module headers for this method (everything
+  // except per-request headers) are the same on every request until
+  // `axiosRef.defaults.headers` is written, so they're merged once per
+  // method and cached (see `getMethodHeaderCache`) rather than re-merged
+  // from 6 sources on every call. `methodCache` is only set for `defaults`
+  // objects built by `createAxiosRefDefaults` (real HttpService usage);
+  // hand-built `defaults` in tests fall back to the uncached path below,
+  // unchanged from before this cache existed.
+  const methodCache = getMethodHeaderCache(defaults, instance, lowerMethod);
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
   const auth = input.auth ?? instance.auth;
@@ -562,6 +635,20 @@ export function normalizeAxiosRequest(
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
+
+  const headersHaveWork = methodCache
+    ? methodCache.hasWork
+    : (() => {
+        const defaultHeaders = defaults?.headers;
+        const instanceHeaders = instance.headers as
+          Record<string, any> | undefined;
+        return (
+          hasOwnKeys(defaultHeaders?.common) ||
+          hasOwnKeys(defaultHeaders?.[lowerMethod]) ||
+          flatDefaultHeaders(defaultHeaders) !== undefined ||
+          hasOwnKeys(instanceHeaders)
+        );
+      })();
 
   // Fast path: nothing axios-specific to do for this request. In practice
   // this only triggers for calls that bypass HttpService's axiosRef defaults
@@ -576,10 +663,7 @@ export function normalizeAxiosRequest(
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
-    hasOwnKeys(defaultHeaders?.common) ||
-    hasOwnKeys(methodHeaders) ||
-    flatHeaders !== undefined ||
-    hasOwnKeys(instanceHeaders);
+    headersHaveWork;
   if (!needsWork) {
     return { url, options: input };
   }
@@ -619,15 +703,17 @@ export function normalizeAxiosRequest(
   // Each axios-style source is itself `common` -> `<method>` -> flat, so a
   // header set for one method (or unqualified) is overridden by a more
   // specific one from the same source before the next source is applied.
-  const headers = mergeHeaders(
-    defaultHeaders?.common,
-    methodHeaders,
-    flatHeaders,
-    instanceHeaders?.common,
-    instanceMethodHeaders,
-    instanceFlatHeaders,
-    options.headers,
-  );
+  const headers = methodCache
+    ? mergeHeaders(methodCache.base, options.headers)
+    : mergeHeaders(
+        defaults?.headers?.common,
+        defaults?.headers?.[lowerMethod],
+        flatDefaultHeaders(defaults?.headers),
+        instance.headers?.common,
+        instance.headers?.[lowerMethod],
+        flatDefaultHeaders(instance.headers),
+        options.headers,
+      );
 
   // `auth` overrides any Authorization header, as in axios
   if (auth) {

@@ -1,0 +1,126 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { firstValueFrom } from 'rxjs';
+import * as http from 'http';
+import { AddressInfo } from 'net';
+
+import { HttpService } from '../http.service';
+import { HttpModule } from '../../http.module';
+
+/**
+ * Perf item 1 (per-method default/module header cache) and item 2
+ * (interceptor chain cache) both cache work across requests. These tests
+ * make sure the caching stays invisible from the outside: a header change or
+ * an interceptor add/eject made *after* the first request through a service
+ * still takes effect on the very next request.
+ */
+describe('HttpService - request-path caches stay live', () => {
+  let service: HttpService;
+  let module: TestingModule;
+  let mockServer: http.Server;
+  let serverUrl: string;
+
+  const createMockServer = (handler: http.RequestListener): Promise<string> =>
+    new Promise(resolve => {
+      mockServer = http.createServer(handler);
+      mockServer.listen(0, '127.0.0.1', () => {
+        const port = (mockServer.address() as AddressInfo).port;
+        resolve(`http://127.0.0.1:${port}`);
+      });
+    });
+
+  beforeEach(async () => {
+    serverUrl = await createMockServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ headers: req.headers }));
+    });
+
+    module = await Test.createTestingModule({
+      imports: [HttpModule.register()],
+    }).compile();
+    service = module.get<HttpService>(HttpService);
+  });
+
+  afterEach(async () => {
+    if (mockServer) {
+      await new Promise<void>((resolve, reject) => {
+        mockServer.close(err => (err ? reject(err) : resolve()));
+        mockServer.closeAllConnections();
+      });
+    }
+    if (module) await module.close();
+  });
+
+  it('a header set on axiosRef.defaults after the first request still applies', async () => {
+    const before = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(before.data.headers['x-runtime']).toBeUndefined();
+
+    // Populate the per-method header cache with the first request above,
+    // then mutate a bucket that isn't `common` (get) directly - covers both
+    // the outer `headers` proxy and a method bucket's Proxy.
+    service.axiosRef.defaults.headers.common['X-Runtime'] = 'common-value';
+    service.axiosRef.defaults.headers.get['X-Runtime-Get'] = 'get-value';
+
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-runtime']).toBe('common-value');
+    expect(after.data.headers['x-runtime-get']).toBe('get-value');
+
+    delete service.axiosRef.defaults.headers.common['X-Runtime'];
+    delete service.axiosRef.defaults.headers.get['X-Runtime-Get'];
+    const afterDelete = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(afterDelete.data.headers['x-runtime']).toBeUndefined();
+    expect(afterDelete.data.headers['x-runtime-get']).toBeUndefined();
+  });
+
+  it('a flat header set directly on axiosRef.defaults.headers after the first request still applies', async () => {
+    await firstValueFrom(service.get(`${serverUrl}/x`));
+
+    (service.axiosRef.defaults.headers as any)['X-Flat'] = 'flat-value';
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-flat']).toBe('flat-value');
+  });
+
+  it('adding an axiosRef request interceptor after the first request still applies', async () => {
+    const before = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(before.data.headers['x-added']).toBeUndefined();
+
+    service.axiosRef.interceptors.request.use(config => {
+      config.headers = { ...(config.headers as any), 'X-Added': 'yes' };
+      return config;
+    });
+
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-added']).toBe('yes');
+  });
+
+  it('ejecting an axiosRef request interceptor after the first request still applies', async () => {
+    const id = service.axiosRef.interceptors.request.use(config => {
+      config.headers = { ...(config.headers as any), 'X-Ejectable': 'yes' };
+      return config;
+    });
+
+    const before = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(before.data.headers['x-ejectable']).toBe('yes');
+
+    service.axiosRef.interceptors.request.eject(id);
+
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-ejectable']).toBeUndefined();
+  });
+
+  it('setInterceptors after the first request still applies', async () => {
+    await firstValueFrom(service.get(`${serverUrl}/x`));
+
+    service.setInterceptors([
+      (request, next) => {
+        request.options.headers = {
+          ...(request.options.headers as any),
+          'X-Set-Interceptors': 'yes',
+        };
+        return next.handle(request);
+      },
+    ]);
+
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-set-interceptors']).toBe('yes');
+  });
+});
