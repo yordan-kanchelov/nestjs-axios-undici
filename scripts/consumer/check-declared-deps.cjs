@@ -28,6 +28,7 @@ if (!fs.existsSync(libDir)) {
 const declared = new Set([
   ...Object.keys(pkg.dependencies || {}),
   ...Object.keys(pkg.peerDependencies || {}),
+  ...Object.keys(pkg.optionalDependencies || {}),
 ]);
 const optionalPeers = new Set(
   Object.entries(pkg.peerDependenciesMeta || {})
@@ -42,9 +43,11 @@ const isBuiltin = spec =>
 
 const problems = [];
 const used = new Map(); // "name (kind)" -> Set of files
+let scanned = 0;
 for (const file of walk(libDir)) {
   const isTypes = /\.d\.[cm]?ts$/.test(file);
   if (!isTypes && !/\.[cm]?js$/.test(file)) continue;
+  scanned++;
   const kind = isTypes ? 'type' : 'runtime';
   const rel = path.relative(root, file);
   const info = ts.preProcessFile(fs.readFileSync(file, 'utf8'), true, true);
@@ -80,6 +83,10 @@ for (const name of declared) {
   if (![...used.keys()].some(key => key.startsWith(`${name} `))) {
     console.log(`  note: ${name} is declared but never imported`);
   }
+}
+if (!scanned) {
+  console.error(`No .js or .d.ts files found in ${libDir}; is the build complete?`);
+  process.exit(1);
 }
 if (problems.length) {
   console.error(

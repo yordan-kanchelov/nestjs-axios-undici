@@ -10,6 +10,8 @@ Tests the published package the way a consumer gets it: from the packed tarball,
 
 The app in `fixtures/scenario.cjs` covers `register()` and `registerAsync()` with DI, function and class interceptors, `axiosRef` interceptors, redirects, cookies, errors (`AxiosError`, `isAxiosError`) and rxjs `Observable` identity against a local HTTP server.
 
+The scripts shell out to `tar` to read the tarball.
+
 ## Running locally
 
 ```bash
