@@ -880,7 +880,9 @@ function buildLazyAxiosConfig(
   const options: any = request.options || {};
   const raw = request.raw;
   const url = raw ? raw.url : request.url;
-  const method = raw ? raw.method : String(options.method || 'GET').toLowerCase();
+  const method = raw
+    ? raw.method
+    : String(options.method || 'GET').toLowerCase();
   const headers = new AxiosHeaders(
     options.headers && typeof options.headers === 'object'
       ? (options.headers as Record<string, string | string[]>)

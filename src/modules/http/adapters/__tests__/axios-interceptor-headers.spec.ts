@@ -85,7 +85,9 @@ describe('axiosRef request interceptors - header handling', () => {
     });
 
     const response = await firstValueFrom(
-      service.get(`${serverUrl}/x`, { headers: { 'Content-Type': 'application/json' } }),
+      service.get(`${serverUrl}/x`, {
+        headers: { 'Content-Type': 'application/json' },
+      }),
     );
     expect(response.data.headers['content-type']).toBe('application/json');
     expect(response.data.headers.traceparent).toBe(

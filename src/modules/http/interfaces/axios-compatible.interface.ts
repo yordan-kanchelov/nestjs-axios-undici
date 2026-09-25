@@ -38,7 +38,9 @@ export interface AxiosLikeRequestConfig {
   decompress?: boolean;
   maxContentLength?: number;
   maxBodyLength?: number;
-  transformRequest?: ((data: any, headers?: any) => any) | Array<(data: any, headers?: any) => any>;
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
   transformResponse?:
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
@@ -110,7 +112,9 @@ export interface AxiosCompatibleRequestOptions extends Omit<
   decompress?: boolean;
   cancelToken?: AxiosCancelTokenLike;
   maxBodyLength?: number;
-  transformRequest?: ((data: any, headers?: any) => any) | Array<(data: any, headers?: any) => any>;
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
   transformResponse?:
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;

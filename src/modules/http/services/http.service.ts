@@ -53,9 +53,7 @@ import { toAxiosError } from '../errors/axios-error';
 let fallbackAgent: UndiciAgent | undefined;
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
-  return (
-    !!value && typeof (value as { then?: unknown }).then === 'function'
-  );
+  return !!value && typeof (value as { then?: unknown }).then === 'function';
 }
 
 /**
@@ -417,77 +415,77 @@ export class HttpService {
   ): Observable<AxiosLikeResponse<T>> {
     // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
     const { url, options, raw } = normalizeAxiosRequest(
-        urlOrConfig,
-        requestOptions,
-        {
-          defaults: this._axiosRef.defaults,
-          instanceOptions: this.instanceOptions,
-        },
-      ) as {
-        url: string | URL | UrlObject;
-        options: Omit<HttpRequestOptions, 'headers'> &
-          Pick<Dispatcher.RequestOptions, 'headers'>;
-        raw: { url: any; baseURL?: string; params?: any; method: string };
-      };
+      urlOrConfig,
+      requestOptions,
+      {
+        defaults: this._axiosRef.defaults,
+        instanceOptions: this.instanceOptions,
+      },
+    ) as {
+      url: string | URL | UrlObject;
+      options: Omit<HttpRequestOptions, 'headers'> &
+        Pick<Dispatcher.RequestOptions, 'headers'>;
+      raw: { url: any; baseURL?: string; params?: any; method: string };
+    };
 
-      // Handle timeout option for axios compatibility
-      const { timeout, ...restOptions } = options || {};
-      const mergedOptions = {
-        ...this.instanceOptions,
-        ...restOptions,
-      };
+    // Handle timeout option for axios compatibility
+    const { timeout, ...restOptions } = options || {};
+    const mergedOptions = {
+      ...this.instanceOptions,
+      ...restOptions,
+    };
 
-      // Map timeout to undici's timeout options
-      if (timeout !== undefined) {
-        mergedOptions.headersTimeout = timeout;
-        mergedOptions.bodyTimeout = timeout;
+    // Map timeout to undici's timeout options
+    if (timeout !== undefined) {
+      mergedOptions.headersTimeout = timeout;
+      mergedOptions.bodyTimeout = timeout;
+    }
+
+    // Pass through size limit options from module config
+    const moduleOpts = this.moduleOptions as any;
+    if (moduleOpts?.maxBodyLength !== undefined) {
+      (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
+    }
+    if (moduleOpts?.maxContentLength !== undefined) {
+      (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
+    }
+
+    // Handle axios-specific options from module configuration
+    let finalUrl = url;
+    const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
+
+    if (axiosCompat?.baseURL) {
+      // Apply baseURL if the URL is relative
+      const urlString = typeof url === 'string' ? url : url.toString();
+      if (
+        !urlString.startsWith('http://') &&
+        !urlString.startsWith('https://')
+      ) {
+        finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
       }
+    }
 
-      // Pass through size limit options from module config
-      const moduleOpts = this.moduleOptions as any;
-      if (moduleOpts?.maxBodyLength !== undefined) {
-        (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
-      }
-      if (moduleOpts?.maxContentLength !== undefined) {
-        (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
-      }
+    // Handle socket path
+    if (moduleOpts?.__socketPath) {
+      // Transform URL to use unix socket
+      const urlString =
+        typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
+      const urlObj = new URL(urlString);
+      finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
+    }
 
-      // Handle axios-specific options from module configuration
-      let finalUrl = url;
-      const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
+    // Create the request object for interceptors
+    const interceptorRequest: HttpInterceptorRequest = {
+      url: finalUrl,
+      options: mergedOptions,
+    };
+    // Cheap fields for a lazily-built `response.config`/`error.config`
+    // (see `attachLazyAxiosConfig`) - no AxiosHeaders wrap, no combined
+    // URL, just the references `normalizeAxiosRequest` already computed.
+    (interceptorRequest as any).raw = raw;
 
-      if (axiosCompat?.baseURL) {
-        // Apply baseURL if the URL is relative
-        const urlString = typeof url === 'string' ? url : url.toString();
-        if (
-          !urlString.startsWith('http://') &&
-          !urlString.startsWith('https://')
-        ) {
-          finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
-        }
-      }
-
-      // Handle socket path
-      if (moduleOpts?.__socketPath) {
-        // Transform URL to use unix socket
-        const urlString =
-          typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
-        const urlObj = new URL(urlString);
-        finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
-      }
-
-      // Create the request object for interceptors
-      const interceptorRequest: HttpInterceptorRequest = {
-        url: finalUrl,
-        options: mergedOptions,
-      };
-      // Cheap fields for a lazily-built `response.config`/`error.config`
-      // (see `attachLazyAxiosConfig`) - no AxiosHeaders wrap, no combined
-      // URL, just the references `normalizeAxiosRequest` already computed.
-      (interceptorRequest as any).raw = raw;
-
-      // Create the interceptor chain (always includes axios adapter)
-      return this.executeInterceptorChain(interceptorRequest);
+    // Create the interceptor chain (always includes axios adapter)
+    return this.executeInterceptorChain(interceptorRequest);
   }
 
   /**

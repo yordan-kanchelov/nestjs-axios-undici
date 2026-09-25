@@ -124,7 +124,12 @@ export async function toAxiosLikeResponse(
         : [transformResponse];
       parsedData = transforms.reduce(
         (value: any, fn: any) =>
-          fn.call(request.axiosConfig, value, undiciResponse.headers, undiciResponse.statusCode),
+          fn.call(
+            request.axiosConfig,
+            value,
+            undiciResponse.headers,
+            undiciResponse.statusCode,
+          ),
         raw,
       );
     } else if (responseType && undiciResponse.body) {
