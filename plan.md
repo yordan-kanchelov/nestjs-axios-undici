@@ -92,10 +92,27 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
     - axiosRef interceptor configs: `config.headers['Authorization'] = ...` and `config.headers.set(...)` don't type-check; a callback typed `InternalAxiosRequestConfig` doesn't fit.
     - A response mock typed `Observable<AxiosResponse<T>>` doesn't fit `HttpService['get']`'s return type.
     - Not expressible as `@ts-expect-error` (no error is raised, so nothing to pin): `HttpModuleOptions` accepts typos (e.g. `{ timeuot: 5 }`) because it's effectively `& any`.
-- [ ] **D. test: table-driven differential harness**
+- [~] **D. test: table-driven differential harness** (`claude/differential-harness`, PR open)
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
+  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 183 scenarios, 77 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
+    - fix(response): decode bodies like axios: 19
+    - feat: axios default headers: 11
+    - fix(observable): abort on unsubscribe and run request interceptors per subscription: 4
+    - refactor(axiosRef): one config object from interceptors to response.config / error.config: 11
+    - fix: follow redirects by default (21): 1
+    - fix(config): transport options: 2
+    - breaking: withCredentials becomes a no-op; add cookieJar: 1
+    - types: axios interop: 3
+    - feat(axiosRef): make it a real axios instance: 3
+    - fix(errors): match axios errors: 22
+    - Progress callbacks / formSerializer: not covered (no deterministic, fast repro found; left for the PR that implements it)
+  - Follow-ups from the PR #12 review (not blocking):
+    - Our side reuses the global undici Agent across scenarios; give each scenario a fresh dispatcher, the way the axios side gets its own `register({})`.
+    - `knownDifference` only asserts that *something* differs; pin the expected differing field per case.
+    - Replace the 200 ms sleep in interceptors.diff.spec.ts with polling for the close event.
+    - The generic fallback normalizer in harness.ts is unused.
 - [ ] **E. perf: rebuild the PR regression check.** It isn't reliable today: 2 of 4 runs of identical code failed at the 10% threshold.
   - Switch to client CPU time per request, compared with raw undici in the same round. That cancels out runner speed; the worst drift seen was ±3.9%.
   - Scenarios: get, post JSON, params and headers, the 404 error path, axiosRef interceptors.
@@ -106,7 +123,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
 
-- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`.
+- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase.
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
 - [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
