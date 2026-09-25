@@ -282,7 +282,12 @@ export function mergeHeaders(...sources: any[]): HeaderRecord {
   return result;
 }
 
+// `AxiosHeaders` is a Proxy whose key enumeration goes through its
+// `ownKeys`/`getOwnPropertyDescriptor` traps, so scanning it with
+// `Object.keys` is slow on the interceptor path; its own case-insensitive
+// `get`/`has`/`set` give the same answers directly.
 function findHeader(headers: HeaderRecord, name: string): string | undefined {
+  if (headers instanceof AxiosHeaders) return headers.get(name) as any;
   const lower = name.toLowerCase();
   for (const key of Object.keys(headers)) {
     if (key.toLowerCase() === lower) return headers[key];
@@ -295,11 +300,19 @@ function setHeaderIfMissing(
   name: string,
   value: string,
 ): void {
+  if (headers instanceof AxiosHeaders) {
+    if (!headers.has(name)) headers.set(name, value);
+    return;
+  }
   if (findHeader(headers, name) === undefined) headers[name] = value;
 }
 
 /** Sets a header, replacing any existing case-insensitive match (and its casing). */
 function setHeader(headers: HeaderRecord, name: string, value: string): void {
+  if (headers instanceof AxiosHeaders) {
+    headers.set(name, value);
+    return;
+  }
   const existing = Object.keys(headers).find(
     key => key.toLowerCase() === name.toLowerCase(),
   );
