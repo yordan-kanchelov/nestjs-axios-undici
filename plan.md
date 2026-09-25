@@ -47,14 +47,13 @@ Released so far:
 - 0.6.1 was published by CI through npm trusted publishing. It adds `@nestjs/core` as a peer dependency.
 - Merged to main: #3 (release pipeline, Node 22/24/26), #4 (toolchain, cleanup, fixes), #5 (OIDC-only release), #6 (@nestjs/core peer), #7 (version packages 0.6.1).
 
-## Decisions needed from the owner
+## Decisions (made by the owner on 2026-09-25)
 
-Each of these is breaking and hard to change after 1.0.
-
-- [ ] **`withCredentials`.** axios ignores it on Node. Here it turns on one cookie jar per service, so cookies from one user's upstream call can reach other users. Proposal: an explicit `cookieJar` option, with `http-cookie-agent` and `tough-cookie` becoming optional, lazily loaded peers (they cost about 150 ms at load).
-- [ ] **Redirect default.** axios follows up to 21 redirects by default; we follow none unless `maxRedirects` is set. Proposal: match axios.
-- [ ] **Trim the public API**, from 57 exported symbols down to about 25. See `plan/reports/package-quality.md`. Option: ship 0.7 with `@deprecated` tags first.
-- [ ] **Minimum Node version.** Node 22.12–22.16 breaks for ESM apps on Nest 12, and undici 8 needs 22.19. Proposal: `>=22.19.0` (the PR A worker decides from test results).
+- [x] **`withCredentials`: yes.** It becomes a no-op, as in axios on Node. Cookie handling becomes opt-in through an explicit `cookieJar` option, and `http-cookie-agent` / `tough-cookie` become optional, lazily loaded peers. This is breaking and needs a changeset note.
+- [x] **Redirects: do it as axios does.** Follow up to 21 redirects by default, and respect `maxRedirects` (0 disables). Use manual 3xx handling so non-redirect responses cost nothing extra, and add `ERR_FR_TOO_MANY_REDIRECTS` and `beforeRedirect`.
+- [x] **Public API: trim it where nothing is lost.** Remove the legacy and internal exports listed in `plan/reports/package-quality.md`, keeping everything with a real use. For each removal, check that a supported alternative exists, and list it in the 1.0 migration notes.
+- [x] **Benchmark apps: both Express and Fastify.** Use one shared app source with `CLIENT=axios|undici` and `PLATFORM=express|fastify`, and the same axiosRef interceptor in both. Raw undici is the floor.
+- [x] **Minimum Node version:** `>=22.17.0` (PR #10, decided from the consumer-matrix results).
 
 ## Roadmap
 
@@ -157,7 +156,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - strip axios-only keys (such as `auth`) before calling undici
   - fix `socketPath`, the `baseURL` + UrlObject case, `keepAlive`, and the ignored `httpsAgent` TLS options
   - use Nest `Logger` instead of console
-- [ ] Trim the public API (depends on the decision above), then commit an api-extractor report and check it in CI.
+- [ ] Trim the public API (decided: remove what loses nothing), then commit an api-extractor report and check it in CI.
 - [ ] HttpService members: `setDispatcher` (rename), internal `setInterceptors`, a real `interceptorCount`, a read-only `undiciRef`.
 - [ ] `strict` TypeScript in `tsconfig.build.json` (7 errors).
 - [ ] Duplicate undici copy: plain requests should also use an Agent from this package's undici copy.
@@ -171,7 +170,7 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - Configurations: `@nestjs/axios` and nestjs-axios-undici in identical apps, each with and without the same axiosRef interceptor (no stdout logging), plus raw undici as the floor.
   - The mock backend runs with `logger: false`.
   - Drop `nestjs-fastify-undici`, the upstream `nestjs-undici` dependency, and the 3 separate compose files.
-  - Open choice: Fastify only (performance report) or Express and Fastify (docs report).
+  - Decided: both Express and Fastify.
   - Update the k6 script and the report generator to match.
 - [ ] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
 - [ ] Later: cheaper request-adapter paths (saves 2–8 µs), a streaming `maxContentLength` check, instruction-count benchmarks, and the full k6 run on the version PR before publish.
@@ -197,3 +196,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #10 merged (consumer matrix green on Node 22.17.0/22.19.0/22/24/26). Worker C started (`claude/api-parity-checks`).
 - 2026-09-25: PR #11 (C) merged. PR #12 (D, 183 differential scenarios, 77 known differences) open, in review.
 - 2026-09-25: PR #12 (D) merged; the differential tests pass on Nest 10/11/12. Worker E (perf check) next.
+- 2026-09-25: Owner decisions recorded: withCredentials becomes a no-op with an explicit cookieJar; redirects follow axios (21 by default); trim the API where nothing is lost; benchmarks cover Express and Fastify.
