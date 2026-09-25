@@ -90,7 +90,7 @@ JSON is parsed only for JSON content types, and unknown binary content types are
 
 ## Axios Configuration Auto-mapping
 
-`HttpModule.register()` and `HttpModule.registerAsync()` detect axios options (`baseURL`, `timeout`, `maxRedirects`, `auth`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`, ...) and map them to Undici equivalents. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for the full list and the differences from axios.
+`HttpModule.register()` and `HttpModule.registerAsync()` detect axios options (`baseURL`, `timeout`, `maxRedirects`, `auth`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials` (a no-op, like axios on Node.js), `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`, ...) and map them to Undici equivalents. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for the full list and the differences from axios.
 
 ## Migrating from @nestjs/axios
 

@@ -39,6 +39,8 @@ Requires Node.js 22.17+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
 
 Every combination is installed from the packed package and run as both a CommonJS and an ESM app in CI, including the lowest versions of each range, and again weekly to catch new releases.
 
+`http-cookie-agent` (8) and `tough-cookie` (5 or 6) are optional peers, only needed for the `cookieJar` option (see [Cookies: `cookieJar`](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/axios-supported-options?id=cookies-cookiejar)) - install them yourself if you use it.
+
 ## Migrating from @nestjs/axios
 
 ```typescript
@@ -96,7 +98,7 @@ Non-2xx responses reject with an axios-style error (`error.response.status`, `er
 
 ## Configuration
 
-`register()` accepts axios options (`baseURL`, `timeout`, `headers`, `auth`, `params`, `maxRedirects`, `validateStatus`, `httpAgent`, `proxy`, `withCredentials`, ...) and Undici options (such as a custom `dispatcher`). `registerAsync()` applies the same mapping:
+`register()` accepts axios options (`baseURL`, `timeout`, `headers`, `auth`, `params`, `maxRedirects`, `validateStatus`, `httpAgent`, `proxy`, `withCredentials` (a no-op, like axios on Node.js - see `cookieJar` for opt-in cookie handling), ...) and Undici options (such as a custom `dispatcher`). `registerAsync()` applies the same mapping:
 
 ```typescript
 HttpModule.registerAsync({

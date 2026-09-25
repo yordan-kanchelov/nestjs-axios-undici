@@ -119,6 +119,18 @@ import { Agent } from 'undici';
 export class AppModule {}
 ```
 
+### Cookies (`cookieJar`)
+
+`withCredentials` (an axios option this module also accepts) is a no-op on Node.js, matching axios itself. Cookie storage/replay is opt-in instead, through an explicit `cookieJar` option - a [`tough-cookie`](https://www.npmjs.com/package/tough-cookie) `CookieJar` instance:
+
+```typescript
+import { CookieJar } from 'tough-cookie';
+
+HttpModule.register({ cookieJar: new CookieJar() });
+```
+
+Only a jar instance is accepted (never `true`), so you decide its scope explicitly - typically one jar per `register()` call. `http-cookie-agent` and `tough-cookie` are optional peer dependencies, loaded lazily only when `cookieJar` is set; install both (`npm i http-cookie-agent tough-cookie`) to use this option. See [Cookies: `cookieJar`](/docs/axios-supported-options.md#cookies-cookiejar) for the full details, including why there's no per-request `cookieJar`.
+
 ## Environment Variables
 
 You can easily use environment variables within the `register` or `registerAsync` methods.

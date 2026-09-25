@@ -25,14 +25,25 @@ export function resolveTarball(tarball, workDir) {
 
 /**
  * The tarball itself plus its declared peers, and nothing else, at the versions a
- * combination asks for: { nest, undici, rxjs?, reflect? }. Throws on a peer the
- * combinations don't know about, so a new peer can't go untested.
+ * combination asks for: { nest, undici, rxjs?, reflect? }. Throws on a *required* peer
+ * the combinations don't know about, so a new one can't go untested.
+ *
+ * Optional peers (`peerDependenciesMeta[name].optional`, e.g. `http-cookie-agent` /
+ * `tough-cookie` for the `cookieJar` option) are deliberately left out: every combination
+ * here is meant to smoke-test the package the way a consumer who *hasn't* opted into that
+ * feature gets it, which is also the case this matters most for - it's what proves the
+ * package still loads and works without the optional peer installed.
  */
 export function packageWithPeers(tarball, combo) {
   const manifest = JSON.parse(
     execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], {
       encoding: 'utf8',
     }),
+  );
+  const optional = new Set(
+    Object.entries(manifest.peerDependenciesMeta ?? {})
+      .filter(([, meta]) => meta.optional)
+      .map(([name]) => name),
   );
   const versions = {
     '@nestjs/common': combo.nest,
@@ -43,6 +54,7 @@ export function packageWithPeers(tarball, combo) {
   };
   const dependencies = { [manifest.name]: `file:${tarball}` };
   for (const peer of Object.keys(manifest.peerDependencies ?? {})) {
+    if (optional.has(peer)) continue;
     if (!versions[peer]) {
       throw new Error(
         `peer ${peer} has no version in the consumer matrix (scripts/consumer)`,

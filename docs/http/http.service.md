@@ -84,7 +84,7 @@ Read-only. The number of interceptors in this service's chain: native intercepto
 
 ## `setGlobalDispatcher(dispatcher)`
 
-Sets the undici `Dispatcher` used by later requests made through this `HttpService`. Despite the name, it does not change undici's global dispatcher. A `dispatcher` passed per request takes precedence. Neither applies when the module creates its own dispatcher (`proxy`, `withCredentials`, or `httpAgent`/`httpsAgent` with `maxSockets`).
+Sets the undici `Dispatcher` used by later requests made through this `HttpService`. Despite the name, it does not change undici's global dispatcher. A `dispatcher` passed per request takes precedence. Neither applies when the module creates its own dispatcher (`proxy`, `cookieJar`, `socketPath`, or `httpAgent`/`httpsAgent` with `maxSockets`).
 
 ```typescript
 import { Agent } from 'undici';

@@ -51,6 +51,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `transformRequest` / `transformResponse` per request | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` gets the raw `data`; `transformResponse` gets the raw response body (not yet JSON-parsed). |
 | `socketPath` per request | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Overrides a module-level `socketPath`. |
 | `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength` per request | ❌ | Module-level only (see below). |
+| `cookieJar` per request | ❌ | Module-level only - not an axios option, see [Cookies: `cookieJar`](#cookies-cookiejar). Building a `CookieAgent` per jar per request would be expensive; pass different `cookieJar`s to different `HttpModule.register()` calls instead. |
 | `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress`, `adapter` | ❌ | |
 
 ## Response
@@ -108,15 +109,16 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `httpAgent` / `httpsAgent` | ✅ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts (only when no module/request `timeout` is set). `httpsAgent`'s TLS options (`ca`, `cert`, `key`, `pfx`, `passphrase`, `rejectUnauthorized`, `servername`, `ciphers`, `minVersion`, `maxVersion`) map onto undici's `Agent({ connect: {...} })`. Module-level only - a per-request `httpAgent`/`httpsAgent` is ignored. |
 | `proxy` | ✅ | An explicit `proxy: { host, port, protocol?, auth? }` creates an undici `ProxyAgent`. `proxy: false` disables proxying entirely, including the environment variables below. |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (and lower-case) | ✅ | Read once at module setup via undici's `EnvHttpProxyAgent`, matching axios' own default (`proxy-from-env`) - **only** when no `dispatcher`, `proxy` or `socketPath` is configured. As in axios, a custom `httpAgent`/`httpsAgent` doesn't turn this off; its TLS options still apply, including to targets reached through the proxy. This is a behaviour change from earlier versions, which never read these variables: with `HTTP_PROXY` set in the environment, a request to `http://127.0.0.1:...` now goes through that proxy by default unless `NO_PROXY` covers it or `proxy: false` is passed. See the note below. |
-| `withCredentials` | ⚠️ | Enables a cookie jar (`http-cookie-agent` + `tough-cookie`) that stores and resends cookies, which axios does not do in Node.js. |
+| `withCredentials` | ✅ | A no-op, matching axios itself on Node.js. Accepted (and kept in the types) for axios compatibility only. **Breaking change from 0.6:** used to enable a cookie jar shared by the whole service - see `cookieJar` below. |
 | `socketPath` | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Works at module level and per request; the request URL's host is still used for the `Host` header, as in axios. |
 | `httpVersion` | ✅ | `httpVersion: 2` → `Agent({ allowH2: true })`. Module-level only; needs a target that speaks HTTP/2 over TLS (undici has no plaintext HTTP/2). `http2Options` is accepted but has no effect (undici has no per-session HTTP/2 tuning). |
 | `decompress` | ✅ | Applied as the default for every request; a per-request `decompress` overrides it. |
 | `xsrfCookieName`, `xsrfHeaderName` | ❌ | Ignored (a warning is logged). |
+| `cookieJar` | - | Not an axios option - see [Cookies: `cookieJar`](#cookies-cookiejar) below. |
 
 ### Precedence: an explicit `dispatcher` always wins
 
-A `dispatcher` passed directly in module options (`register({ dispatcher })`) is never overridden by `httpAgent`/`httpsAgent`, `socketPath`, `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY` environment variables - none of that mapping runs once a `dispatcher` is set. A per-request `dispatcher` wins over all of those too, including a per-request `socketPath`. Use this to configure undici directly when the axios-shaped options above aren't expressive enough (see [Performance Note](#performance-note)).
+A `dispatcher` passed directly in module options (`register({ dispatcher })`) is never overridden by `httpAgent`/`httpsAgent`, `socketPath`, `proxy`, `cookieJar` or the `HTTP_PROXY`/`HTTPS_PROXY` environment variables - none of that mapping runs once a `dispatcher` is set, so a `cookieJar` next to a `dispatcher` is ignored. A per-request `dispatcher` wins over all of those too, including a per-request `socketPath`. Use this to configure undici directly when the axios-shaped options above aren't expressive enough (see [Performance Note](#performance-note)).
 
 A request-level `socketPath` gets its own cached `Agent` per path (at most 32 paths; the oldest is closed to make room), so use a small, fixed set of socket paths.
 
@@ -194,13 +196,27 @@ HttpModule.register({
 });
 ```
 
-### Cookies: `withCredentials`
+### Cookies: `cookieJar`
+
+`withCredentials` is a no-op, matching axios itself on Node.js - it's accepted (and stays in the types) purely for axios compatibility:
 
 ```typescript
-HttpModule.register({ withCredentials: true });
+HttpModule.register({ withCredentials: true }); // accepted, does nothing
 ```
 
-Combining `httpAgent`/`httpsAgent` with `withCredentials` may not work because the cookie agent wraps the dispatcher. Use them separately or configure undici directly.
+**Breaking change from 0.6:** `withCredentials: true` used to turn on a cookie jar shared by the whole `HttpService` - every caller of that service saw every other caller's cookies, including a `Set-Cookie` from one user's upstream call being replayed on a different user's later request. Cookie handling is now opt-in through an explicit `cookieJar` module option instead - a [`tough-cookie`](https://www.npmjs.com/package/tough-cookie) `CookieJar` instance:
+
+```typescript
+import { CookieJar } from 'tough-cookie';
+
+HttpModule.register({ cookieJar: new CookieJar() });
+```
+
+The module wraps whatever dispatcher it built from the other transport options (`httpAgent`/`httpsAgent`, `socketPath`, `proxy`, ...) in an [`http-cookie-agent`](https://www.npmjs.com/package/http-cookie-agent) `CookieAgent` around that jar, so combining `cookieJar` with those options works (unlike the old `withCredentials`, whose cookie agent could conflict with them).
+
+- **Only a jar instance is accepted, never `true`.** A `true` shorthand that built one jar per service would just reintroduce the same shared-jar leak with a different trigger. Passing the jar yourself means you decide its scope: one jar per `HttpModule.register()` call (the common case, isolated per service), one jar shared on purpose across several services (pass the same instance to each), or a fresh jar per request/user if you build the `HttpService` (or a request-scoped wrapper around it) per request - this library doesn't do that for you.
+- **Module-level only** - there's no per-request `cookieJar`. Wiring one up builds a `CookieAgent`, which only happens once per `HttpService` (in its constructor), never on the request path; a per-request jar would mean building one per request (or caching per jar, adding its own bookkeeping) for no clear benefit over just registering a second module with its own `cookieJar`.
+- **Optional peer dependencies.** `http-cookie-agent` and `tough-cookie` are not installed by default; install them yourself (`npm i http-cookie-agent tough-cookie`) to use `cookieJar`. They're loaded lazily, only the first time a `cookieJar` is actually configured, so a project that never uses this option pays nothing for it - requiring both cost about 100-150ms at startup. Setting `cookieJar` without them installed throws a clear error at module setup (`cookieJar requires the optional peer dependencies http-cookie-agent and tough-cookie; install them with npm i http-cookie-agent tough-cookie`) instead of a confusing `Cannot find module`.
 
 ### XSRF
 

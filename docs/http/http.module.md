@@ -65,7 +65,8 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 
 `register()` and the object returned by `registerAsync()` accept:
 
-- **Axios options**: `baseURL`, `headers`, `timeout`, `params`, `paramsSerializer`, `auth`, `validateStatus`, `responseType`, `maxRedirects`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`. They are detected and mapped to undici; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for what each one does and how it differs from axios.
+- **Axios options**: `baseURL`, `headers`, `timeout`, `params`, `paramsSerializer`, `auth`, `validateStatus`, `responseType`, `maxRedirects`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials` (a no-op, like axios on Node.js), `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`. They are detected and mapped to undici; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for what each one does and how it differs from axios.
+- **`cookieJar`**: not an axios option. Opts into cookie storage/replay through a caller-supplied `tough-cookie` `CookieJar` instance; see [Cookies: `cookieJar`](/docs/axios-supported-options.md#cookies-cookiejar).
 - **Undici request options**, used as defaults for every request, for example `dispatcher`, `headersTimeout` and `bodyTimeout`. See the [undici `request()` options](https://github.com/nodejs/undici#undicirequesturl-options-promise).
 - **`interceptors`**: an array of interceptors (see below).
 - **`global`**: registers the module as global, as in `@nestjs/axios`.

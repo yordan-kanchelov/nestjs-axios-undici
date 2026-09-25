@@ -18,8 +18,6 @@ import {
 import { differential, Ctx } from './harness';
 
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
-const COOKIE_JAR =
-  'plan.md phase 2: breaking: withCredentials becomes a no-op; add cookieJar';
 
 const routes = {
   '/echo': (req: any, res: any, body: string) => {
@@ -224,7 +222,6 @@ differential('Differential: HttpModule.register() options', routes, [
       return r.data.headers.cookie;
     },
     normalize: (o: any) => o.result,
-    knownDifference: COOKIE_JAR,
   },
   {
     name: 'params module-level merged with request params',
