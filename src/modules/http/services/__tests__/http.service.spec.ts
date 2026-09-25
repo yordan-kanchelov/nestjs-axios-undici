@@ -75,6 +75,7 @@ describe('HttpService', () => {
 
       expect(requestMock).toHaveBeenCalledWith(baseURL, {
         method: 'GET',
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -154,6 +155,7 @@ describe('HttpService', () => {
 
         expect(requestMock).toHaveBeenCalledWith(baseURL, {
           dispatcher: dispatcherMock,
+          signal: expect.any(AbortSignal),
         });
       });
 
@@ -177,6 +179,7 @@ describe('HttpService', () => {
             authorization: 'Bearer module-token',
           },
           method: 'POST',
+          signal: expect.any(AbortSignal),
         });
       });
 
@@ -199,6 +202,7 @@ describe('HttpService', () => {
             authorization: 'Bearer module-token',
           },
           method: 'PUT',
+          signal: expect.any(AbortSignal),
         });
       });
     });

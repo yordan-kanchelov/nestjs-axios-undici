@@ -97,4 +97,4 @@ this.httpService.get('https://api.example.com', { signal: controller.signal }).s
 controller.abort();
 ```
 
-Unsubscribing from the Observable does not cancel the request; use a signal for that.
+Unsubscribing from the Observable before it emits also aborts the request (for example `timeout()`, `switchMap`, or `takeUntil`), as in `@nestjs/axios`.

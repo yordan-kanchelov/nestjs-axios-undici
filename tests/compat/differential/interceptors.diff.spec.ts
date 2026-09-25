@@ -20,8 +20,6 @@ import { differential, Ctx } from './harness';
 
 const REFACTOR =
   'plan.md phase 2: refactor(axiosRef): one config object (interceptors/response.config/error.config)';
-const OBSERVABLE =
-  'plan.md phase 2: fix(observable): abort on unsubscribe and run request interceptors per subscription';
 const AXIOS_INSTANCE =
   'plan.md phase 2: feat(axiosRef): make it a real axios instance';
 const TYPES = 'plan.md phase 2: types: axios interop';
@@ -312,7 +310,6 @@ differential(
         return ctx.seen.slice(before).map((r: any) => r.aborted);
       },
       normalize: (o: any) => o.result,
-      knownDifference: OBSERVABLE,
     },
     {
       name: 'interceptor side effects happen per subscription',
@@ -325,7 +322,6 @@ differential(
         return n;
       },
       normalize: (o: any) => o.result,
-      knownDifference: OBSERVABLE,
     },
     {
       name: 'rxjs retry() re-runs axiosRef request interceptors per attempt',
@@ -341,7 +337,6 @@ differential(
         return ctx.seen.slice(before).map((r: any) => r.headers['x-n']);
       },
       normalize: (o: any) => o.result, // axios: ['1', '2', '3']
-      knownDifference: OBSERVABLE,
     },
   ],
 );

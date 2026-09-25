@@ -13,7 +13,7 @@ Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ no
 | `options` | ✅ | Not available in `@nestjs/axios`. |
 | `postForm` / `putForm` / `patchForm` with `FormData` | ✅ | Sent as `multipart/form-data`. |
 | `postForm` / `putForm` / `patchForm` with a plain object | ⚠️ | Sent url-encoded; axios sends `multipart/form-data`. |
-| Unsubscribing aborts the request | ❌ | The request runs to completion; use `signal` to cancel. |
+| Unsubscribing aborts the request | ✅ | Unsubscribing before the response arrives (`timeout()`, `switchMap`, `takeUntil`, `race`, ...) aborts the upstream request, as in `@nestjs/axios`. Not aborted once the response (or, for `responseType: 'stream'`, the headers) has been emitted. |
 
 ## `axiosRef`
 

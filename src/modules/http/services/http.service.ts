@@ -10,7 +10,7 @@ import {
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
-import { Observable, of } from 'rxjs';
+import { Observable, defer, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 
 import {
@@ -157,74 +157,81 @@ export class HttpService {
     urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
     requestOptions?: HttpRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
-    const { url, options } = normalizeAxiosRequest(
-      urlOrConfig,
-      requestOptions,
-      {
-        defaults: this._axiosRef.defaults,
-        instanceOptions: this.instanceOptions,
-      },
-    ) as {
-      url: string | URL | UrlObject;
-      options: Omit<HttpRequestOptions, 'headers'> &
-        Pick<Dispatcher.RequestOptions, 'headers'>;
-    };
+    // `defer()` makes the Observable cold and re-runs everything below (config
+    // normalization, the axiosRef request interceptors, the actual request)
+    // on every subscription, as `@nestjs/axios`' `makeObservable` does. This
+    // matters for `get().pipe(retry())`: each attempt must build its own
+    // headers/config rather than reusing the first attempt's.
+    return defer(() => {
+      // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
+      const { url, options } = normalizeAxiosRequest(
+        urlOrConfig,
+        requestOptions,
+        {
+          defaults: this._axiosRef.defaults,
+          instanceOptions: this.instanceOptions,
+        },
+      ) as {
+        url: string | URL | UrlObject;
+        options: Omit<HttpRequestOptions, 'headers'> &
+          Pick<Dispatcher.RequestOptions, 'headers'>;
+      };
 
-    // Handle timeout option for axios compatibility
-    const { timeout, ...restOptions } = options || {};
-    const mergedOptions = {
-      ...this.instanceOptions,
-      ...restOptions,
-    };
+      // Handle timeout option for axios compatibility
+      const { timeout, ...restOptions } = options || {};
+      const mergedOptions = {
+        ...this.instanceOptions,
+        ...restOptions,
+      };
 
-    // Map timeout to undici's timeout options
-    if (timeout !== undefined) {
-      mergedOptions.headersTimeout = timeout;
-      mergedOptions.bodyTimeout = timeout;
-    }
-
-    // Pass through size limit options from module config
-    const moduleOpts = this.moduleOptions as any;
-    if (moduleOpts?.maxBodyLength !== undefined) {
-      (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
-    }
-    if (moduleOpts?.maxContentLength !== undefined) {
-      (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
-    }
-
-    // Handle axios-specific options from module configuration
-    let finalUrl = url;
-    const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
-
-    if (axiosCompat?.baseURL) {
-      // Apply baseURL if the URL is relative
-      const urlString = typeof url === 'string' ? url : url.toString();
-      if (
-        !urlString.startsWith('http://') &&
-        !urlString.startsWith('https://')
-      ) {
-        finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
+      // Map timeout to undici's timeout options
+      if (timeout !== undefined) {
+        mergedOptions.headersTimeout = timeout;
+        mergedOptions.bodyTimeout = timeout;
       }
-    }
 
-    // Handle socket path
-    if (moduleOpts?.__socketPath) {
-      // Transform URL to use unix socket
-      const urlString =
-        typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
-      const urlObj = new URL(urlString);
-      finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
-    }
+      // Pass through size limit options from module config
+      const moduleOpts = this.moduleOptions as any;
+      if (moduleOpts?.maxBodyLength !== undefined) {
+        (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
+      }
+      if (moduleOpts?.maxContentLength !== undefined) {
+        (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
+      }
 
-    // Create the request object for interceptors
-    const interceptorRequest: HttpInterceptorRequest = {
-      url: finalUrl,
-      options: mergedOptions,
-    };
+      // Handle axios-specific options from module configuration
+      let finalUrl = url;
+      const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
 
-    // Create the interceptor chain (always includes axios adapter)
-    return this.executeInterceptorChain(interceptorRequest);
+      if (axiosCompat?.baseURL) {
+        // Apply baseURL if the URL is relative
+        const urlString = typeof url === 'string' ? url : url.toString();
+        if (
+          !urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')
+        ) {
+          finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
+        }
+      }
+
+      // Handle socket path
+      if (moduleOpts?.__socketPath) {
+        // Transform URL to use unix socket
+        const urlString =
+          typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
+        const urlObj = new URL(urlString);
+        finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
+      }
+
+      // Create the request object for interceptors
+      const interceptorRequest: HttpInterceptorRequest = {
+        url: finalUrl,
+        options: mergedOptions,
+      };
+
+      // Create the interceptor chain (always includes axios adapter)
+      return this.executeInterceptorChain(interceptorRequest);
+    });
   }
 
   /**
@@ -246,20 +253,53 @@ export class HttpService {
         this.customDispatcher ||
         requestOptions.dispatcher ||
         this.instanceOptions.dispatcher;
+
+      // Abort the undici request when the Observable is unsubscribed before
+      // it settles (rxjs `timeout()`, `switchMap`, `takeUntil`, `race`, ...),
+      // matching `@nestjs/axios`' `makeObservable` teardown. A fresh
+      // AbortController is created per subscription (so `defer()`/`retry()`
+      // attempts don't share one), and combined with any user-supplied
+      // signal (already merged with `cancelToken` by `normalizeAxiosRequest`)
+      // via a plain listener rather than `AbortSignal.any`, which is slower.
+      // `settled` flips to true once the response (or, for a `stream`
+      // response, the headers) has been handed to the subscriber, at which
+      // point rxjs's own teardown runs but must no longer abort.
+      const userSignal = requestOptions.signal as AbortSignal | undefined;
+      const controller = new AbortController();
+      let settled = false;
+      if (userSignal) {
+        if (userSignal.aborted) {
+          controller.abort(userSignal.reason);
+        } else {
+          userSignal.addEventListener(
+            'abort',
+            () => controller.abort(userSignal.reason),
+            { once: true },
+          );
+        }
+      }
+
       const options = {
         ...requestOptions,
         ...this.resolveRedirectOptions(dispatcher, maxRedirections),
+        signal: controller.signal,
       };
 
       request(interceptorRequest.url, options)
         .then(res => toAxiosLikeResponse(interceptorRequest, res))
         .then(res => {
+          settled = true;
           subscriber.next(res);
           subscriber.complete();
         })
         .catch(error => {
+          settled = true;
           subscriber.error(toAxiosError(error, interceptorRequest));
         });
+
+      return () => {
+        if (!settled) controller.abort();
+      };
     });
   }
 

@@ -172,11 +172,16 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     knownDifference: ERRORS,
   },
   {
+    // Still differs after the observable/abort fix (verified): undici's
+    // headersTimeout/bodyTimeout are idle timers that reset on every chunk,
+    // so a slowly-but-steadily trickling body never times out; axios' timeout
+    // is a deadline from request start. That's the "total (deadline) timeout"
+    // gap tracked under fix(errors), not the observable item this was
+    // originally filed under.
     name: 'timeout covers a slowly trickling body (axios: total time)',
     run: (s, ctx) => s.get(`${ctx.base}/slow-body?ms=1500`, { timeout: 500 }),
     normalize: errShape,
-    knownDifference:
-      'plan.md phase 2: fix(observable): abort on unsubscribe and run request interceptors per subscription',
+    knownDifference: ERRORS,
   },
   {
     name: 'transitional.clarifyTimeoutError => ETIMEDOUT',

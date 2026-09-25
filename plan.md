@@ -95,17 +95,17 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
-  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 183 scenarios, 77 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
+  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 183 scenarios. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more); **as of `claude/fix-observable-abort`, 74 remain with `knownDifference`** (down from 77: 3 `fix(observable)` cases now pass and lost their marker; one mistagged `fix(observable)` case, about undici's idle-timer timeout never firing for a slowly-trickling body, was retagged to `fix(errors)`, where it belongs):
     - fix(response): decode bodies like axios: 19
     - feat: axios default headers: 11
-    - fix(observable): abort on unsubscribe and run request interceptors per subscription: 4
+    - fix(observable): abort on unsubscribe and run request interceptors per subscription: 0 (was 4; fixed)
     - refactor(axiosRef): one config object from interceptors to response.config / error.config: 11
     - fix: follow redirects by default (21): 1
     - fix(config): transport options: 2
     - breaking: withCredentials becomes a no-op; add cookieJar: 1
     - types: axios interop: 3
     - feat(axiosRef): make it a real axios instance: 3
-    - fix(errors): match axios errors: 22
+    - fix(errors): match axios errors: 23 (was 22; gained the retagged case above)
     - Progress callbacks / formSerializer: not covered (no deterministic, fast repro found; left for the PR that implements it)
   - Follow-ups from the PR #12 review (not blocking):
     - Our side reuses the global undici Agent across scenarios; give each scenario a fresh dispatcher, the way the axios side gets its own `register({})`.
@@ -126,7 +126,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 
 - [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase.
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
-- [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
+- [~] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors. PR open (`claude/fix-observable-abort`).
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
@@ -204,3 +204,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #12 (D) merged; the differential tests pass on Nest 10/11/12. Worker E (perf check) next.
 - 2026-09-25: PR #13 (E, `claude/perf-check`) merged: CPU-per-request regression check, 5 scenarios, pooled re-measure, 1.5x threshold for interceptors. Noise and sensitivity measured, see item E above.
 - 2026-09-25: Owner decisions recorded: withCredentials becomes a no-op with an explicit cookieJar; redirects follow axios (21 by default); trim the API where nothing is lost; benchmarks cover Express and Fastify.
+- 2026-09-25: PR open (`claude/fix-observable-abort`): `fix(observable): abort on unsubscribe and run request interceptors per subscription`. `HttpService.request()` now wraps its body in `defer()`, so it stays cold (no work before subscribe) and re-runs config normalization plus the axiosRef request interceptors on every subscription. `executeRequest` creates a per-subscription `AbortController`, combined with any user `signal`/`cancelToken` via a plain listener (no `AbortSignal.any`), and aborts it on unsubscribe unless the response (or, for `responseType: 'stream'`, the headers) has already been emitted. 3 of the 4 `fix(observable)` known-difference cases now pass; the 4th was a mistag (undici's idle-timer timeout vs. axios' deadline timeout) and was retagged to `fix(errors)`. Perf check and full Node 24 verification green.
