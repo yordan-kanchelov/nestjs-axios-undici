@@ -262,10 +262,14 @@ export function buildFormRequestConfig<D = any>(
   data: D | undefined,
   config: AxiosLikeRequestConfig<D> | undefined,
 ): AxiosLikeRequestConfig<D> {
+  // A URLSearchParams body is already form-encoded: send it as is (its
+  // `a=1&b=2` body and urlencoded Content-Type) rather than flattening it
+  // into an empty FormData - it has no enumerable own keys.
   const isFormDataLike =
     (data as any)?.[Symbol.toStringTag] === 'FormData' ||
     typeof (data as any)?.getHeaders === 'function' ||
-    isGlobalFormData(data);
+    isGlobalFormData(data) ||
+    data instanceof URLSearchParams;
   if (isFormDataLike) {
     return { ...config, url: url as any, method, data };
   }

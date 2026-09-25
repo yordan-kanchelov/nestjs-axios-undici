@@ -93,17 +93,6 @@ allow(ALLOWLIST, 'axiosRef.interceptors.request', ['handlers', 'forEach'], {
 // the mutual TypeScript assignability plan.md "feat(axiosRef): make it a
 // real axios instance" needs. Use `setContentEncoding`/`set('Accept-Encoding',
 // ...)` instead (see axios-headers.ts).
-allow(
-  ALLOWLIST,
-  'AxiosHeaders instance',
-  ['getAcceptEncoding', 'setAcceptEncoding', 'hasAcceptEncoding'],
-  {
-    reason:
-      "axios registers these at runtime (AxiosHeaders.accessor(['Accept-Encoding'])) but never declares them in its own .d.ts; matching its declared (not runtime) surface exactly is what makes this class mutually assignable with axios' own AxiosHeaders",
-    tracked: 'plan.md phase 2 "feat(axiosRef): make it a real axios instance"',
-  },
-);
-
 /** Public own keys along the whole prototype chain (methods and data props alike). */
 function ownMembers(value: unknown): Set<string> {
   const out = new Set<string>();

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '../http.service';
 import { HttpModule } from '../../http.module';
+import { AxiosHeaders } from '../../interfaces/axios-headers';
 import * as http from 'http';
 import { AddressInfo } from 'net';
 import { firstValueFrom } from 'rxjs';
@@ -280,6 +281,43 @@ describe('HttpService Convenience Methods', () => {
         ),
       );
       expect(response.data.success).toBe(true);
+    });
+  });
+
+  describe('axiosRef review fixes', () => {
+    it('postForm with URLSearchParams sends its body', async () => {
+      let received = '';
+      serverUrl = await createMockServer((req, res) => {
+        req.on('data', chunk => (received += chunk));
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{}');
+        });
+      });
+
+      await service.axiosRef.postForm(
+        serverUrl,
+        new URLSearchParams({ a: '1', b: '2' }),
+      );
+      expect(received).toBe('a=1&b=2');
+    });
+
+    it('create() copies object defaults instead of sharing them', () => {
+      service.axiosRef.defaults.params = { a: 1 };
+      try {
+        const child = service.axiosRef.create();
+        (service.axiosRef.defaults.params as any).a = 999;
+        expect((child.defaults.params as any).a).toBe(1);
+      } finally {
+        delete service.axiosRef.defaults.params;
+      }
+    });
+
+    it('AxiosHeaders has the Accept-Encoding accessors axios has at runtime', () => {
+      const headers = new AxiosHeaders() as any;
+      headers.setAcceptEncoding('gzip');
+      expect(headers.getAcceptEncoding()).toBe('gzip');
+      expect(headers.hasAcceptEncoding()).toBe(true);
     });
   });
 });

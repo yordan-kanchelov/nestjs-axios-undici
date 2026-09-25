@@ -184,8 +184,8 @@ function store(target: AxiosHeaders): Map<string, [string, AxiosHeaderValue]> {
  * A free function, not a class method: axios has no equivalent public
  * method, and any *extra* public member this class declares beyond axios'
  * own `.d.ts` breaks the mutual assignability plan.md's "feat(axiosRef):
- * make it a real axios instance" needs (see the `setAcceptEncoding` removal
- * note further down) - a free function avoids the class surface entirely,
+ * make it a real axios instance" needs (see the `setAcceptEncoding` note
+ * further down) - a free function avoids the class surface entirely,
  * without needing TS `private` (which brings back the nominal-typing
  * problem `STORE`'s own doc comment explains).
  */
@@ -636,16 +636,11 @@ export class AxiosHeaders {
     return this.has('Accept');
   }
 
-  // Deliberately no `setAcceptEncoding`/`getAcceptEncoding`/`hasAcceptEncoding`:
-  // axios registers `Accept-Encoding` as a runtime accessor
-  // (`AxiosHeaders.accessor([...])` in its `core/AxiosHeaders.js`) but never
-  // declares these three in its own `.d.ts` - adding them here would make
-  // this class *wider* than axios' own declared type, breaking the mutual
-  // assignability plan.md's "feat(axiosRef): make it a real axios instance"
-  // needs (an axios `AxiosResponse` mock must stay assignable to this
-  // library's `AxiosLikeResponse`, which requires this class to declare no
-  // more public members than axios' own `.d.ts` does). Use `setContentEncoding`/
-  // `set('Accept-Encoding', ...)` instead.
+  // `setAcceptEncoding`/`getAcceptEncoding`/`hasAcceptEncoding` exist at
+  // runtime (added to the prototype below the class), as in axios, which
+  // registers them as accessors but doesn't declare them in its `.d.ts`.
+  // Declaring them here would make this class wider than axios' declared
+  // type and break assignability between the two.
 
   /** Matches axios' `AxiosHeaders#setContentEncoding` (in its `.d.ts`, though its own runtime accessor list uses `Accept-Encoding` instead - both are provided here). */
   setContentEncoding(
@@ -818,3 +813,31 @@ export class AxiosHeaders {
     ]();
   }
 }
+
+// Runtime-only accessors, matching axios' `AxiosHeaders.accessor(['Accept-Encoding', ...])`:
+// present on instances, not declared in the type (see the note in the class).
+Object.defineProperties(AxiosHeaders.prototype, {
+  setAcceptEncoding: {
+    value(this: AxiosHeaders, value: AxiosHeaderValue | false, rewrite?: any) {
+      if (value === false) this.delete('Accept-Encoding');
+      else this.set('Accept-Encoding', value, rewrite);
+      return this;
+    },
+    writable: true,
+    configurable: true,
+  },
+  getAcceptEncoding: {
+    value(this: AxiosHeaders, parser?: any) {
+      return this.get('Accept-Encoding', parser);
+    },
+    writable: true,
+    configurable: true,
+  },
+  hasAcceptEncoding: {
+    value(this: AxiosHeaders) {
+      return this.has('Accept-Encoding');
+    },
+    writable: true,
+    configurable: true,
+  },
+});

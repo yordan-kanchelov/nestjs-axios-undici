@@ -133,6 +133,15 @@ function mergeHeaderDefaults(
  * `headers` merges per-bucket (`mergeHeaderDefaults`), everything else in
  * `DEFAULTS_PASSTHROUGH_KEYS` overrides outright when present in `override`.
  */
+function cloneDefault(value: unknown): unknown {
+  if (Array.isArray(value)) return value.slice();
+  if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    if (proto === Object.prototype || proto === null) return { ...value };
+  }
+  return value;
+}
+
 function mergeAxiosDefaults(
   base: AxiosRefDefaults,
   override?: Record<string, any>,
@@ -141,9 +150,15 @@ function mergeAxiosDefaults(
     ...base,
     headers: mergeHeaderDefaults(base.headers, override?.headers),
   };
-  if (!override) return merged;
+  // Like axios' `mergeConfig`, object and array values are copied, so a
+  // later in-place change to the parent's (or the override's) `params` or
+  // `transformRequest` doesn't leak into the new instance.
   for (const key of DEFAULTS_PASSTHROUGH_KEYS) {
-    if (override[key] !== undefined) (merged as any)[key] = override[key];
+    const value =
+      override && override[key] !== undefined
+        ? override[key]
+        : (base as any)[key];
+    (merged as any)[key] = cloneDefault(value);
   }
   return merged;
 }
