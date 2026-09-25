@@ -136,6 +136,8 @@ More in the [Interceptors guide](https://yordan-kanchelov.github.io/nestjs-axios
 
 Contributions are welcome. Run `npm test` (unit, e2e and examples) before opening a pull request, and add a changeset (`npx changeset`) describing any change to the published package. Releases are cut automatically from the changesets; see [CHANGELOG.md](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/CHANGELOG.md).
 
+The dev dependencies are NestJS 12, whose packages are ESM-only. Jest can load them only on Node.js 24.9 or later, so develop on Node 24+ and run Jest through the npm scripts (`npm test`, `npm run test:jest`, `npm run test:cov`), which pass the `--experimental-vm-modules` flag Jest needs; a bare `npx jest` won't. On Node 22, install an older Nest major over the lockfile first, as CI does: `npm i --no-save @nestjs/common@11 @nestjs/core@11 @nestjs/testing@11 @nestjs/platform-express@11 @nestjs/axios@4` (and `npm ci` to go back).
+
 ## Credits
 
 This project started as a fork of [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) by [Hebert Cisco](https://github.com/hebertcisco). Thank you for the foundation it is built on.
