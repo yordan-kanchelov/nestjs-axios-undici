@@ -2,7 +2,7 @@
 
 The `nestjs-axios-undici` module allows you to configure the underlying `undici` client options.
 
-> **Note**: As of v0.4.0+, the module always returns axios-compatible responses by default. No special configuration is needed for axios compatibility.
+> **Note**: The module always returns axios-compatible responses. No special configuration is needed for axios compatibility.
 
 ## Basic Configuration
 

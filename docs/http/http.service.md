@@ -1,6 +1,6 @@
 # HttpService
 
-The `HttpService` is the main service for making HTTP requests in your NestJS application. As of v0.4.0+, it always returns axios-compatible responses, making it a drop-in replacement for `@nestjs/axios`.
+The `HttpService` is the main service for making HTTP requests in your NestJS application. It always returns axios-compatible responses, making it a drop-in replacement for `@nestjs/axios`.
 
 ## Basic Usage
 

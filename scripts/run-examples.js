@@ -74,7 +74,12 @@ async function runExample(example) {
     const child = spawn(command, args, {
       ...options,
       env: { ...process.env, NODE_ENV: 'test' },
+      // Own process group, so a timeout can stop npx and the example it runs
+      detached: true,
     });
+
+    // Record each example once: killing a timed-out child also fires 'close'
+    let settled = false;
 
     child.stdout.on('data', data => {
       output += data.toString();
@@ -86,7 +91,12 @@ async function runExample(example) {
 
     // Set a timeout for long-running examples
     const timeout = setTimeout(() => {
-      child.kill();
+      settled = true;
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
       console.log(`⏱️  Timeout: ${example.name} (30s)`);
       failed++;
       results.push({
@@ -100,6 +110,10 @@ async function runExample(example) {
 
     child.on('close', code => {
       clearTimeout(timeout);
+      if (settled) {
+        return;
+      }
+      settled = true;
       const duration = Date.now() - startTime;
 
       if (code === 0) {

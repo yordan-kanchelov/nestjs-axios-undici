@@ -6,7 +6,7 @@
   "main": "index.js",
   "types": "index.d.ts",
   "engines": {
-    "node": ">=18",
+    "node": ">=20.18.1",
     "npm": ">=9"
   },
   "scripts": {
@@ -14,18 +14,9 @@
     "build": "rimraf -rf lib && tsc -p tsconfig.json",
     "format": "prettier --write \"{src,test}/**/*.ts\"",
     "lint": "eslint src --ext .js,.ts",
-    "prepublish:npm": "npm run build",
-    "publish:npm": "npm publish --access public",
-    "prepublish:next": "npm run build",
-    "publish:next": "npm publish --access public --tag next",
     "test:e2e": "jest --config ./tests/jest-e2e.json --runInBand --forceExit",
-    "prerelease": "npm run build",
-    "release": "node scripts/release.mjs",
     "prepare": "npm run build",
     "prepublishOnly": "npm run lint",
-    "preversion": "npm run lint",
-    "version": "npm run format && git add -A src",
-    "postversion": "git push && git push --tags",
     "test": "npm run test:unit && npm run test:e2e && npm run test:examples",
     "test:unit": "jest --forceExit",
     "test:unit:watch": "jest --watch",
@@ -33,9 +24,13 @@
     "test:unit:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "setup:examples": "node scripts/setup-examples.js",
     "test:examples": "npm run setup:examples && node scripts/run-examples.js",
-    "test:examples:verbose": "npm run setup:examples && VERBOSE=true node scripts/run-examples.js"
+    "test:examples:verbose": "npm run setup:examples && VERBOSE=true node scripts/run-examples.js",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
     "@commitlint/cli": "17.8.1",
     "@commitlint/config-angular": "17.8.1",
     "@nestjs/axios": "^4.0.0",
@@ -104,8 +99,13 @@
     "*.d.ts",
     "index.js",
     "lib",
-    "docs"
+    "docs",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "keywords": [
     "nestjs",
     "nest",
