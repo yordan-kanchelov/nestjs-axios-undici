@@ -245,25 +245,21 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
   {
     name: 'axiosRef(config) - the instance is callable, like axios(config)',
     run: (s: any, ctx: Ctx) =>
-      s
-        .axiosRef({ url: `${ctx.base}/echo`, method: 'get' })
-        .then((r: any) => ({
-          status: r.status,
-          method: r.data.method,
-          url: r.data.url,
-        })),
+      s.axiosRef({ url: `${ctx.base}/echo`, method: 'get' }).then((r: any) => ({
+        status: r.status,
+        method: r.data.method,
+        url: r.data.url,
+      })),
     normalize: (o: any) => o.result,
   },
   {
     name: 'axiosRef(url, config) - callable with the (url, config) shape',
     run: (s: any, ctx: Ctx) =>
-      s
-        .axiosRef(`${ctx.base}/echo`, { method: 'get' })
-        .then((r: any) => ({
-          status: r.status,
-          method: r.data.method,
-          url: r.data.url,
-        })),
+      s.axiosRef(`${ctx.base}/echo`, { method: 'get' }).then((r: any) => ({
+        status: r.status,
+        method: r.data.method,
+        url: r.data.url,
+      })),
     normalize: (o: any) => o.result,
   },
   {
@@ -279,8 +275,8 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
   {
     name: 'axiosRef.postForm sends a multipart form, like axios',
     run: (s: any, ctx: Ctx) =>
-      s
-        .axiosRef.postForm(`${ctx.base}/echo`, { a: '1', b: '2' })
+      s.axiosRef
+        .postForm(`${ctx.base}/echo`, { a: '1', b: '2' })
         .then((r: any) => ({
           status: r.status,
           method: r.data.method,

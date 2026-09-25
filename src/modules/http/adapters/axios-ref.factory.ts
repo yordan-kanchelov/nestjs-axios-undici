@@ -227,7 +227,11 @@ function getUri(
   }
   const params = config?.params ?? defaults.params;
   if (params) {
-    url = buildURL(url, params, config?.paramsSerializer ?? defaults.paramsSerializer);
+    url = buildURL(
+      url,
+      params,
+      config?.paramsSerializer ?? defaults.paramsSerializer,
+    );
   }
   return url;
 }

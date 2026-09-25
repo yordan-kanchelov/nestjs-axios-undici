@@ -831,8 +831,10 @@ export function normalizeAxiosRequest(
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
-    (defaults?.validateStatus !== undefined && input.validateStatus === undefined) ||
-    (defaults?.responseType !== undefined && input.responseType === undefined) ||
+    (defaults?.validateStatus !== undefined &&
+      input.validateStatus === undefined) ||
+    (defaults?.responseType !== undefined &&
+      input.responseType === undefined) ||
     (headerBase
       ? headerBase.hasWork
       : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
@@ -870,7 +872,9 @@ export function normalizeAxiosRequest(
     url = buildURL(
       url.toString(),
       mergedParams,
-      paramsSerializer ?? defaults?.paramsSerializer ?? instance.paramsSerializer,
+      paramsSerializer ??
+        defaults?.paramsSerializer ??
+        instance.paramsSerializer,
     );
   }
 
@@ -931,10 +935,16 @@ export function normalizeAxiosRequest(
   // immediately, even on this fast path (no axiosRef interceptors/adapter/
   // transforms in play) - `toAxiosLikeResponse` reads both straight off
   // `request.options`.
-  if (options.validateStatus === undefined && defaults?.validateStatus !== undefined) {
+  if (
+    options.validateStatus === undefined &&
+    defaults?.validateStatus !== undefined
+  ) {
     options.validateStatus = defaults.validateStatus;
   }
-  if (options.responseType === undefined && defaults?.responseType !== undefined) {
+  if (
+    options.responseType === undefined &&
+    defaults?.responseType !== undefined
+  ) {
     options.responseType = defaults.responseType;
   }
 
@@ -1095,7 +1105,9 @@ export function buildAxiosConfig(
     baseURL,
     params: mergedParams,
     paramsSerializer:
-      paramsSerializer ?? defaults?.paramsSerializer ?? instance.paramsSerializer,
+      paramsSerializer ??
+      defaults?.paramsSerializer ??
+      instance.paramsSerializer,
     method: lowerMethod,
     data,
     headers,
@@ -1105,16 +1117,22 @@ export function buildAxiosConfig(
     maxRedirects,
     beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
     validateStatus:
-      input.validateStatus ?? defaults?.validateStatus ?? instance.validateStatus,
+      input.validateStatus ??
+      defaults?.validateStatus ??
+      instance.validateStatus,
     responseType:
       input.responseType ?? defaults?.responseType ?? instance.responseType,
     decompress: input.decompress ?? instance.decompress,
     maxContentLength: input.maxContentLength ?? instance.maxContentLength,
     maxBodyLength: input.maxBodyLength ?? instance.maxBodyLength,
     transformRequest:
-      input.transformRequest ?? defaults?.transformRequest ?? instance.transformRequest,
+      input.transformRequest ??
+      defaults?.transformRequest ??
+      instance.transformRequest,
     transformResponse:
-      input.transformResponse ?? defaults?.transformResponse ?? instance.transformResponse,
+      input.transformResponse ??
+      defaults?.transformResponse ??
+      instance.transformResponse,
     socketPath: input.socketPath ?? instance.socketPath,
     adapter: input.adapter ?? defaults?.adapter ?? instance.adapter,
   };

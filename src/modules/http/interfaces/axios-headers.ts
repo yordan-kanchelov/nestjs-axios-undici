@@ -15,12 +15,7 @@
  * type, so a narrower union here breaks it.
  */
 export type AxiosHeaderValue =
-  | AxiosHeaders
-  | string
-  | string[]
-  | number
-  | boolean
-  | null;
+  AxiosHeaders | string | string[] | number | boolean | null;
 
 /**
  * Common HTTP request headers with proper typing
@@ -115,7 +110,8 @@ function matchHeaderValue(
   name: string,
   matcher: AxiosHeaderMatcher,
 ): boolean {
-  if (typeof matcher === 'function') return matcher.call(target, String(value), name);
+  if (typeof matcher === 'function')
+    return matcher.call(target, String(value), name);
   if (value == null || typeof value !== 'string') return false;
   if (matcher instanceof RegExp) return matcher.test(value);
   return value.indexOf(matcher) !== -1;
@@ -126,7 +122,6 @@ function parseTokens(str: string): Record<string, string | undefined> {
   const tokens: Record<string, string | undefined> = Object.create(null);
   const tokensRE = /([^\s,;=]+)\s*(?:=\s*([^,;]+))?/g;
   let match: RegExpExecArray | null;
-  // eslint-disable-next-line no-cond-assign -- ported verbatim from axios' own parseTokens
   while ((match = tokensRE.exec(str))) {
     tokens[match[1]] = match[2];
   }
@@ -158,7 +153,10 @@ function formatHeaderName(header: string): string {
  * mutually assignable with axios' own `AxiosHeaders` (plan.md "feat(axiosRef):
  * make it a real axios instance").
  */
-const STORE = new WeakMap<AxiosHeaders, Map<string, [string, AxiosHeaderValue]>>();
+const STORE = new WeakMap<
+  AxiosHeaders,
+  Map<string, [string, AxiosHeaderValue]>
+>();
 
 /** The backing `Map` for `target` (always present - set at the top of the constructor). */
 function store(target: AxiosHeaders): Map<string, [string, AxiosHeaderValue]> {
@@ -406,14 +404,20 @@ export class AxiosHeaders {
       // rewrite: true)`. Anything else (a multi-line "A: b\nC: d" string) is
       // the raw-headers-string shape, and the second argument is `rewrite`.
       if (isValidHeaderName(headerOrHeaders)) {
-        setOne(this, headerOrHeaders, valueOrRewrite as AxiosHeaderValue, rewrite);
+        setOne(
+          this,
+          headerOrHeaders,
+          valueOrRewrite as AxiosHeaderValue,
+          rewrite,
+        );
       } else {
         parseRawString(this, headerOrHeaders);
       }
       return this;
     }
 
-    const asRewrite = valueOrRewrite as boolean | AxiosHeaderMatcher | undefined;
+    const asRewrite = valueOrRewrite as
+      boolean | AxiosHeaderMatcher | undefined;
     if (headerOrHeaders instanceof AxiosHeaders) {
       forEachEntry(headerOrHeaders, (v, k) => setOne(this, k, v, asRewrite));
       return this;
@@ -478,7 +482,8 @@ export class AxiosHeaders {
       if (!lower) continue;
       const entry = store(this).get(lower);
       if (!entry) continue;
-      if (matcher && !matchHeaderValue(this, entry[1], entry[0], matcher)) continue;
+      if (matcher && !matchHeaderValue(this, entry[1], entry[0], matcher))
+        continue;
       store(this).delete(lower);
       deleted = true;
     }
@@ -506,7 +511,10 @@ export class AxiosHeaders {
    * Sets (or removes, with `false`) the `Authorization` header. Matches
    * axios' `AxiosHeaders#setAuthorization`.
    */
-  setAuthorization(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setAuthorization(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('Authorization');
     } else {
@@ -529,7 +537,10 @@ export class AxiosHeaders {
    * Sets (or removes, with `false`) the `Content-Type` header. Matches
    * axios' `AxiosHeaders#setContentType`.
    */
-  setContentType(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setContentType(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('Content-Type');
     } else {
@@ -551,7 +562,10 @@ export class AxiosHeaders {
   }
 
   /** Matches axios' `AxiosHeaders#setContentLength`. */
-  setContentLength(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setContentLength(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('Content-Length');
     } else {
@@ -571,7 +585,10 @@ export class AxiosHeaders {
   }
 
   /** Matches axios' `AxiosHeaders#setAccept`. */
-  setAccept(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setAccept(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('Accept');
     } else {
@@ -602,7 +619,10 @@ export class AxiosHeaders {
   // `set('Accept-Encoding', ...)` instead.
 
   /** Matches axios' `AxiosHeaders#setContentEncoding` (in its `.d.ts`, though its own runtime accessor list uses `Accept-Encoding` instead - both are provided here). */
-  setContentEncoding(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setContentEncoding(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('Content-Encoding');
     } else {
@@ -622,7 +642,10 @@ export class AxiosHeaders {
   }
 
   /** Matches axios' `AxiosHeaders#setUserAgent`. */
-  setUserAgent(value: AxiosHeaderValue | false, rewrite?: boolean | AxiosHeaderMatcher): this {
+  setUserAgent(
+    value: AxiosHeaderValue | false,
+    rewrite?: boolean | AxiosHeaderMatcher,
+  ): this {
     if (value === false) {
       this.delete('User-Agent');
     } else {
@@ -646,7 +669,9 @@ export class AxiosHeaders {
    * one. Matches axios' `AxiosHeaders#concat` (`this.constructor.concat(this, ...targets)`).
    */
   concat(
-    ...sources: Array<AxiosHeaders | RawAxiosHeaders | string | undefined | null>
+    ...sources: Array<
+      AxiosHeaders | RawAxiosHeaders | string | undefined | null
+    >
   ): AxiosHeaders {
     return AxiosHeaders.concat(this, ...sources);
   }
@@ -691,7 +716,8 @@ export class AxiosHeaders {
     const result: Record<string, any> = {};
     store(this).forEach(([name, value]) => {
       if (value == null || value === false) return;
-      result[name] = asStrings && Array.isArray(value) ? value.join(', ') : value;
+      result[name] =
+        asStrings && Array.isArray(value) ? value.join(', ') : value;
     });
     return result;
   }
@@ -706,7 +732,9 @@ export class AxiosHeaders {
   }
 
   /** Matches axios' `AxiosHeaders.parseParameters` (`get(name, AxiosHeaders.parseParameters)`). */
-  static parseParameters(value: AxiosHeaderValue): Record<string, string | undefined> {
+  static parseParameters(
+    value: AxiosHeaderValue,
+  ): Record<string, string | undefined> {
     return parseTokens(String(value ?? ''));
   }
 
@@ -716,7 +744,9 @@ export class AxiosHeaders {
    * @returns New AxiosHeaders instance with all headers
    */
   static concat(
-    ...sources: Array<AxiosHeaders | RawAxiosHeaders | string | undefined | null>
+    ...sources: Array<
+      AxiosHeaders | RawAxiosHeaders | string | undefined | null
+    >
   ): AxiosHeaders {
     const result = new AxiosHeaders();
     sources.forEach(source => {

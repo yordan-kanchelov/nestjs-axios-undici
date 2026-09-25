@@ -126,9 +126,9 @@ export interface AxiosRefDefaults<D = any> {
  * `postForm`/`putForm`/`patchForm` and `query`.
  */
 export interface AxiosRef {
-  <T = any, D = any>(config: AxiosLikeRequestConfig<D>): Promise<
-    AxiosLikeResponse<T, D>
-  >;
+  <T = any, D = any>(
+    config: AxiosLikeRequestConfig<D>,
+  ): Promise<AxiosLikeResponse<T, D>>;
   <T = any, D = any>(
     url: string,
     config?: AxiosLikeRequestConfig<D>,

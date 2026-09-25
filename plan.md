@@ -109,7 +109,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
     - fix(config): transport options: 0 (was 1; fixed by `claude/fix-transport-options`)
     - breaking: withCredentials becomes a no-op; add cookieJar: 0 (was 1; fixed by `claude/cookie-jar`)
     - types: axios interop: 3
-    - feat(axiosRef): make it a real axios instance: 3
+    - feat(axiosRef): make it a real axios instance: 0 (was 3; fixed by `claude/axiosref-instance`)
     - fix(errors): match axios errors: 19 (was 20; the "redirect loop exceeds maxRedirects" case, which used to differ on error shape - a status error instead of `ERR_FR_TOO_MANY_REDIRECTS` - now matches as an unavoidable side effect of `claude/fix-redirects`)
     - Progress callbacks / formSerializer: not covered (no deterministic, fast repro found; left for the PR that implements it)
   - Follow-ups from the PR #12 review (not blocking):
@@ -147,7 +147,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - Typed `HttpModuleOptions`. Done.
   - Optional `axios` peer so `instanceof axios.AxiosError` works. Done (`instanceof axios.CanceledError` specifically doesn't - a prototype chain is linear; documented in `linkOptionalAxiosPeer`'s doc comment in `axios-error.ts`, use `isCancel()`).
   - Full `AxiosHeaders`, with `response.headers` as `AxiosHeaders`. Partly done: `AxiosHeaders` gained `concat`/`toString`/`normalize`/`getSetCookie`/the `get/set/has*` shorthands. `response.headers` stays a plain object at runtime - measured (this library's `AxiosHeaders`, a typical response, 200k iterations) at about 955ns more per response just to construct (before the Proxy-trap cost on every later read), not worth it against the CI regression check's `+10%` budget, paid on every response unconditionally. Typed `Record<string, any>` (assignable to/from axios' own response header types) regardless.
-- [ ] **feat(axiosRef): make it a real axios instance.**
+- [~] **feat(axiosRef): make it a real axios instance.** PR open (`claude/axiosref-instance`).
   - Full `AxiosHeaders` parity: keep the header name casing as given, as axios does. Today names are stored lower-cased, so `normalize(true)` can't title-case and `toJSON()` returns lower-case names (PR #22 review). The remaining 3 `@ts-expect-error` markers in `tests/types` (axios' overloaded `AxiosHeaders` signatures) also belong here.
   - Callable, `getUri`, `create`, `*Form`, `query`.
   - A function `adapter` (so axios-mock-adapter works) and the full `defaults`.

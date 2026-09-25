@@ -45,7 +45,10 @@ import {
   normalizeAxiosRequest,
   serializeAxiosConfig,
 } from '../adapters/axios-request.adapter';
-import { STATUS_TEXT_MAP, toAxiosLikeResponse } from '../adapters/axios-response.adapter';
+import {
+  STATUS_TEXT_MAP,
+  toAxiosLikeResponse,
+} from '../adapters/axios-response.adapter';
 import { createStatusError, toAxiosError } from '../errors/axios-error';
 import {
   DEFAULT_MAX_REDIRECTS,
@@ -73,7 +76,9 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
  */
 function resolveFunctionAdapter(
   adapter: unknown,
-): ((config: InternalAxiosLikeRequestConfig) => Promise<AxiosLikeResponse>) | undefined {
+):
+  | ((config: InternalAxiosLikeRequestConfig) => Promise<AxiosLikeResponse>)
+  | undefined {
   if (typeof adapter === 'function') return adapter as any;
   if (Array.isArray(adapter)) {
     for (const candidate of adapter) {
@@ -668,9 +673,7 @@ export class HttpService {
             settled = true;
             const status = rawResponse?.status ?? 200;
             const statusText =
-              rawResponse?.statusText ||
-              STATUS_TEXT_MAP[status] ||
-              'Unknown';
+              rawResponse?.statusText || STATUS_TEXT_MAP[status] || 'Unknown';
             const rawHeaders = rawResponse?.headers;
             const headers =
               rawHeaders && typeof (rawHeaders as any).toJSON === 'function'
@@ -696,8 +699,7 @@ export class HttpService {
               request: rawResponse?.request ?? {},
             };
             const validateStatus =
-              config.validateStatus ||
-              ((s: number) => s >= 200 && s < 300);
+              config.validateStatus || ((s: number) => s >= 200 && s < 300);
             if (!validateStatus(status)) {
               subscriber.error(createStatusError(response));
               return;

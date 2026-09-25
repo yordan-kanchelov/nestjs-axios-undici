@@ -46,7 +46,7 @@ describe.each([
 
   it('mocks a GET response', async () => {
     mock.onGet('/users/1').reply(200, { id: 1, name: 'Ada' });
-    const res = await firstValueFrom(service.get('/users/1'));
+    const res: any = await firstValueFrom(service.get('/users/1'));
     expect(res.status).toBe(200);
     expect(res.data).toEqual({ id: 1, name: 'Ada' });
   });
@@ -56,23 +56,27 @@ describe.each([
       const body = JSON.parse(config.data);
       return [201, { id: 2, ...body }];
     });
-    const res = await firstValueFrom(service.post('/users', { name: 'Grace' }));
+    const res: any = await firstValueFrom(
+      service.post('/users', { name: 'Grace' }),
+    );
     expect(res.status).toBe(201);
     expect(res.data).toEqual({ id: 2, name: 'Grace' });
   });
 
   it('mocks response headers', async () => {
     mock.onGet('/x').reply(200, 'ok', { 'x-mock': 'yes' });
-    const res = await firstValueFrom(service.get('/x'));
+    const res: any = await firstValueFrom(service.get('/x'));
     expect(res.headers['x-mock']).toBe('yes');
   });
 
   it('a non-2xx mocked status rejects like a real error response', async () => {
     mock.onGet('/missing').reply(404, { message: 'not found' });
-    await expect(firstValueFrom(service.get('/missing'))).rejects.toMatchObject({
-      isAxiosError: true,
-      response: { status: 404, data: { message: 'not found' } },
-    });
+    await expect(firstValueFrom(service.get('/missing'))).rejects.toMatchObject(
+      {
+        isAxiosError: true,
+        response: { status: 404, data: { message: 'not found' } },
+      },
+    );
   });
 
   it('networkError() rejects with a network-style error', async () => {

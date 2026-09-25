@@ -23,7 +23,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 - Network, timeout and cancellation errors are wrapped in an `AxiosError` (`error.code` such as `ECONNREFUSED`, `ECONNABORTED`, `ERR_CANCELED`); the original undici error is kept in `error.cause`, so `instanceof undici.errors.*` checks must look at `error.cause`.
 - String and `Buffer` request bodies get `Content-Type: application/x-www-form-urlencoded` by default, as in axios (previously `application/json`). Falsy primitive bodies (`0`, `false`, `''`) are no longer sent.
 - Per-request headers are merged with module headers (case-insensitively) instead of replacing them.
-- Requests now send default `Accept`, `User-Agent` and `Accept-Encoding` headers, as axios does. See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for the exact values and how to override or remove them. Module `headers` now take precedence over headers set at runtime through `axiosRef.defaults.headers`.
+- Requests now send default `Accept`, `User-Agent` and `Accept-Encoding` headers, as axios does. See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for the exact values and how to override or remove them. Module `headers` seed `axiosRef.defaults.headers` at setup; a runtime mutation of `axiosRef.defaults` then always wins - see [Precedence: `axiosRef.defaults`](/docs/axios-supported-options.md#precedence-axiosrefdefaults) (this replaced an earlier, short-lived rule where module `headers` always won over `axiosRef.defaults`).
 - Module-level `timeout`, `auth`, `params` and `maxRedirects` now apply to every request, including with `registerAsync`.
 - `params`, `baseURL` joining, `responseType`, `signal`/`cancelToken`, `request(config)` and `axiosRef.defaults` / `axiosRef.get()` now work like axios. See [Supported Axios Options](/docs/axios-supported-options.md).
 
@@ -103,7 +103,7 @@ export class MyService implements OnModuleInit {
 
 ### 2. AxiosHeaders Class
 
-`nestjs-axios-undici` includes the `AxiosHeaders` class that matches axios's header handling:
+`nestjs-axios-undici` includes the `AxiosHeaders` class that matches axios's header handling, including casing: lookups are case-insensitive, but the name a header was *first set with* is the one `toJSON()`/iteration/`toString()` report back (`normalize(true)` title-cases every name), exactly like axios.
 
 ```typescript
 import { AxiosHeaders } from 'nestjs-axios-undici';
@@ -114,10 +114,13 @@ headers.set('Content-Type', 'application/json');
 headers.set('Authorization', 'Bearer token');
 
 // Common axios methods are supported
-headers.get('content-type');  // Case-insensitive
-headers.has('Authorization'); 
+headers.get('content-type');  // Case-insensitive: 'application/json'
+headers.has('Authorization');
 headers.delete('Authorization');
-headers.forEach((value, key) => console.log(key, value));
+
+// Iterate (like axios, there's no forEach() - only [Symbol.iterator]):
+for (const [key, value] of headers) console.log(key, value); // 'Content-Type' 'application/json'
+headers.toJSON(); // { 'Content-Type': 'application/json' } - casing preserved
 ```
 
 ### 3. Automatic Configuration Mapping
@@ -290,7 +293,13 @@ HttpModule.register({ cookieJar: new CookieJar() });
 - **`post`/`put`/`patch` have a real body type parameter**: `post<T, D>(url, data?: D, config?: AxiosLikeRequestConfig<D>)`, matching `@nestjs/axios`. `data`'s type is now checked against `D` instead of accepted as `any`.
 - **`HttpServiceOverloads`** (an unused, unimplemented type) is removed.
 - **`response.headers` stays a plain object**, not an `AxiosHeaders` instance (measured too expensive to build on every response - see [Response](/docs/axios-supported-options.md#response)); its type is now `Record<string, any>`, replacing the narrower `IncomingHttpHeaders`-based type.
-- **`AxiosHeaders` gained methods**: `concat`, `toString`, `normalize` (a no-op: names are stored lower-cased, so `normalize(true)` doesn't title-case them as axios does), `getSetCookie`, and the `get`/`set`/`has` shorthand accessors (`ContentType`, `ContentLength`, `Accept`, `AcceptEncoding`, `ContentEncoding`, `UserAgent`, `Authorization`) - purely additive, nothing removed.
+- **`AxiosHeaders` gained methods**: `concat`, `toString`, `normalize`, `getSetCookie`, and the `get`/`set`/`has` shorthand accessors (`ContentType`, `ContentLength`, `Accept`, `ContentEncoding`, `UserAgent`, `Authorization`) - purely additive, nothing removed.
+- **`AxiosHeaders` casing (breaking):** header names used to be stored lower-cased. They're now stored the way axios does - case-insensitive lookup, but `toJSON()`/`toString()`/iteration report the casing a header was *first set with*, and `normalize(true)` now actually title-cases every name (previously a no-op). If your code reads `Object.keys(headers.toJSON())` or iterates `for (const [key] of headers)` expecting lower-case keys, update it to compare case-insensitively or use `headers.get('name')`/`headers.has('name')` instead (both stay case-insensitive). There is no longer a `forEach()` method (axios' own `AxiosHeaders` doesn't have one either) - use `for (const [key, value] of headers)` or `Object.entries(headers.toJSON())`. `getAcceptEncoding`/`setAcceptEncoding`/`hasAcceptEncoding` are also gone (axios registers them at runtime but never declares them in its own types either) - use `headers.get('Accept-Encoding')`/`headers.set('Accept-Encoding', ...)`.
+- **`axiosRef` is now a real, callable axios instance** (breaking if you relied on it *not* having these members): `axiosRef(config)`, `getUri`, `create`, `postForm`/`putForm`/`patchForm`, `query`. `HttpService.query()` is implemented too.
+- **`axiosRef.defaults` precedence (breaking):** module options only ever *seed* `axiosRef.defaults` once, at setup; from then on `axiosRef.defaults` is the single source of truth and always wins over the module-level value (including for `headers`, which used to have the opposite rule - module always won). See [Precedence: `axiosRef.defaults`](/docs/axios-supported-options.md#precedence-axiosrefdefaults). `axiosRef.defaults` now also covers `validateStatus`/`params`/`paramsSerializer`/`responseType`/`transformRequest`/`transformResponse`/`adapter`/`withCredentials`, honoured even on a plain request with no axiosRef interceptors.
+- **`postForm`/`putForm`/`patchForm` with a plain object is now multipart (breaking):** matching axios' own `postForm`, which this library previously sent url-encoded instead. If you relied on the url-encoded body, use `post()`/`put()`/`patch()` with `data: new URLSearchParams(...)` (or pre-built `FormData`) instead.
+- **A function `adapter`** (`config.adapter`/`axiosRef.defaults.adapter`) is now honoured, called instead of dispatching through undici - this is what makes `axios-mock-adapter` work.
+- **`AxiosLikeRequestConfig.url` is now `string`-only** (was `string | URL`), matching axios' own `AxiosRequestConfig.url?: string` exactly. A `URL`/`UrlObject` is still accepted wherever a URL is given as its own argument (`request(url, options)`, `get(url, config)`, ...) - only `config.url` in the single-argument `request(config)` form is affected; pass the URL as the first argument instead if you were relying on that.
 - **`error instanceof AxiosError` now also holds for `axios.AxiosError`** when the optional `axios` peer is installed (`npm i axios`) - see [Errors](/docs/axios-supported-options.md#errors). `error instanceof axios.CanceledError` specifically does not; use `isCancel()`. The link is to the copy of `axios` this package resolves; with a second, separate copy of `axios` in the app, use `axios.isAxiosError()` instead of `instanceof`.
 - **`HttpModule.registerAsync({})`** (none of `useFactory`/`useClass`/`useExisting`) now throws a clear error at setup, instead of silently registering a broken provider.
 
