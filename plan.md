@@ -62,13 +62,13 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 ### Phase 1: automation and compatibility foundation (first)
 
-- [~] **A. ci: package integrity checks and consumer smoke matrix** (`claude/package-checks`, PR #10, in review; engines set to >=22.17.0)
+- [~] **A. ci: package integrity checks and consumer smoke matrix** (`claude/package-checks`, PR #10, approved; CI fix pushed; engines >=22.17.0)
   - The packed tarball is checked for declared dependencies, and passed through publint and attw.
   - A consumer matrix installs it with only its peers: Nest 10/11/12 × undici 7/8, on Node 22.x-min/22/24/26, loaded as CJS and as ESM, and type-checked.
   - It runs weekly, so new upstream releases within the peer ranges get tested.
   - `engines` changes, and the README gets a supported-versions table.
   - Prototypes: `plan/prototypes/automation/consumer/`, `plan/prototypes/quality/scripts/check-deps.js`.
-- [~] **B. test: suite on NestJS 12 / @nestjs/axios 12, Nest 10/11 on Node 22** (`claude/nest12-test-matrix`, PR #9, in review)
+- [x] **B. test: suite on NestJS 12 / @nestjs/axios 12, Nest 10/11 on Node 22** (`claude/nest12-test-matrix`, PR #9, merged)
   - devDeps move to Nest 12, and Jest runs with `--experimental-vm-modules`.
   - The CI matrix is: Node 24 Nest 12 (full checks + coverage), Node 26 Nest 12, Node 24 undici 8, Node 22 Nest 11, Node 22 Nest 10.
   - Coverage uses the v8 provider (fixes the Codecov paths), `forceExit` is removed, and `form-data` becomes a devDependency.
@@ -161,3 +161,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 ## Log
 
 - 2026-09-25: Explorations done for automation, package quality, axios compatibility and docs (reports in `plan/reports/`). Performance exploration done too. Workers A and B started. Created `claude/v1.0.0` and this plan.
+- 2026-09-25: PR #9 merged. PR #10 approved; fixed the CI pack step and formatting, waiting for green.
