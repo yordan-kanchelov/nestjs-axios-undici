@@ -59,9 +59,7 @@ describe('HttpService redirects', () => {
 
     otherServer = createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({ method: req.method, headers: req.headers }),
-      );
+      res.end(JSON.stringify({ method: req.method, headers: req.headers }));
     });
     await new Promise<void>(resolve =>
       otherServer.listen(0, '127.0.0.1', resolve),
@@ -234,7 +232,9 @@ describe('HttpService redirects', () => {
       res.writeHead(200);
       res.end('ok');
     });
-    await new Promise<void>(resolve => server307.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>(resolve =>
+      server307.listen(0, '127.0.0.1', resolve),
+    );
     const port = (server307.address() as AddressInfo).port;
 
     try {

@@ -268,7 +268,9 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     // *current* URL's path (dropping its last segment), not the origin root.
     name: 'redirect: relative Location without a leading slash',
     run: (s, ctx) =>
-      s.get(`${ctx.base}/redirect?code=302&to=${encodeURIComponent('echo/after')}`),
+      s.get(
+        `${ctx.base}/redirect?code=302&to=${encodeURIComponent('echo/after')}`,
+      ),
     normalize: (o: any) => o.requests.map((r: any) => r.url),
   },
   {
