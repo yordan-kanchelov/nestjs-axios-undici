@@ -186,6 +186,10 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 
 - [ ] Every must-have item above is merged into `claude/v1.0.0`.
 - [ ] Delete `plan/prototypes/`. Add a major changeset with migration notes from 0.6.
+- [ ] **CodeRabbit review of the master PR (#8)**, once everything else in this phase is done.
+  - Trigger it with a PR comment: `@coderabbitai full review`. Automatic reviews are off because the repo has fewer than 10 stars and the base branch is non-default.
+  - Handle every finding. Fix it, or reply with the reason it stays as is, then resolve the thread.
+  - Fixes go in small PRs into `claude/v1.0.0`, or straight onto it for trivial ones. Re-run the review until it is clean.
 - [ ] Owner sign-off. Merge the master PR into `main`. Merge the "version packages" PR. Publish 1.0.0 through trusted publishing.
 - [ ] Add git tags / GitHub releases for 0.6.0 (and check 0.6.1).
 
