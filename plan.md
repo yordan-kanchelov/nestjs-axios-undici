@@ -108,6 +108,11 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
     - feat(axiosRef): make it a real axios instance: 3
     - fix(errors): match axios errors: 22
     - Progress callbacks / formSerializer: not covered (no deterministic, fast repro found; left for the PR that implements it)
+  - Follow-ups from the PR #12 review (not blocking):
+    - Our side reuses the global undici Agent across scenarios; give each scenario a fresh dispatcher, the way the axios side gets its own `register({})`.
+    - `knownDifference` only asserts that *something* differs; pin the expected differing field per case.
+    - Replace the 200 ms sleep in interceptors.diff.spec.ts with polling for the close event.
+    - The generic fallback normalizer in harness.ts is unused.
 - [ ] **E. perf: rebuild the PR regression check.** It isn't reliable today: 2 of 4 runs of identical code failed at the 10% threshold.
   - Switch to client CPU time per request, compared with raw undici in the same round. That cancels out runner speed; the worst drift seen was ±3.9%.
   - Scenarios: get, post JSON, params and headers, the 404 error path, axiosRef interceptors.
@@ -118,7 +123,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
 
-- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`.
+- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase.
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
 - [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
