@@ -21,16 +21,11 @@ describe('Type Inference Patterns E2E', () => {
     class StandardTestService {
       constructor(private readonly httpService: HttpService) {}
 
-      async fetchData() {
-        const response = await lastValueFrom(
+      async fetchResponse() {
+        // Response is already AxiosLikeResponse type
+        return lastValueFrom(
           this.httpService.get<{ id: number; title: string }>(postUrl)
         );
-        
-        // Response is already AxiosLikeResponse type
-        expect(response.status).toBeDefined();
-        expect(response.data).toBeDefined();
-        
-        return response.data;
       }
     }
 
@@ -46,7 +41,11 @@ describe('Type Inference Patterns E2E', () => {
     });
 
     it('should work with axios-compatible responses by default', async () => {
-      const data = await service.fetchData();
+      const response = await service.fetchResponse();
+      expect(response.status).toBeDefined();
+      expect(response.data).toBeDefined();
+
+      const data = response.data;
       expect(data.id).toBe(1);
       expect(data.title).toBeDefined();
     });
@@ -57,17 +56,10 @@ describe('Type Inference Patterns E2E', () => {
     class TypedTestService {
       constructor(private readonly httpService: HttpService) {}
 
-      async fetchData() {
-        const response = await lastValueFrom(
+      async fetchResponse() {
+        return lastValueFrom(
           this.httpService.get<{ id: number; title: string }>(postUrl)
         );
-        
-        // TypeScript knows these properties exist
-        expect(response.data).toBeDefined();
-        expect(response.status).toBe(200);
-        expect(response.statusText).toBe('OK');
-        
-        return response.data;
       }
     }
 
@@ -83,7 +75,13 @@ describe('Type Inference Patterns E2E', () => {
     });
 
     it('should work with axios-compatible responses', async () => {
-      const data = await service.fetchData();
+      const response = await service.fetchResponse();
+      // TypeScript knows these properties exist
+      expect(response.data).toBeDefined();
+      expect(response.status).toBe(200);
+      expect(response.statusText).toBe('OK');
+
+      const data = response.data;
       expect(data.id).toBe(1);
       expect(data.title).toBeDefined();
     });
