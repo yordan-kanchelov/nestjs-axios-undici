@@ -67,7 +67,7 @@ function isInterceptorInstance(
   exports: [HttpService],
 })
 export class HttpModule {
-  static register(config: HttpModuleOptions & any = {}): DynamicModule {
+  static register(config: HttpModuleOptions = {}): DynamicModule {
     const processedConfig = HttpModule.processAxiosConfig(config);
 
     // Extract interceptors - axios response adapter will be added in the service
@@ -157,8 +157,8 @@ export class HttpModule {
    * them to undici options plus interceptors (transforms, size limits, ...).
    */
   private static processAxiosConfig(
-    config: HttpModuleOptions & any = {},
-  ): HttpModuleOptions & any {
+    config: HttpModuleOptions = {},
+  ): HttpModuleOptions {
     // Check if this looks like axios configuration
     const hasAxiosOptions = !!(
       config.httpAgent ||
@@ -281,11 +281,18 @@ export class HttpModule {
     if (options.useExisting || options.useFactory) {
       return [this.createAsyncOptionsProvider(options)];
     }
+    // `createAsyncOptionsProvider` below throws when none of
+    // useFactory/useClass/useExisting is set; this check just narrows
+    // `useClass` for the compiler, since it runs first either way.
+    const useClass = options.useClass;
+    if (!useClass) {
+      return [this.createAsyncOptionsProvider(options)];
+    }
     return [
       this.createAsyncOptionsProvider(options),
       {
-        provide: options.useClass,
-        useClass: options.useClass,
+        provide: useClass,
+        useClass,
       },
     ];
   }
@@ -302,11 +309,21 @@ export class HttpModule {
         inject: options.inject || [],
       };
     }
+    const factoryClass = options.useExisting || options.useClass;
+    if (!factoryClass) {
+      // Without this, Nest would silently register a provider with
+      // `provide: undefined` (the `inject: [undefined]` below) instead of
+      // failing clearly - one of the 7 `strict`-mode errors in
+      // `plan/reports/package-quality.md`.
+      throw new Error(
+        'HttpModule.registerAsync() requires one of useFactory, useClass or useExisting',
+      );
+    }
     return {
       provide: HTTP_MODULE_OPTIONS,
       useFactory: async (optionsFactory: HttpModuleOptionsFactory) =>
         HttpModule.processAxiosConfig(await optionsFactory.createHttpOptions()),
-      inject: [options.useExisting || options.useClass],
+      inject: [factoryClass],
     };
   }
 }

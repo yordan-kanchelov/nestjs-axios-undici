@@ -2,8 +2,8 @@ import { PassThrough, Readable } from 'stream';
 import type { UrlObject } from 'node:url';
 import type {
   AxiosCancelTokenLike,
-  AxiosLikeRequestConfig,
   AxiosParamsSerializer,
+  InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 import type { AxiosRefDefaults } from '../interfaces/axios-ref.interface';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
@@ -870,8 +870,9 @@ export function normalizeAxiosRequest(
  */
 export function buildLazyAxiosConfig(
   request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
-): AxiosLikeRequestConfig {
-  if (request.axiosConfig !== undefined) return request.axiosConfig;
+): InternalAxiosLikeRequestConfig {
+  if (request.axiosConfig !== undefined)
+    return request.axiosConfig as InternalAxiosLikeRequestConfig;
   const options: any = request.options || {};
   const raw = request.raw;
   const url = raw ? raw.url : request.url;
@@ -917,7 +918,7 @@ export function buildAxiosConfig(
   urlOrConfig: Url | ({ url?: Url } & Record<string, any>),
   requestOptions: Record<string, any> | undefined,
   context: AxiosRequestContext = {},
-): AxiosLikeRequestConfig {
+): InternalAxiosLikeRequestConfig {
   let url: Url;
   let input: Record<string, any>;
   if (isAxiosRequestConfig(urlOrConfig)) {
@@ -992,7 +993,7 @@ export function buildAxiosConfig(
     headers.setAuthorization(`Basic ${token}`);
   }
 
-  const config: AxiosLikeRequestConfig = {
+  const config: InternalAxiosLikeRequestConfig = {
     ...rest,
     url: typeof url === 'string' ? url : String(url),
     baseURL,
@@ -1028,7 +1029,7 @@ export function buildAxiosConfig(
  * config back for `response.config` / `error.config`.
  */
 export function serializeAxiosConfig(
-  config: AxiosLikeRequestConfig,
+  config: InternalAxiosLikeRequestConfig,
 ): HttpInterceptorRequest {
   const headers =
     config.headers instanceof AxiosHeaders

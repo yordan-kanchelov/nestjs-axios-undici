@@ -22,10 +22,8 @@ import type {
   HttpInterceptorFunction,
   HttpInterceptorHandler,
   HttpInterceptorRequest,
-  AxiosCompatibleRequestConfig,
-  AxiosCompatibleRequestOptions,
   AxiosLikeRequestConfig,
-  HttpRequestOptions,
+  InternalAxiosLikeRequestConfig,
   AxiosLikeResponse,
   AxiosRef,
 } from '../interfaces';
@@ -173,7 +171,7 @@ function chainStep<T>(
 function activeAxiosInterceptors<T>(
   entries: ReadonlyArray<AxiosInterceptorEntry<T> | null>,
   isRequest: boolean,
-  config?: AxiosLikeRequestConfig,
+  config?: InternalAxiosLikeRequestConfig,
 ): AxiosInterceptorEntry<T>[] {
   const active: AxiosInterceptorEntry<T>[] = [];
   for (const entry of entries) {
@@ -244,7 +242,7 @@ export class HttpService {
   // `buildAxiosConfig`/`serializeAxiosConfig`, in axios' own order - see
   // `runAxiosPipeline`.
   private readonly axiosRequestInterceptors =
-    createInterceptorStore<AxiosLikeRequestConfig>();
+    createInterceptorStore<InternalAxiosLikeRequestConfig>();
   private readonly axiosResponseInterceptors =
     createInterceptorStore<AxiosLikeResponse>();
 
@@ -457,17 +455,17 @@ export class HttpService {
   /**
    * Axios-style call form, as in `@nestjs/axios`: `request({ url, method, data, params, ... })`
    */
-  public request<T = any>(
-    config: AxiosCompatibleRequestConfig,
-  ): Observable<AxiosLikeResponse<T>>;
-  public request<T = any>(
+  public request<T = any, D = any>(
+    config: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  public request<T = any, D = any>(
     url: string | URL | UrlObject,
-    options?: HttpRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  public request<T = any>(
-    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
-    requestOptions?: HttpRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    options?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  public request<T = any, D = any>(
+    urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig<D>,
+    requestOptions?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     // `defer()` makes the Observable cold and re-runs everything below (config
     // normalization, the axiosRef request interceptors, the actual request)
     // on every subscription, as `@nestjs/axios`' `makeObservable` does. This
@@ -497,8 +495,8 @@ export class HttpService {
    * config object.
    */
   private hasAxiosPipeline(
-    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
-    requestOptions?: HttpRequestOptions,
+    urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig,
+    requestOptions?: AxiosLikeRequestConfig,
   ): boolean {
     if (
       this.axiosRequestInterceptors.entries.some(Boolean) ||
@@ -530,7 +528,7 @@ export class HttpService {
    * actual dispatch, via `executeInterceptorChain`.
    */
   private runAxiosPipeline<T = any>(
-    config: AxiosLikeRequestConfig,
+    config: InternalAxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     const requestChain = activeAxiosInterceptors(
       this.axiosRequestInterceptors.entries,
@@ -542,7 +540,7 @@ export class HttpService {
       false,
     );
 
-    let config$: Observable<AxiosLikeRequestConfig> = of(config);
+    let config$: Observable<InternalAxiosLikeRequestConfig> = of(config);
     for (const entry of requestChain) {
       config$ = chainStep(config$, entry.fulfilled, entry.rejected);
     }
@@ -567,8 +565,8 @@ export class HttpService {
    * lazily (see `attachLazyAxiosConfig`), on first access.
    */
   private dispatchFastPath<T = any>(
-    urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
-    requestOptions?: HttpRequestOptions,
+    urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig,
+    requestOptions?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
     const { url, options, raw } = normalizeAxiosRequest(
@@ -580,7 +578,7 @@ export class HttpService {
       },
     ) as {
       url: string | URL | UrlObject;
-      options: Omit<HttpRequestOptions, 'headers'> &
+      options: Omit<AxiosLikeRequestConfig, 'headers'> &
         Pick<Dispatcher.RequestOptions, 'headers'>;
       raw: { url: any; baseURL?: string; params?: any; method: string };
     };
@@ -655,16 +653,23 @@ export class HttpService {
   ): Observable<AxiosLikeResponse> {
     return new Observable<AxiosLikeResponse>(subscriber => {
       // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
-      const {
-        maxRedirections,
-        beforeRedirect: requestBeforeRedirect,
-        socketPath: requestSocketPath,
-        ...requestOptions
-      } = interceptorRequest.options as typeof interceptorRequest.options & {
+      const rawOptions = interceptorRequest.options as Record<string, any> & {
         maxRedirections?: number;
         beforeRedirect?: BeforeRedirect;
         socketPath?: string;
       };
+      const {
+        maxRedirections,
+        beforeRedirect: requestBeforeRedirect,
+        socketPath: requestSocketPath,
+        ...restOptions
+      } = rawOptions;
+      // Destructuring a rest element off a `Record<string, any>`-shaped
+      // source infers `{}` for the rest (TypeScript can't enumerate an
+      // index signature's keys) - re-widen it so the many `requestOptions.*`
+      // reads below (`headersTimeout`, `dispatcher`, `signal`, ...) still
+      // type-check; the runtime object is untouched either way.
+      const requestOptions: Record<string, any> = restOptions;
       // Precedence: an explicit per-request `dispatcher` always wins; then a
       // request-level `socketPath` (module-level `socketPath` is already
       // baked into `this.customDispatcher` by `setupDispatcher`); then the
@@ -704,7 +709,10 @@ export class HttpService {
         }
       }
 
-      const options = {
+      // Spreading a `Record<string, any>` into an object literal doesn't
+      // propagate its index signature to the literal's inferred type either
+      // - annotate explicitly (see `requestOptions` above).
+      const options: Record<string, any> = {
         ...requestOptions,
         dispatcher,
         signal: abortSignal as any,
@@ -926,10 +934,10 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public get<T = any>(
+  public get<T = any, D = any>(
     url: string | URL | UrlObject,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'GET' });
   }
 
@@ -940,11 +948,11 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public post<T = any>(
+  public post<T = any, D = any>(
     url: string | URL | UrlObject,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'POST', data });
   }
 
@@ -955,11 +963,11 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public put<T = any>(
+  public put<T = any, D = any>(
     url: string | URL | UrlObject,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'PUT', data });
   }
 
@@ -969,10 +977,10 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public delete<T = any>(
+  public delete<T = any, D = any>(
     url: string | URL | UrlObject,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'DELETE' });
   }
 
@@ -983,11 +991,11 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public patch<T = any>(
+  public patch<T = any, D = any>(
     url: string | URL | UrlObject,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'PATCH', data });
   }
 
@@ -997,10 +1005,10 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public head<T = any>(
+  public head<T = any, D = any>(
     url: string | URL | UrlObject,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'HEAD' });
   }
 
@@ -1010,10 +1018,10 @@ export class HttpService {
    * @param config Optional configuration
    * @returns Observable that emits AxiosLikeResponse<T>
    */
-  public options<T = any>(
+  public options<T = any, D = any>(
     url: string | URL | UrlObject,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>> {
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return this.request(url, { ...config, method: 'OPTIONS' });
   }
 
@@ -1027,7 +1035,7 @@ export class HttpService {
   public postForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: AxiosCompatibleRequestOptions,
+    config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     return this.formRequest('POST', url, data, config);
   }
@@ -1042,7 +1050,7 @@ export class HttpService {
   public putForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: AxiosCompatibleRequestOptions,
+    config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     return this.formRequest('PUT', url, data, config);
   }
@@ -1057,7 +1065,7 @@ export class HttpService {
   public patchForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: AxiosCompatibleRequestOptions,
+    config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     return this.formRequest('PATCH', url, data, config);
   }
@@ -1070,7 +1078,7 @@ export class HttpService {
     method: 'POST' | 'PUT' | 'PATCH',
     url: string | URL | UrlObject,
     data?: any,
-    config?: AxiosCompatibleRequestOptions,
+    config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
     const isMultipart =
       data?.[Symbol.toStringTag] === 'FormData' ||

@@ -92,13 +92,12 @@ export class UsersService {
 
   // case4: second generic D (request body type), supported by @nestjs/axios
   case4(dto: CreateUserDto) {
-    // @ts-expect-error -- post() has no second (D) request-body type parameter; tracked in plan.md phase 2 "types: axios interop" (post<T, D>)
     return this.http.post<User, CreateUserDto>('/users', dto);
   }
 
   // case5: return type annotated with axios' AxiosResponse
   case5(): Observable<AxiosResponse<User>> {
-    // @ts-expect-error -- Observable<AxiosLikeResponse<T>> is not assignable to Observable<AxiosResponse<T>>; tracked in plan.md phase 2 "types: axios interop"
+    // @ts-expect-error -- response.config.headers (a real AxiosHeaders instance) isn't assignable to axios' own AxiosHeaders class: our class's overloaded axios `set()`/`get()`/`toJSON()` call shapes aren't fully mirrored, only the shapes this library itself needs; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
     return this.http.get<User>('/u');
   }
 
@@ -114,7 +113,6 @@ export class UsersService {
   // case7: axiosRef request interceptor mutating headers (strict: headers must be non-optional) -- the README's own example
   case7() {
     this.http.axiosRef.interceptors.request.use(config => {
-      // @ts-expect-error -- config.headers is optional and untyped for index access here (needs non-optional AxiosHeaders); tracked in plan.md phase 2 "types: axios interop"
       config.headers['Authorization'] = 'Bearer x';
       return config;
     });
@@ -123,7 +121,6 @@ export class UsersService {
   // case8: axiosRef interceptor using AxiosHeaders#set (common in axios >= 1)
   case8() {
     this.http.axiosRef.interceptors.request.use(config => {
-      // @ts-expect-error -- config.headers is optional and may be a plain object without .set(); tracked in plan.md phase 2 "types: axios interop"
       config.headers.set('X-Trace', '1');
       return config;
     });
@@ -132,7 +129,7 @@ export class UsersService {
   // case9: interceptor callback annotated with axios' InternalAxiosRequestConfig
   case9() {
     const onFulfilled = (config: InternalAxiosRequestConfig) => config;
-    // @ts-expect-error -- our AxiosLikeRequestConfig is not assignable from axios' InternalAxiosRequestConfig; tracked in plan.md phase 2 "types: axios interop"
+    // @ts-expect-error -- same root cause as case5: our InternalAxiosLikeRequestConfig.headers (a real AxiosHeaders) isn't assignable to axios' own AxiosHeaders class; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
     this.http.axiosRef.interceptors.request.use(onFulfilled);
   }
 
@@ -183,15 +180,12 @@ export function case15(http: HttpService) {
     headers: {},
     config: {} as InternalAxiosRequestConfig,
   };
-  // @ts-expect-error -- Observable<AxiosResponse<T>> (a common mock shape) is not assignable to our HttpService['get'] return type; tracked in plan.md phase 2 "types: axios interop"
   const spy: (url: string) => ReturnType<HttpService['get']> = () => of(res);
   return spy;
 }
 
-// case16: typos in module options should be rejected, the way @nestjs/axios'
-// HttpModuleOptions does. They currently are NOT: this assignment compiles
-// (no error), because HttpModuleOptions is effectively `& any`, so it can't
-// be pinned with `@ts-expect-error` (there is no error to expect). Known
-// gap, tracked in plan.md phase 2 "types: axios interop" (typed
-// HttpModuleOptions). Once fixed, add `// @ts-expect-error` here.
+// case16: typos in module options are rejected, the way @nestjs/axios'
+// HttpModuleOptions does (fixed: plan.md phase 2 "types: axios interop",
+// typed HttpModuleOptions - no more `& any` / `Partial<any>`).
+// @ts-expect-error -- 'timeuot' is not an option (did you mean 'timeout'?)
 export const case16: HttpModuleOptions = { timeuot: 5 };

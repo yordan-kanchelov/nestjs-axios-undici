@@ -16,7 +16,7 @@
 - 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The full benchmark runs in CI for every release and a performance regression check runs on every pull request; see the [results](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
 - 🔁 **Drop-in replacement.** Same `HttpModule` / `HttpService`, same `register` / `registerAsync` options, same `get` / `post` / `put` / `patch` / `delete` methods and `request(config)`, the same response shape (`data`, `status`, `headers`) and the same errors (`isAxiosError`, `error.response`, `error.code`). A 65-test compatibility matrix runs every case against real `@nestjs/axios`.
 - 🧩 **Interceptors, two ways.** Keep your `httpService.axiosRef.interceptors.request.use(...)` code, or use native interceptors: functions or injectable classes that wrap every request.
-- 🪶 **No axios dependency.** Requests go straight through Undici.
+- 🪶 **No axios dependency.** Requests go straight through Undici. `axios` itself is an optional peer, only used (lazily, if installed) so `error instanceof axios.AxiosError` also holds for this package's errors - see [Errors](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/axios-supported-options?id=errors).
 - ✅ **Tested on Node.js 22, 24 and 26** (the current LTS lines), with a performance regression check on every pull request.
 
 ## Installation
@@ -39,7 +39,7 @@ Requires Node.js 22.17+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
 
 Every combination is installed from the packed package and run as both a CommonJS and an ESM app in CI, including the lowest versions of each range, and again weekly to catch new releases.
 
-`http-cookie-agent` (8) and `tough-cookie` (5 or 6) are optional peers, only needed for the `cookieJar` option (see [Cookies: `cookieJar`](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/axios-supported-options?id=cookies-cookiejar)) - install them yourself if you use it.
+`http-cookie-agent` (8) and `tough-cookie` (5 or 6) are optional peers, only needed for the `cookieJar` option (see [Cookies: `cookieJar`](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/axios-supported-options?id=cookies-cookiejar)) - install them yourself if you use it. `axios` (1.x) is also an optional peer: install it and `error instanceof axios.AxiosError` holds for this package's errors too, with no other change in behaviour.
 
 ## Migrating from @nestjs/axios
 

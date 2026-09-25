@@ -197,7 +197,6 @@ describe('HttpService', () => {
 
       it('should allow request options to override module options', async () => {
         const configuredService = new HttpService({
-          method: 'GET',
           headers: {
             authorization: 'Bearer module-token',
           },

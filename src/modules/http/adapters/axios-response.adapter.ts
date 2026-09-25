@@ -8,8 +8,8 @@ import {
 import { buildLazyAxiosConfig } from './axios-request.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
-  AxiosLikeRequestConfig,
   AxiosLikeResponse,
+  InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 
 /**
@@ -29,16 +29,45 @@ const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
 class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
   // `config` is a plain own property, as in axios, so it survives
   // `{ ...response }`, `JSON.stringify` and `structuredClone`.
-  public config: AxiosLikeRequestConfig;
+  public config: InternalAxiosLikeRequestConfig;
   public request: any = RESPONSE_REQUEST_PLACEHOLDER;
+  public data: T;
+  public status: number;
+  public statusText: string;
+
+  /**
+   * A plain undici headers object, deliberately *not* wrapped in
+   * `AxiosHeaders` on every response (plan.md phase 2 "types: axios
+   * interop", goal 3: "measure it; if it costs more than the benchmark
+   * threshold allows, keep a plain object at runtime but type it
+   * compatibly"). Measured (`new AxiosHeaders(typicalHeaders)` vs a plain
+   * object, 200k iterations, this sandbox): about 955ns more per response
+   * just to construct the Proxy-wrapped instance (~1µs vs ~33ns), before
+   * counting that every later property read on it also pays a Proxy-trap
+   * cost the plain object doesn't (see the "avoid AxiosHeaders Proxy access
+   * on the hot path" note in plan.md phase 4, and PR #18's ~9µs/request fix
+   * for exactly that on the interceptor path). That's paid on *every*
+   * response unconditionally, unlike `config` (lazy, built only if read),
+   * and would eat a large slice of the +10% per-request CPU budget the
+   * "HttpService regression check" enforces - not worth it for a header
+   * bag most callers only ever index by string key. Typed compatibly with
+   * axios' `AxiosResponse.headers` regardless (`Record<string, any>`, see
+   * `AxiosLikeResponse`'s doc comment) - `response.headers.get(...)` etc.
+   * stay unavailable, documented in docs/axios-supported-options.md.
+   */
+  public headers: Record<string, any>;
 
   constructor(
-    public data: T,
-    public status: number,
-    public statusText: string,
-    public headers: any,
+    data: T,
+    status: number,
+    statusText: string,
+    headers: any,
     configRequest: HttpInterceptorRequest,
   ) {
+    this.data = data;
+    this.status = status;
+    this.statusText = statusText;
+    this.headers = headers;
     this.config = buildLazyAxiosConfig(configRequest);
   }
 }

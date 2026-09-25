@@ -1,26 +1,19 @@
 import type { Dispatcher } from 'undici';
 import type { UrlObject } from 'node:url';
-
-export type UndiciResponseDataType = Promise<Dispatcher.ResponseData>;
-
-export type UndiciRequestOptionsType = {
-  dispatcher?: Dispatcher;
-} & Omit<Dispatcher.RequestOptions<any>, 'origin' | 'path' | 'method'> &
-  Partial<any>;
+import type { Agent } from 'node:http';
+import type { Agent as HttpsAgent } from 'node:https';
+import type { Type, DynamicModule } from '@nestjs/common';
+import type {
+  HttpInterceptor,
+  HttpInterceptorFunction,
+} from '../interfaces/http-interceptor.interface';
+import type { AxiosHeaders } from '../interfaces/axios-headers';
+import type {
+  AxiosParamsSerializer,
+  AxiosResponseType,
+} from '../interfaces/axios-compatible.interface';
 
 export type UndiciURLType = string | URL | UrlObject;
-
-export type UndiciRequestArgsType = {
-  url: UndiciURLType;
-  options?: UndiciRequestOptionsType;
-};
-
-export type UndiciRequestType = (
-  args: UndiciRequestArgsType,
-) => UndiciResponseDataType;
-
-import type { Type, DynamicModule } from '@nestjs/common';
-import type { HttpInterceptor, HttpInterceptorFunction } from '../interfaces';
 
 /**
  * A `tough-cookie` `CookieJar` instance, typed structurally loose (not
@@ -31,33 +24,133 @@ import type { HttpInterceptor, HttpInterceptorFunction } from '../interfaces';
  */
 export type CookieJarOption = object;
 
-export type HttpModuleOptions = UndiciRequestOptionsType & {
+/**
+ * Same as axios: called before each redirect hop with a mutable `options`
+ * object plus `responseDetails` (the 3xx that triggered the hop) and
+ * `requestDetails` (the request that just ran).
+ */
+export type BeforeRedirectFn = (
+  options: Record<string, any>,
+  responseDetails: { headers: Record<string, any>; statusCode: number },
+  requestDetails: {
+    url: string;
+    method: string;
+    headers: Record<string, any>;
+  },
+) => void;
+
+/**
+ * `HttpModule.register()`/`.registerAsync()` options: every axios module
+ * option this package maps, the undici options it passes straight through,
+ * plus `interceptors`, `global` and `cookieJar`. Deliberately **not**
+ * `& any`/`Partial<any>` (plan.md phase 2 "types: axios interop", the
+ * owner's "breaking changes are fine before 1.0.0: do it the right way"
+ * decision): a typo such as `{ timeuot: 5 }` is a compile error, because
+ * this interface has no index signature. Nested option *values* (`headers`,
+ * `transformRequest`, ...) stay loosely typed - see
+ * `AxiosLikeRequestConfig`'s doc comment for why.
+ */
+export interface HttpModuleOptions {
+  // --- axios options this package maps (see docs/axios-supported-options.md) ---
+  /** Prefixed onto every relative request URL, joined like axios (`http://api/v1` + `/users` -> `http://api/v1/users`). */
+  baseURL?: string;
+  /** A plain object (optionally method-keyed: `{ common: {...}, post: {...}, 'X-Flat': '...' }`), or an `AxiosHeaders` instance. */
+  headers?: Record<string, any> | AxiosHeaders;
+  params?: any;
+  paramsSerializer?: AxiosParamsSerializer;
+  auth?: { username: string; password: string };
+  /** Maps to undici's `headersTimeout`/`bodyTimeout`. */
+  timeout?: number;
+  /** Follows up to 21 redirects by default, like axios; `0` disables. */
+  maxRedirects?: number;
+  beforeRedirect?: BeforeRedirectFn;
+  validateStatus?: ((status: number) => boolean) | null;
+  /** `'document'` is accepted for axios type compatibility (browser-only; not implemented on Node.js). */
+  responseType?: AxiosResponseType;
+  responseEncoding?: string;
+  /** `false` disables response decompression (gzip/br/deflate). Default: decompress. */
+  decompress?: boolean;
+  /** Response body size limit; the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). */
+  maxContentLength?: number;
+  maxBodyLength?: number;
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
+  transformResponse?:
+    | ((data: any, headers?: any, status?: number) => any)
+    | Array<(data: any, headers?: any, status?: number) => any>;
+  /** Pool/keep-alive/`maxSockets`; `httpsAgent`'s TLS options (`ca`/`cert`/`key`/`pfx`/`passphrase`/`rejectUnauthorized`/`servername`/`ciphers`/`minVersion`/`maxVersion`) map onto undici's `Agent({ connect: {...} })`. Module-level only. */
+  httpAgent?: Agent;
+  httpsAgent?: HttpsAgent;
+  /** An explicit proxy, or `false` to disable proxying (including the `HTTP_PROXY`/`HTTPS_PROXY` env vars). */
+  proxy?:
+    | {
+        protocol?: string;
+        host: string;
+        port: number;
+        auth?: { username: string; password: string };
+      }
+    | false;
+  /** `Agent({ connect: { socketPath } })`, cached per path. Also settable per request. */
+  socketPath?: string | null;
+  /** axios 1.x: `1` (default) or `2` -> `Agent({ allowH2: true })`. Needs a target that speaks HTTP/2 over TLS. */
+  httpVersion?: 1 | 2;
+  /** Accepted for axios compatibility; undici has no per-session HTTP/2 tuning, so this has no effect. */
+  http2Options?: Record<string, unknown>;
+  /**
+   * A no-op, matching axios itself on Node.js. Accepted (and kept in the
+   * types) for axios compatibility only - see `cookieJar` for opt-in cookie
+   * storage.
+   */
+  withCredentials?: boolean;
+  /** Ignored (a warning is logged); implement XSRF headers with an interceptor. */
+  xsrfCookieName?: string;
+  xsrfHeaderName?: string;
+
+  // --- not an axios option: opt-in cookie storage/replay ---
+  /**
+   * A `tough-cookie` `CookieJar` instance. Opts into cookie storage/replay
+   * (unlike axios, which ignores `withCredentials` on Node.js and has no
+   * cookie jar of its own). Module-level only; see the class doc in
+   * `docs/axios-supported-options.md` ("Cookies: `cookieJar`") for why only
+   * an instance (never `true`) is accepted, and why there's no per-request
+   * form. `http-cookie-agent`/`tough-cookie` are optional peers, loaded
+   * lazily only when this is set.
+   */
+  cookieJar?: CookieJarOption;
+
+  // --- undici options this package passes straight through ---
+  /** Bypasses the axios-style mapping above entirely; wins over `httpAgent`/`httpsAgent`/`proxy`/`socketPath`/`cookieJar`/the proxy env vars. */
+  dispatcher?: Dispatcher;
+  headersTimeout?: number;
+  bodyTimeout?: number;
+  /** `0` or `1`; also set from `httpAgent`/`httpsAgent`'s `keepAlive`. */
+  pipelining?: 0 | 1;
+  /** Pool size; also set from `httpAgent`/`httpsAgent`'s `maxSockets`. */
+  connections?: number;
+  /** Same spelling undici's own redirect interceptor uses; an alias for `maxRedirects`. */
+  maxRedirections?: number;
+
+  // --- library-specific ---
   interceptors?: Array<
     Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction
   >;
-  /**
-   * Opts into cookie storage/replay, unlike axios (which ignores
-   * `withCredentials` on Node.js and has no cookie jar of its own). Pass a
-   * `tough-cookie` `CookieJar` instance; the module wraps whatever
-   * dispatcher it built (proxy/TLS/socketPath) in an `http-cookie-agent`
-   * `CookieAgent` around that jar.
-   *
-   * - Only an instance is accepted, never `true`: the caller owns the jar's
-   *   scope explicitly (module-wide, per-request, per-user, ...), so cookies
-   *   are never shared between callers unless the caller chooses to share
-   *   the jar itself. This is what makes `withCredentials` a no-op instead -
-   *   see `docs/axios-supported-options.md`.
-   * - Module-level only; there's no per-request `cookieJar` (building a
-   *   `CookieAgent` per jar per request would be expensive, and cheap
-   *   caching would need to key on jar identity forever - a `WeakMap` per
-   *   `HttpService` would work but isn't implemented). Pass different
-   *   `cookieJar`s to different `HttpModule.register()` calls instead.
-   * - `http-cookie-agent` and `tough-cookie` are optional peer dependencies,
-   *   loaded lazily the first time a `cookieJar` is configured; install both
-   *   (`npm i http-cookie-agent tough-cookie`) to use this option.
-   */
-  cookieJar?: CookieJarOption;
-};
+  /** Register the module as global, as in `@nestjs/axios` */
+  global?: boolean;
+}
+
+/**
+ * The options object stored under `UNDICI_INSTANCE_TOKEN` and passed to
+ * `HttpService`'s constructor: `HttpModuleOptions` minus the two keys
+ * `HttpModule.register()`/`.registerAsync()` strip before storing it there
+ * (`interceptors` is resolved through Nest DI instead; `global` only
+ * affects the `DynamicModule` itself). Mutable (`dispatcher` is assigned
+ * onto it once, in `HttpService.setupDispatcher`).
+ */
+export type UndiciRequestOptionsType = Omit<
+  HttpModuleOptions,
+  'interceptors' | 'global'
+>;
 
 export interface TypedDynamicModule<T> extends DynamicModule {
   module: Type<any>;

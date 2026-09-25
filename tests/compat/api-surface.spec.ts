@@ -109,38 +109,6 @@ allow(
   AXIOS_REF_REAL_INSTANCE,
 );
 
-allow(
-  ALLOWLIST,
-  'AxiosHeaders instance',
-  [
-    'normalize',
-    'concat',
-    'toString',
-    'getSetCookie',
-    'hasContentType',
-    'getContentLength',
-    'setContentLength',
-    'hasContentLength',
-    'getAccept',
-    'setAccept',
-    'hasAccept',
-    'getAcceptEncoding',
-    'setAcceptEncoding',
-    'hasAcceptEncoding',
-    'getUserAgent',
-    'setUserAgent',
-    'hasUserAgent',
-    'getAuthorization',
-    'hasAuthorization',
-  ],
-  {
-    reason:
-      'our AxiosHeaders is a minimal stand-in: no format/shorthand helpers (concat, getSetCookie, get/set/hasContentType, ...); setContentType/setAuthorization/getContentType exist (needed for the axiosRef config pipeline)',
-    tracked:
-      'plan.md phase 2 "types: axios interop" (Full AxiosHeaders, with response.headers as AxiosHeaders)',
-  },
-);
-
 /** Public own keys along the whole prototype chain (methods and data props alike). */
 function ownMembers(value: unknown): Set<string> {
   const out = new Set<string>();

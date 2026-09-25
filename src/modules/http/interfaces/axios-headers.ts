@@ -84,6 +84,11 @@ export type AxiosRequestHeaders = Partial<
  * Supports bracket notation for header access/assignment
  */
 export class AxiosHeaders {
+  // Matches axios' own `AxiosHeaders` type declaration: lets bracket
+  // notation (`config.headers['Authorization'] = ...`) type-check under
+  // `strict`, on top of the Proxy that already supports it at runtime.
+  [key: string]: any;
+
   private headers: Map<string, AxiosHeaderValue>;
 
   constructor(headers?: RawAxiosHeaders | AxiosHeaders) {
@@ -252,6 +257,16 @@ export class AxiosHeaders {
     return this;
   }
 
+  /** Reads the `Authorization` header. Matches axios' `AxiosHeaders#getAuthorization`. */
+  getAuthorization(): AxiosHeaderValue {
+    return this.get('Authorization');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasAuthorization`. */
+  hasAuthorization(): boolean {
+    return this.has('Authorization');
+  }
+
   /**
    * Sets (or removes, with `false`) the `Content-Type` header. Matches
    * axios' `AxiosHeaders#setContentType`.
@@ -270,6 +285,148 @@ export class AxiosHeaders {
    */
   getContentType(): AxiosHeaderValue {
     return this.get('Content-Type');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasContentType`. */
+  hasContentType(): boolean {
+    return this.has('Content-Type');
+  }
+
+  /** Matches axios' `AxiosHeaders#setContentLength`. */
+  setContentLength(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Content-Length');
+    } else {
+      this.set('Content-Length', value);
+    }
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getContentLength`. */
+  getContentLength(): AxiosHeaderValue {
+    return this.get('Content-Length');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasContentLength`. */
+  hasContentLength(): boolean {
+    return this.has('Content-Length');
+  }
+
+  /** Matches axios' `AxiosHeaders#setAccept`. */
+  setAccept(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Accept');
+    } else {
+      this.set('Accept', value);
+    }
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getAccept`. */
+  getAccept(): AxiosHeaderValue {
+    return this.get('Accept');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasAccept`. */
+  hasAccept(): boolean {
+    return this.has('Accept');
+  }
+
+  /** Matches axios' `AxiosHeaders#setAcceptEncoding` (axios' own runtime accessor list, though not its `.d.ts`). */
+  setAcceptEncoding(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Accept-Encoding');
+    } else {
+      this.set('Accept-Encoding', value);
+    }
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getAcceptEncoding`. */
+  getAcceptEncoding(): AxiosHeaderValue {
+    return this.get('Accept-Encoding');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasAcceptEncoding`. */
+  hasAcceptEncoding(): boolean {
+    return this.has('Accept-Encoding');
+  }
+
+  /** Matches axios' `AxiosHeaders#setContentEncoding` (in its `.d.ts`, though its own runtime accessor list uses `Accept-Encoding` instead - both are provided here). */
+  setContentEncoding(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Content-Encoding');
+    } else {
+      this.set('Content-Encoding', value);
+    }
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getContentEncoding`. */
+  getContentEncoding(): AxiosHeaderValue {
+    return this.get('Content-Encoding');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasContentEncoding`. */
+  hasContentEncoding(): boolean {
+    return this.has('Content-Encoding');
+  }
+
+  /** Matches axios' `AxiosHeaders#setUserAgent`. */
+  setUserAgent(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('User-Agent');
+    } else {
+      this.set('User-Agent', value);
+    }
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getUserAgent`. */
+  getUserAgent(): AxiosHeaderValue {
+    return this.get('User-Agent');
+  }
+
+  /** Matches axios' `AxiosHeaders#hasUserAgent`. */
+  hasUserAgent(): boolean {
+    return this.has('User-Agent');
+  }
+
+  /**
+   * Merge other header sources onto a *new* `AxiosHeaders` seeded from this
+   * one. Matches axios' `AxiosHeaders#concat` (`this.constructor.concat(this, ...targets)`).
+   */
+  concat(
+    ...sources: Array<AxiosHeaders | RawAxiosHeaders | undefined>
+  ): AxiosHeaders {
+    return AxiosHeaders.concat(this, ...sources);
+  }
+
+  /**
+   * Accepted for API parity, but a no-op. Axios merges case-duplicate names
+   * in place and, with `format: true`, title-cases them (`Content-Type`).
+   * This class stores every name lower-cased and doesn't keep the original
+   * casing, so duplicates are already merged and there is no casing to
+   * restore: `normalize(true).toJSON()` still returns lower-case names.
+   * Header casing doesn't matter on the wire; preserving it like axios is
+   * tracked in plan.md ("feat(axiosRef): make it a real axios instance").
+   */
+  normalize(_format?: boolean): this {
+    return this;
+  }
+
+  /** Matches axios' `AxiosHeaders#getSetCookie`: always an array, even for one cookie. */
+  getSetCookie(): string[] {
+    const value = this.get('set-cookie');
+    if (value == null || value === false) return [];
+    return Array.isArray(value) ? value.map(String) : [String(value)];
+  }
+
+  /** `"key: value"` per header, newline-separated, like axios' `AxiosHeaders#toString`. */
+  toString(): string {
+    return Array.from(this.headers.entries())
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
   }
 
   /**

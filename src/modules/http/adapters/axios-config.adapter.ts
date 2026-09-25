@@ -1,7 +1,11 @@
 import type { HttpModuleOptions } from '../types';
 import type { Agent } from 'http';
 import type { Agent as HttpsAgent } from 'https';
-import type { HttpInterceptorFunction } from '../interfaces';
+import type {
+  AxiosParamsSerializer,
+  AxiosResponseType,
+  HttpInterceptorFunction,
+} from '../interfaces';
 import { createSizeLimitInterceptor } from '../interceptors/size-limit.interceptor';
 
 /**
@@ -71,13 +75,17 @@ export interface AxiosConfigOptions {
       }
     | false;
   decompress?: boolean;
-  validateStatus?: (status: number) => boolean;
+  validateStatus?: ((status: number) => boolean) | null;
   baseURL?: string;
-  transformRequest?: Array<(data: any, headers?: any) => any>;
-  transformResponse?: Array<(data: any) => any>;
-  paramsSerializer?: (params: any) => string;
-  socketPath?: string;
-  responseType?: 'json' | 'text' | 'stream' | 'arraybuffer' | 'blob';
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
+  transformResponse?:
+    | ((data: any, headers?: any, status?: number) => any)
+    | Array<(data: any, headers?: any, status?: number) => any>;
+  paramsSerializer?: AxiosParamsSerializer;
+  socketPath?: string | null;
+  responseType?: AxiosResponseType;
   responseEncoding?: string;
   xsrfCookieName?: string;
   xsrfHeaderName?: string;

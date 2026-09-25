@@ -80,7 +80,7 @@ const { data, status, statusText, headers } = await lastValueFrom(
 
 As with axios, a non-2xx status rejects with an error carrying `error.response`, `error.config`, `error.status` and `error.isAxiosError`. Use `validateStatus` to change which statuses count as success.
 
-Network failures, timeouts and cancellations are axios errors too, with the axios `code` values (`ERR_BAD_REQUEST`, `ERR_BAD_RESPONSE`, `ECONNABORTED`, `ERR_CANCELED`, `ECONNREFUSED`, ...), so `axios.isAxiosError(error)` and `axios.isCancel(error)` work. `error instanceof AxiosError` only holds for the `AxiosError` class exported by this package.
+Network failures, timeouts and cancellations are axios errors too, with the axios `code` values (`ERR_BAD_REQUEST`, `ERR_BAD_RESPONSE`, `ECONNABORTED`, `ERR_CANCELED`, `ECONNREFUSED`, ...), so `axios.isAxiosError(error)` and `axios.isCancel(error)` work. `error instanceof AxiosError` holds for the `AxiosError` class exported by this package, and also for the `axios` package's own `AxiosError` class when `axios` is installed (an optional peer).
 
 JSON is parsed only for JSON content types, and unknown binary content types are returned as a `Buffer` (axios returns a string).
 

@@ -65,7 +65,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | Text-ish `Content-Type` (`text/*`, `application/xml`, `application/javascript`, `application/x-www-form-urlencoded`, `image/svg+xml`, `application/octet-stream`, no `Content-Type`) | ✅ | Decoded to a UTF-8 string, like axios' default `responseType: 'json'` handling. |
 | Other binary `Content-Type` (images, PDFs, ...) | ⚠️ | Returned as a `Buffer`; axios also returns a UTF-8 string unless `responseType: 'arraybuffer'` is set (harder to use correctly, so this library keeps it a `Buffer` by default). Set `responseType: 'arraybuffer'` for binary downloads either way. |
 | `Content-Encoding: gzip \| br \| deflate` | ✅ | Decompressed automatically; `decompress: false` opts out. |
-| `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object. |
+| `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object, deliberately: measured (this library's own `AxiosHeaders`, a typical response's headers, 200k iterations) at about 955ns more per response just to construct, before counting that every later read on it also pays a Proxy-trap cost a plain object doesn't - not worth it, unconditionally, on every response, against the `+10%` CPU-per-request budget the CI regression check enforces. Typed as `Record<string, any>` (assignable to/from axios' own `AxiosResponse.headers`) regardless - index into it the normal way (`response.headers['content-type']`). |
 | `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers`, `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
 | `response.request` | ⚠️ | A placeholder object, not the underlying request. `response.request.res.responseUrl` is set to the final hop's URL once a redirect was followed (unset otherwise), matching axios' `responseUrl`. |
 
@@ -78,7 +78,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `error.message` | ✅ | Same messages as axios (`Request failed with status code 404`, `timeout of 200ms exceeded`, `canceled`, ...). |
 | `error.response`, `error.config`, `error.status`, `error.toJSON()` | ✅ | |
 | `axios.isCancel(error)` | ✅ | |
-| `error instanceof AxiosError` | ⚠️ | True for the `AxiosError` / `CanceledError` classes exported by this package, **not** for the class from the `axios` package. Use `isAxiosError()` (from either package) instead. |
+| `error instanceof AxiosError` | ✅ | True for this package's own `AxiosError`/`CanceledError` classes, always. **Also** true for `axios.AxiosError` when the optional `axios` peer is installed (`npm i axios`): this package lazily links its `AxiosError`'s prototype onto axios' own at module load. `error instanceof axios.CanceledError` specifically does not hold (a prototype chain is linear; see the doc comment on `linkOptionalAxiosPeer` in `axios-error.ts`) - use `isCancel()` (from either package) to detect cancellation. Without `axios` installed, nothing changes: use `isAxiosError()` (from either package) instead. |
 | `error.cause` | ✅ | The original undici/Node.js error for network, timeout and cancellation errors. |
 
 ```typescript
@@ -95,6 +95,19 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `registerAsync({ useClass })` / `({ useExisting })` | ✅ | |
 | `extraProviders`, `global` | ✅ | |
 | Class-based interceptors in `registerAsync()` options | ✅ | Dependencies are resolved from `imports` and `extraProviders`; see [Interceptors with dependencies](/docs/guides/interceptors.md#interceptors-with-dependencies). |
+| `registerAsync({})` with none of `useFactory`/`useClass`/`useExisting` | ✅ | Throws a clear error at setup (`HttpModule.registerAsync() requires one of useFactory, useClass or useExisting`) instead of silently registering a broken provider. |
+
+## Types
+
+`HttpModuleOptions` is a real, strictly-typed interface: every axios option this library maps and every undici option it passes through is spelled out, so a typo (`register({ timeuot: 5 })`) is a compile error, the same way it would be against `@nestjs/axios`' own `AxiosRequestConfig & { global? }`. `HttpModule.register()`/`.registerAsync()` accept `@nestjs/axios`' own `HttpModuleOptions`/`HttpModuleAsyncOptions` values directly.
+
+The four overlapping request-config types this library used to export (`AxiosLikeRequestConfig`, `AxiosCompatibleRequestOptions`, `AxiosCompatibleRequestConfig`, `HttpRequestOptions`) are one type now, `AxiosLikeRequestConfig<D = any>`, used everywhere a request-level config is accepted (`request()`, `get`/`post`/etc.'s `config` argument, `axiosRef`'s promise methods). `post`/`put`/`patch` have a real second (body) type parameter: `post<T, D>(url, data?: D, config?: AxiosLikeRequestConfig<D>)`, matching `@nestjs/axios`.
+
+`AxiosLikeResponse<T, D>` is structurally assignable to and from axios' own `AxiosResponse<T, D>` - a function declared `(): Observable<AxiosResponse<T>>` compiles when it returns this library's `HttpService.get()`, and a unit-test mock written `of({...} as AxiosResponse)` is assignable to `HttpService['get']`'s return type. Full parity (axiosRef interceptor callbacks typed with axios' own `InternalAxiosRequestConfig`, and an `AxiosResponse`-typed mock passed straight to `of(...)`) needs axios' `AxiosHeaders` class methods this library's own `AxiosHeaders` doesn't fully mirror yet - tracked as a known gap, see [`feat(axiosRef): make it a real axios instance`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/plan.md).
+
+axiosRef request interceptors receive a config whose `headers` is non-optional, so `config.headers['Authorization'] = ...` and `config.headers.set(...)` (the README's own interceptor example) type-check under `strict` without a null check first.
+
+`axios` itself is an optional peer (see [Errors](#errors)) - install it and `error instanceof axios.AxiosError` also holds for errors this library throws.
 
 ## Module-level axios options
 

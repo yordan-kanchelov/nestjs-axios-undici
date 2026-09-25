@@ -1,12 +1,11 @@
 import { firstValueFrom } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type {
-  AxiosCompatibleRequestConfig,
-  AxiosCompatibleRequestOptions,
   AxiosLikeRequestConfig,
   AxiosLikeResponse,
   AxiosRef,
   AxiosRefDefaults,
+  InternalAxiosLikeRequestConfig,
 } from '../interfaces';
 import type { AxiosInterceptorStore } from './axios-interceptor.adapter';
 import { SUPPORTED_CONTENT_ENCODINGS } from './axios-response-type.adapter';
@@ -30,40 +29,40 @@ type BodyMethod = 'post' | 'put' | 'patch';
  * The HttpService surface used to back the promise-based axiosRef methods.
  */
 export interface AxiosRefHost {
-  request<T = any>(
-    config: AxiosCompatibleRequestConfig,
-  ): Observable<AxiosLikeResponse<T>>;
-  get<T = any>(
+  request<T = any, D = any>(
+    config: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  get<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  delete<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  delete<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  head<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  head<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  options<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  options<T = any, D = any>(
     url: string,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  post<T = any>(
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  post<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  put<T = any>(
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  put<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
-  patch<T = any>(
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
+  patch<T = any, D = any>(
     url: string,
-    data?: any,
-    config?: AxiosCompatibleRequestOptions,
-  ): Observable<AxiosLikeResponse<T>>;
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>>;
 }
 
 /**
@@ -110,22 +109,22 @@ export function createAxiosRefDefaults(
  */
 export function createAxiosRef(
   host: AxiosRefHost,
-  requestInterceptors: AxiosInterceptorStore<AxiosLikeRequestConfig>,
+  requestInterceptors: AxiosInterceptorStore<InternalAxiosLikeRequestConfig>,
   responseInterceptors: AxiosInterceptorStore<AxiosLikeResponse>,
   moduleOptions?: Record<string, any>,
 ): AxiosRef {
   const bodyless =
     (method: BodylessMethod) =>
-    <T = any>(url: string, config?: AxiosCompatibleRequestOptions) =>
-      firstValueFrom(host[method]<T>(url, config));
+    <T = any, D = any>(url: string, config?: AxiosLikeRequestConfig<D>) =>
+      firstValueFrom(host[method]<T, D>(url, config));
   const withBody =
     (method: BodyMethod) =>
-    <T = any>(
+    <T = any, D = any>(
       url: string,
-      data?: any,
-      config?: AxiosCompatibleRequestOptions,
+      data?: D,
+      config?: AxiosLikeRequestConfig<D>,
     ) =>
-      firstValueFrom(host[method]<T>(url, data, config));
+      firstValueFrom(host[method]<T, D>(url, data, config));
 
   return {
     interceptors: {
@@ -133,8 +132,8 @@ export function createAxiosRef(
       response: responseInterceptors,
     },
     defaults: createAxiosRefDefaults(moduleOptions),
-    request: <T = any>(config: AxiosCompatibleRequestConfig) =>
-      firstValueFrom(host.request<T>(config)),
+    request: <T = any, D = any>(config: AxiosLikeRequestConfig<D>) =>
+      firstValueFrom(host.request<T, D>(config)),
     get: bodyless('get'),
     delete: bodyless('delete'),
     head: bodyless('head'),
