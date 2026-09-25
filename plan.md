@@ -97,11 +97,11 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
   - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 184 scenarios, 55 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
     - fix(response): decode bodies like axios: 0 (fixed by `claude/fix-response-decoding`)
-    - feat: axios default headers: 11
+    - feat: axios default headers: 0 (was 9, plus 2 in `response.diff.spec.ts`; fixed by `claude/feat-default-headers`)
     - fix(observable): abort on unsubscribe and run request interceptors per subscription: 0 (was 4; fixed)
     - refactor(axiosRef): one config object from interceptors to response.config / error.config: 11
     - fix: follow redirects by default (21): 1
-    - fix(config): transport options: 2
+    - fix(config): transport options: 1 (was 2; the method-keyed module headers case was actually the default-headers item and is fixed by `claude/feat-default-headers`)
     - breaking: withCredentials becomes a no-op; add cookieJar: 1
     - types: axios interop: 3
     - feat(axiosRef): make it a real axios instance: 3
@@ -125,7 +125,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
 
 - [x] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase. (PR #14, merged; also rejects on corrupt compressed bodies)
-- [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
+- [~] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options. PR open (`claude/feat-default-headers`).
 - [x] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors. PR #15, merged.
   - Follow-ups from the PR #15 review (not blocking):
     - `resolveSignal` in axios-request.adapter.ts leaves a listener on `signal` when combined with a legacy `cancelToken`.
@@ -221,3 +221,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #14 merged: response decoding matches axios (19 known differences fixed, 58 left; corrupt gzip now rejects). The abort-on-unsubscribe worker is running.
 - 2026-09-25: PR open (`claude/fix-observable-abort`): `fix(observable): abort on unsubscribe and run request interceptors per subscription`. `HttpService.request()` now wraps its body in `defer()`, so it stays cold (no work before subscribe) and re-runs config normalization plus the axiosRef request interceptors on every subscription. `executeRequest` creates a per-subscription `AbortController`, combined with any user `signal`/`cancelToken` via a plain listener (no `AbortSignal.any`), and aborts it on unsubscribe unless the response (or, for `responseType: 'stream'`, the headers) has already been emitted. 3 of the 4 `fix(observable)` known-difference cases now pass; the 4th was a mistag (undici's idle-timer timeout vs. axios' deadline timeout) and was retagged to `fix(errors)`. Perf check and full Node 24 verification green.
 - 2026-09-25: PR #15 merged: unsubscribing aborts the request, and interceptors run per subscription (55 known differences left). CI CPU/req vs base: get +7.6%, post -1.6%, config +5.3%, error +3.0%, interceptors +2.7%. Still 8.4x the rps of @nestjs/axios on get.
+- 2026-09-25: PR open (`claude/feat-default-headers`): `feat: axios default headers`. Requests now send `Accept`, `User-Agent` (`nestjs-axios-undici/<version>`, read from `package.json` once at load) and `Accept-Encoding` (`gzip, deflate, br`, no `compress`, only when decompression is on), seeded into `axiosRef.defaults.headers.common`; module and per-request headers override them, and `undefined`/`null` removes one. `register({ headers: { common, post, ... } })` is now flattened per method at setup (item 11), for both module headers and `axiosRef.defaults.headers`. A POST/PUT/PATCH with no body now gets the default `Content-Type: application/x-www-form-urlencoded` (previously skipped when `data` was `undefined`), and a `Blob` body's own `type` is used instead of that default. Fixes all 12 tracked `knownDifference` cases (9 in `request.diff.spec.ts`, 2 in `response.diff.spec.ts`, 1 mistagged under `fix(config)` in `module.diff.spec.ts`). The perf check initially failed on `interceptors` (+15.7%, over the 15% threshold): every request now carries 3 default headers, and the axios-interceptor adapter was rebuilding its `AxiosHeaders` wrapper one `.set()` call at a time *after* it was already Proxy-wrapped (each call paying Proxy-trap + rebind cost); populating it through the constructor instead (before the Proxy wrap) fixed it (interceptors +5.1% on the next run). CI CPU/req vs base: get +8.0%, post +5.4%, config -8.7%, error +8.1%, interceptors +5.1%.

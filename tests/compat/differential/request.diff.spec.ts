@@ -6,7 +6,6 @@ import NodeFormData from 'form-data';
 import { Readable } from 'node:stream';
 import { differential, Ctx } from './harness';
 
-const HEADERS = 'plan.md phase 2: feat: axios default headers';
 const FORM = 'plan.md phase 2: feat(axiosRef): make it a real axios instance';
 
 const routes = {
@@ -28,8 +27,20 @@ const echo = (ctx: Ctx) => `${ctx.base}/echo`;
 /** What the server saw for the last request the case made. */
 const lastRequest = (o: any) => o.requests[o.requests.length - 1];
 
+// Both differ from axios by design, so only presence/overridability is
+// compared here, not the exact string (see docs/axios-supported-options.md):
+// - `user-agent`: axios sends `axios/<version>`, this library
+//   `nestjs-axios-undici/<version>`.
+// - `accept-encoding`: this library doesn't advertise `compress` (an old LZW
+//   scheme neither it nor axios can decode), so the value is one token
+//   shorter than axios'.
+const PRESENCE_ONLY = new Set(['user-agent', 'accept-encoding']);
 const pick = (h: Record<string, any>, names: string[]) =>
-  Object.fromEntries(names.filter(n => h[n] !== undefined).map(n => [n, h[n]]));
+  Object.fromEntries(
+    names
+      .filter(n => h[n] !== undefined)
+      .map(n => [n, PRESENCE_ONLY.has(n) ? true : h[n]]),
+  );
 
 const serverView = (names: string[]) => (o: any) => {
   const r = lastRequest(o);
@@ -103,8 +114,6 @@ const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
 const bodyKnownDifference = new Map<string, string>([
   ['number 5', ERRORS],
   ['boolean true', ERRORS],
-  ['undefined', HEADERS],
-  ['Blob', HEADERS],
 ]);
 
 const paramsCases: Array<[string, any, any?]> = [
@@ -208,13 +217,11 @@ differential('Differential: request serialization', routes, [
         ? s.request({ url: echo(ctx), method: 'OPTIONS' })
         : s[m](echo(ctx)),
     normalize: serverView(ALL_DEFAULT_HEADERS),
-    knownDifference: HEADERS,
   })),
   ...['post', 'put', 'patch'].map(m => ({
     name: `${m} without body: default headers`,
     run: (s: any, ctx: Ctx) => s[m](echo(ctx)),
     normalize: serverView(ALL_DEFAULT_HEADERS),
-    knownDifference: HEADERS,
   })),
   {
     name: 'delete with data',

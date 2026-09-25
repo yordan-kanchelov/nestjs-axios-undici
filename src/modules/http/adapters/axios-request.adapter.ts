@@ -251,16 +251,18 @@ function forEachHeader(
 }
 
 /**
- * Case-insensitively merges header sources (later sources win). `undefined`
- * values are ignored and `null` removes a header, as in axios.
+ * Case-insensitively merges header sources (later sources win). A header
+ * explicitly set to `undefined`, `null` or `false` removes any value a
+ * lower-priority source set for it, as in axios (`AxiosHeaders#toJSON`
+ * drops all three); a source that is itself `undefined`/`null` (no headers
+ * given at all) is simply skipped.
  */
 export function mergeHeaders(...sources: any[]): HeaderRecord {
   const merged = new Map<string, [string, any]>();
   for (const source of sources) {
     forEachHeader(source, (key, value) => {
-      if (value === undefined) return;
       const lower = key.toLowerCase();
-      if (value === null || value === false) {
+      if (value === undefined || value === null || value === false) {
         merged.delete(lower);
       } else {
         merged.set(lower, [
@@ -291,6 +293,15 @@ function setHeaderIfMissing(
   value: string,
 ): void {
   if (findHeader(headers, name) === undefined) headers[name] = value;
+}
+
+/** Sets a header, replacing any existing case-insensitive match (and its casing). */
+function setHeader(headers: HeaderRecord, name: string, value: string): void {
+  const existing = Object.keys(headers).find(
+    key => key.toLowerCase() === name.toLowerCase(),
+  );
+  if (existing) delete headers[existing];
+  headers[name] = value;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,11 +375,20 @@ export function serializeRequestData(
     // e.g. `FormData` from the `undici` package: undici encodes it natively
     // and sets multipart/form-data with the boundary itself
     body = data;
-  } else if (
-    Buffer.isBuffer(data) ||
-    isStreamLike(data) ||
-    (typeof Blob !== 'undefined' && data instanceof Blob)
-  ) {
+  } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    body = data;
+    // axios' Node adapter sets Content-Type from the Blob's own `type`
+    // whenever it has content - overriding even a header the caller set
+    // explicitly. An empty Blob is left alone (falls through to the
+    // POST/PUT/PATCH default below, like axios).
+    if (data.size) {
+      setHeader(
+        headers,
+        'Content-Type',
+        data.type || 'application/octet-stream',
+      );
+    }
+  } else if (Buffer.isBuffer(data) || isStreamLike(data)) {
     body = data;
   } else if (data instanceof ArrayBuffer) {
     body = Buffer.from(data);
@@ -524,9 +544,18 @@ export function normalizeAxiosRequest(
   const defaults = context.defaults;
   const instance = context.instanceOptions || {};
   const defaultHeaders = defaults?.headers;
+  const instanceHeaders = instance.headers as Record<string, any> | undefined;
   const method = String(input.method || 'GET').toUpperCase();
-  const methodHeaders = defaultHeaders?.[method.toLowerCase() as 'get'];
+  const lowerMethod = method.toLowerCase() as 'get';
+  const methodHeaders = defaultHeaders?.[lowerMethod];
   const flatHeaders = flatDefaultHeaders(defaultHeaders);
+  // Module (`register()`/`registerAsync()`) headers may use the same
+  // axios-style `{ common: {...}, post: {...}, 'X-Flat': '...' }` shape as
+  // `axiosRef.defaults.headers` (item 11: they must be flattened per method,
+  // not sent as literal `common`/`post` headers).
+  const instanceMethodHeaders = instanceHeaders?.[lowerMethod];
+  const instanceFlatHeaders = flatDefaultHeaders(instanceHeaders);
+
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
   const auth = input.auth ?? instance.auth;
   const defaultTimeout =
@@ -534,7 +563,10 @@ export function normalizeAxiosRequest(
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
 
-  // Fast path: nothing axios-specific to do for this request
+  // Fast path: nothing axios-specific to do for this request. In practice
+  // this only triggers for calls that bypass HttpService's axiosRef defaults
+  // entirely (defaultHeaders?.common always carries the default Accept /
+  // User-Agent / Accept-Encoding headers once a service is set up).
   const needsWork =
     AXIOS_ONLY_KEYS.some(key => input[key] !== undefined) ||
     (input.method !== undefined && input.method !== method) ||
@@ -546,7 +578,8 @@ export function normalizeAxiosRequest(
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
     hasOwnKeys(defaultHeaders?.common) ||
     hasOwnKeys(methodHeaders) ||
-    flatHeaders !== undefined;
+    flatHeaders !== undefined ||
+    hasOwnKeys(instanceHeaders);
   if (!needsWork) {
     return { url, options: input };
   }
@@ -580,12 +613,19 @@ export function normalizeAxiosRequest(
     );
   }
 
-  // Headers: module -> defaults.common -> defaults[method] -> defaults (flat) -> request
+  // Headers, lowest to highest priority: axiosRef defaults (the axios-style
+  // request defaults, including the built-in Accept/User-Agent/
+  // Accept-Encoding) -> module (`register()`) headers -> per-request headers.
+  // Each axios-style source is itself `common` -> `<method>` -> flat, so a
+  // header set for one method (or unqualified) is overridden by a more
+  // specific one from the same source before the next source is applied.
   const headers = mergeHeaders(
-    instance.headers,
     defaultHeaders?.common,
     methodHeaders,
     flatHeaders,
+    instanceHeaders?.common,
+    instanceMethodHeaders,
+    instanceFlatHeaders,
     options.headers,
   );
 
@@ -600,8 +640,15 @@ export function normalizeAxiosRequest(
     headers.Authorization = `Basic ${token}`;
   }
 
-  if (data !== undefined && options.body === undefined) {
-    options.body = serializeRequestData(data, headers, method);
+  if (options.body === undefined) {
+    if (data !== undefined) {
+      options.body = serializeRequestData(data, headers, method);
+    } else if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      // axios' dispatchRequest sets this default unconditionally for these
+      // 3 methods, even with no `data` at all (`config.headers
+      // .setContentType('application/x-www-form-urlencoded', false)`).
+      setHeaderIfMissing(headers, 'Content-Type', FORM_URLENCODED);
+    }
   }
   options.headers = headers;
 

@@ -114,6 +114,15 @@ export function classifyContentType(contentType: string): BodyContentKind {
 
 const GZIP_ENCODINGS = new Set(['gzip', 'x-gzip']);
 
+/**
+ * `Content-Encoding` values `decompressBuffer`/`decompressStream` can
+ * actually decode. Used to build the default `Accept-Encoding` request
+ * header: unlike axios (which also advertises `compress`, an old LZW scheme
+ * neither axios nor this library decodes), this only lists what can be
+ * decompressed.
+ */
+export const SUPPORTED_CONTENT_ENCODINGS = 'gzip, deflate, br';
+
 function normalizeEncoding(encoding: string): string {
   return encoding.trim().toLowerCase();
 }

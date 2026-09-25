@@ -23,6 +23,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 - Network, timeout and cancellation errors are wrapped in an `AxiosError` (`error.code` such as `ECONNREFUSED`, `ECONNABORTED`, `ERR_CANCELED`); the original undici error is kept in `error.cause`, so `instanceof undici.errors.*` checks must look at `error.cause`.
 - String and `Buffer` request bodies get `Content-Type: application/x-www-form-urlencoded` by default, as in axios (previously `application/json`). Falsy primitive bodies (`0`, `false`, `''`) are no longer sent.
 - Per-request headers are merged with module headers (case-insensitively) instead of replacing them.
+- Requests now send default `Accept`, `User-Agent` and `Accept-Encoding` headers, as axios does. See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for the exact values and how to override or remove them. Module `headers` now take precedence over headers set at runtime through `axiosRef.defaults.headers`.
 - Module-level `timeout`, `auth`, `params` and `maxRedirects` now apply to every request, including with `registerAsync`.
 - `params`, `baseURL` joining, `responseType`, `signal`/`cancelToken`, `request(config)` and `axiosRef.defaults` / `axiosRef.get()` now work like axios. See [Supported Axios Options](/docs/axios-supported-options.md).
 

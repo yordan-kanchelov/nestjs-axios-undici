@@ -35,7 +35,8 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `baseURL` | ✅ | Joined like axios (`http://api/v1` + `/users` → `http://api/v1/users`). |
 | `params` (objects, arrays, nested objects, dates, `URLSearchParams`) | ✅ | Same encoding as axios (`a[]=1&a[]=2`, `obj[k]=v`). |
 | `paramsSerializer` (function or `{ serialize, encode, indexes }`) | ✅ | |
-| `headers` (plain object or `AxiosHeaders`) | ✅ | Merged case-insensitively with module headers and `axiosRef.defaults.headers`. |
+| `headers` (plain object or `AxiosHeaders`) | ✅ | Merged case-insensitively with module headers and `axiosRef.defaults.headers`. A header set to `undefined`/`null` removes a default, as in axios. |
+| Default `Accept`, `User-Agent`, `Accept-Encoding` headers | ⚠️ | `Accept: application/json, text/plain, */*` and `Content-Type` defaults match axios exactly. `User-Agent` is `nestjs-axios-undici/<version>` (axios: `axios/<version>`) - override it the axios way, `axiosRef.defaults.headers.common['User-Agent'] = '...'`. `Accept-Encoding` lists `gzip, deflate, br` (axios also advertises `compress`, an old scheme neither library decodes) and is only sent when decompression is enabled at module level (`register({ decompress: false })` omits it; a per-request `decompress: false` keeps the header and returns the raw compressed bytes, as axios does). Seeded into `axiosRef.defaults.headers.common` at setup; module `headers` and per-request `headers` override them (module `headers` also win over any other `axiosRef.defaults` header). |
 | `data`: object → JSON, string, `URLSearchParams`, `Buffer`/typed arrays, streams, `FormData` (global or the `form-data` package) | ✅ | Same `Content-Type` defaults as axios. |
 | `auth` | ✅ | Becomes `Authorization: Basic ...` and overrides an existing Authorization header, as in axios. |
 | `timeout` | ⚠️ | Rejects with `ECONNABORTED` / `timeout of Nms exceeded`. Implemented with undici's `headersTimeout`/`bodyTimeout`, which have ~1s resolution, so sub-second timeouts fire late. |
@@ -97,7 +98,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 
 | Option | Status | Notes |
 |--------|:------:|-------|
-| `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType` | ✅ | Applied to every request; per-request values win (headers and params are merged). `timeout` maps to undici's `headersTimeout`/`bodyTimeout`. |
+| `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType` | ✅ | Applied to every request; per-request values win (headers and params are merged). `timeout` maps to undici's `headersTimeout`/`bodyTimeout`. `headers` accepts axios' method-keyed shape (`{ common: {...}, post: {...}, 'X-Flat': '...' }`), flattened per method at setup. |
 | `maxRedirects` | ⚠️ | Applied to every request through undici's redirect interceptor. Without it redirects are not followed (see [Request config](#request-config)). |
 | `maxBodyLength` / `maxContentLength` | ⚠️ | Size-limit checks (see error code note above). |
 | `transformRequest` / `transformResponse` | ⚠️ | Run as interceptors: `transformRequest` receives the already-serialized body (axios: the raw `data`), `transformResponse` receives the parsed `data` (axios: the raw string). |

@@ -12,6 +12,19 @@ import {
   createAxiosRequestInterceptorManager,
   createAxiosResponseInterceptorManager,
 } from './axios-interceptor.adapter';
+import { SUPPORTED_CONTENT_ENCODINGS } from './axios-response-type.adapter';
+import { LIBRARY_VERSION } from '../../../version';
+
+/** axios' default `Accept`, unchanged since it isn't per-service configurable. */
+const DEFAULT_ACCEPT = 'application/json, text/plain, */*';
+
+/**
+ * axios sends `axios/<version>`; this library names itself the same way so
+ * requests aren't silently anonymous. It's still just a default: override it
+ * per service the axios way, `axiosRef.defaults.headers.common['User-Agent']
+ * = '...'`, or per module/request headers (see `createAxiosRefDefaults`).
+ */
+const DEFAULT_USER_AGENT = `nestjs-axios-undici/${LIBRARY_VERSION}`;
 
 type BodylessMethod = 'get' | 'delete' | 'head' | 'options';
 type BodyMethod = 'post' | 'put' | 'patch';
@@ -62,10 +75,26 @@ export interface AxiosRefHost {
 export function createAxiosRefDefaults(
   moduleOptions?: Record<string, any>,
 ): AxiosRefDefaults {
+  // axios' default request headers, matched as closely as the docs allow
+  // (see docs/axios-supported-options.md). Seeded into `headers.common` so
+  // they're visible and overridable through `axiosRef.defaults` the same way
+  // axios' own defaults are; module `headers` and per-request `headers`
+  // still win (see `normalizeAxiosRequest`).
+  const common: Record<string, string> = {
+    Accept: DEFAULT_ACCEPT,
+    'User-Agent': DEFAULT_USER_AGENT,
+  };
+  // Only advertised when decompression is on for this service (module-level
+  // `decompress`, default true) - no point asking a server for a body this
+  // library won't decompress.
+  if (moduleOptions?.decompress !== false) {
+    common['Accept-Encoding'] = SUPPORTED_CONTENT_ENCODINGS;
+  }
+
   return {
     baseURL: moduleOptions?.baseURL,
     headers: {
-      common: {},
+      common,
       get: {},
       delete: {},
       head: {},
