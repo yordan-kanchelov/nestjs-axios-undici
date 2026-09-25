@@ -403,9 +403,13 @@ export class AxiosHeaders {
   }
 
   /**
-   * Axios normalizes header names in place (optionally title-casing them
-   * with `format: true`); our storage already keys everything lower-case
-   * internally, so there is nothing to reshuffle - kept for API parity.
+   * Accepted for API parity, but a no-op. Axios merges case-duplicate names
+   * in place and, with `format: true`, title-cases them (`Content-Type`).
+   * This class stores every name lower-cased and doesn't keep the original
+   * casing, so duplicates are already merged and there is no casing to
+   * restore: `normalize(true).toJSON()` still returns lower-case names.
+   * Header casing doesn't matter on the wire; preserving it like axios is
+   * tracked in plan.md ("feat(axiosRef): make it a real axios instance").
    */
   normalize(_format?: boolean): this {
     return this;
