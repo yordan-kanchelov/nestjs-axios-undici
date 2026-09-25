@@ -30,7 +30,7 @@ export class SizeLimitInterceptor implements HttpInterceptor {
       if (bodySize > this.options.maxBodyLength) {
         return throwError(() => {
           const error: any = new Error(
-            `maxBodyLength size of ${this.options.maxBodyLength} exceeded`
+            `maxBodyLength size of ${this.options.maxBodyLength} exceeded`,
           );
           error.code = 'ERR_FR_MAX_BODY_LENGTH_EXCEEDED';
           return error;
@@ -40,7 +40,7 @@ export class SizeLimitInterceptor implements HttpInterceptor {
 
     // Execute request and check response size
     return next.handle(request).pipe(
-      map((response) => {
+      map(response => {
         if (this.options.maxContentLength && response.body) {
           // For axios compatibility, we need to check the response size
           // This is tricky because the body might be a stream
@@ -50,23 +50,23 @@ export class SizeLimitInterceptor implements HttpInterceptor {
             const contentLength = parseInt(contentLengthHeader as string, 10);
             if (contentLength > this.options.maxContentLength) {
               const error: any = new Error(
-                `Response content size (${contentLength} bytes) exceeds maxContentLength (${this.options.maxContentLength} bytes)`
+                `Response content size (${contentLength} bytes) exceeds maxContentLength (${this.options.maxContentLength} bytes)`,
               );
               error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
               throw error;
             }
           }
-          
+
           // If we're processing the body (like in axios adapter), we need to track size
           // This will be handled by the axios response adapter
         }
-        
+
         return response;
       }),
-      catchError((error) => {
+      catchError(error => {
         // Re-throw the error
         return throwError(() => error);
-      })
+      }),
     );
   }
 
@@ -87,7 +87,7 @@ export class SizeLimitInterceptor implements HttpInterceptor {
  * Function-based size limit interceptor factory
  */
 export const createSizeLimitInterceptor = (
-  options: SizeLimitOptions
+  options: SizeLimitOptions,
 ): HttpInterceptorFunction => {
   const interceptor = new SizeLimitInterceptor(options);
   return (request, next) => interceptor.intercept(request, next);

@@ -2,7 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { firstValueFrom } from 'rxjs';
-import { Agent, Dispatcher, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
+import {
+  Agent,
+  Dispatcher,
+  getGlobalDispatcher,
+  setGlobalDispatcher,
+} from 'undici';
 import { HttpModule, HttpService } from '../src';
 
 describe('HttpService redirects', () => {
@@ -87,10 +92,14 @@ describe('HttpService redirects', () => {
     // interceptors from undici 7 can't be composed onto it.
     const agent = new Agent();
     const foreignDispatcher = {
-      dispatch: (opts: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) =>
-        agent.dispatch(opts, handler),
+      dispatch: (
+        opts: Dispatcher.DispatchOptions,
+        handler: Dispatcher.DispatchHandler,
+      ) => agent.dispatch(opts, handler),
       compose: jest.fn(() => {
-        throw new Error('interceptors from another undici copy are not supported');
+        throw new Error(
+          'interceptors from another undici copy are not supported',
+        );
       }),
       close: () => agent.close(),
       destroy: () => agent.destroy(),

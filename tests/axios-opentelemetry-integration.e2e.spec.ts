@@ -356,7 +356,9 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
 
       // Make a request
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/interceptor-verification`),
+        httpService.get(
+          `http://localhost:${serverPort}/interceptor-verification`,
+        ),
       );
       const receivedHeaders = response.data.headers;
 

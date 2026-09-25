@@ -64,7 +64,10 @@ export class HttpService {
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
   private cookieJar?: CookieJar;
-  private redirectDispatchers = new WeakMap<Dispatcher, Map<number, Dispatcher>>();
+  private redirectDispatchers = new WeakMap<
+    Dispatcher,
+    Map<number, Dispatcher>
+  >();
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -114,17 +117,17 @@ export class HttpService {
     // Handle cookie support - wrap existing dispatcher if present
     if (options.__withCredentials) {
       this.cookieJar = new CookieJar();
-      
+
       // Create cookie agent, optionally wrapping the base dispatcher
-      const cookieAgentOptions: any = { 
-        cookies: { jar: this.cookieJar } 
+      const cookieAgentOptions: any = {
+        cookies: { jar: this.cookieJar },
       };
-      
+
       // If we have a base dispatcher (proxy or custom agent), wrap it
       if (baseDispatcher) {
         cookieAgentOptions.factory = () => baseDispatcher;
       }
-      
+
       this.customDispatcher = new CookieAgent(cookieAgentOptions);
     } else if (baseDispatcher) {
       this.customDispatcher = baseDispatcher;
@@ -155,12 +158,17 @@ export class HttpService {
     requestOptions?: HttpRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
     // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
-    const { url, options } = normalizeAxiosRequest(urlOrConfig, requestOptions, {
-      defaults: this._axiosRef.defaults,
-      instanceOptions: this.instanceOptions,
-    }) as {
+    const { url, options } = normalizeAxiosRequest(
+      urlOrConfig,
+      requestOptions,
+      {
+        defaults: this._axiosRef.defaults,
+        instanceOptions: this.instanceOptions,
+      },
+    ) as {
       url: string | URL | UrlObject;
-      options: Omit<HttpRequestOptions, 'headers'> & Pick<Dispatcher.RequestOptions, 'headers'>;
+      options: Omit<HttpRequestOptions, 'headers'> &
+        Pick<Dispatcher.RequestOptions, 'headers'>;
     };
 
     // Handle timeout option for axios compatibility
@@ -188,11 +196,14 @@ export class HttpService {
     // Handle axios-specific options from module configuration
     let finalUrl = url;
     const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
-    
+
     if (axiosCompat?.baseURL) {
       // Apply baseURL if the URL is relative
       const urlString = typeof url === 'string' ? url : url.toString();
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (
+        !urlString.startsWith('http://') &&
+        !urlString.startsWith('https://')
+      ) {
         finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
       }
     }
@@ -200,7 +211,8 @@ export class HttpService {
     // Handle socket path
     if (moduleOpts?.__socketPath) {
       // Transform URL to use unix socket
-      const urlString = typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
+      const urlString =
+        typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
       const urlObj = new URL(urlString);
       finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
     }
@@ -301,8 +313,8 @@ export class HttpService {
   }
 
   private createInterceptorHandler<T = any>(
-    index: number, 
-    interceptors: Array<HttpInterceptor | HttpInterceptorFunction>
+    index: number,
+    interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
   ): HttpInterceptorHandler {
     if (index >= interceptors.length) {
       // End of chain - execute the actual request
@@ -313,7 +325,10 @@ export class HttpService {
     }
 
     const interceptor = interceptors[index];
-    const nextHandler = this.createInterceptorHandler<T>(index + 1, interceptors);
+    const nextHandler = this.createInterceptorHandler<T>(
+      index + 1,
+      interceptors,
+    );
 
     return {
       handle: (request: HttpInterceptorRequest) => {
@@ -349,7 +364,6 @@ export class HttpService {
   ): void {
     this.interceptors = interceptors;
   }
-
 
   public get interceptorCount(): number {
     // Include the axios response adapter which is always added

@@ -24,7 +24,10 @@ class TokenModule {}
 class AuthInterceptor implements HttpInterceptor {
   constructor(private readonly tokens: TokenService) {}
 
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+  intercept(
+    request: HttpInterceptorRequest,
+    next: HttpInterceptorHandler,
+  ): Observable<any> {
     request.options.headers = {
       ...(request.options.headers as Record<string, string>),
       authorization: `Bearer ${this.tokens.getToken()}`,
@@ -36,7 +39,10 @@ class AuthInterceptor implements HttpInterceptor {
 class HeaderInterceptor implements HttpInterceptor {
   constructor(private readonly value: string) {}
 
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+  intercept(
+    request: HttpInterceptorRequest,
+    next: HttpInterceptorHandler,
+  ): Observable<any> {
     request.options.headers = {
       ...(request.options.headers as Record<string, string>),
       'x-instance': this.value,
@@ -71,7 +77,9 @@ describe('Interceptor registration', () => {
       ],
     }).compile();
 
-    await firstValueFrom(module.get(HttpService).get(`${server.baseUrl}/posts/1`));
+    await firstValueFrom(
+      module.get(HttpService).get(`${server.baseUrl}/posts/1`),
+    );
 
     expect(seenHeaders.authorization).toBe('Bearer token-from-di');
   });
@@ -86,24 +94,38 @@ describe('Interceptor registration', () => {
       ],
     }).compile();
 
-    await firstValueFrom(module.get(HttpService).get(`${server.baseUrl}/posts/1`));
+    await firstValueFrom(
+      module.get(HttpService).get(`${server.baseUrl}/posts/1`),
+    );
 
     expect(seenHeaders.authorization).toBe('Bearer token-from-di');
   });
 
   it.each([
-    ['register', () => HttpModule.register({ interceptors: [new HeaderInterceptor('register')] })],
+    [
+      'register',
+      () =>
+        HttpModule.register({
+          interceptors: [new HeaderInterceptor('register')],
+        }),
+    ],
     [
       'registerAsync',
       () =>
         HttpModule.registerAsync({
-          useFactory: () => ({ interceptors: [new HeaderInterceptor('registerAsync')] }),
+          useFactory: () => ({
+            interceptors: [new HeaderInterceptor('registerAsync')],
+          }),
         }),
     ],
   ])('%s accepts interceptor instances', async (method, createModule) => {
-    const module = await Test.createTestingModule({ imports: [createModule()] }).compile();
+    const module = await Test.createTestingModule({
+      imports: [createModule()],
+    }).compile();
 
-    await firstValueFrom(module.get(HttpService).get(`${server.baseUrl}/posts/1`));
+    await firstValueFrom(
+      module.get(HttpService).get(`${server.baseUrl}/posts/1`),
+    );
 
     expect(seenHeaders['x-instance']).toBe(method);
   });

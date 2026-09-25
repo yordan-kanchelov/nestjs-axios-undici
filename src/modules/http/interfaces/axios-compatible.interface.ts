@@ -64,23 +64,17 @@ export interface AxiosCancelTokenLike {
 }
 
 export type AxiosResponseType =
-  | 'json'
-  | 'text'
-  | 'stream'
-  | 'arraybuffer'
-  | 'blob'
-  | 'document';
+  'json' | 'text' | 'stream' | 'arraybuffer' | 'blob' | 'document';
 
 /**
  * Axios-compatible request options that can be used with HttpService methods.
  * Extends Undici's RequestOptions with the per-request axios options this
  * library understands.
  */
-export interface AxiosCompatibleRequestOptions
-  extends Omit<
-    Dispatcher.RequestOptions,
-    'origin' | 'path' | 'method' | 'body' | 'headers'
-  > {
+export interface AxiosCompatibleRequestOptions extends Omit<
+  Dispatcher.RequestOptions,
+  'origin' | 'path' | 'method' | 'body' | 'headers'
+> {
   headers?:
     | Dispatcher.RequestOptions['headers']
     | AxiosHeaders

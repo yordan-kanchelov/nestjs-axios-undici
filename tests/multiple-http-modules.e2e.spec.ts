@@ -1,5 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Injectable, Module, DynamicModule, Global, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Module,
+  DynamicModule,
+  Global,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 import * as http from 'http';
 import * as https from 'https';
@@ -9,11 +15,16 @@ describe('Multiple HttpModule Imports Issue', () => {
     // First module that uses HttpModule
     @Module({
       imports: [HttpModule.register({ timeout: 1000 })],
-      providers: [{
-        provide: 'SERVICE_A',
-        useFactory: (httpService: HttpService) => ({ name: 'A', httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'SERVICE_A',
+          useFactory: (httpService: HttpService) => ({
+            name: 'A',
+            httpService,
+          }),
+          inject: [HttpService],
+        },
+      ],
       exports: ['SERVICE_A'],
     })
     class ModuleA {}
@@ -21,11 +32,16 @@ describe('Multiple HttpModule Imports Issue', () => {
     // Second module that uses HttpModule
     @Module({
       imports: [HttpModule.register({ timeout: 2000 })],
-      providers: [{
-        provide: 'SERVICE_B',
-        useFactory: (httpService: HttpService) => ({ name: 'B', httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'SERVICE_B',
+          useFactory: (httpService: HttpService) => ({
+            name: 'B',
+            httpService,
+          }),
+          inject: [HttpService],
+        },
+      ],
       exports: ['SERVICE_B'],
     })
     class ModuleB {}
@@ -58,11 +74,7 @@ describe('Multiple HttpModule Imports Issue', () => {
 
     // App module that imports all of them
     @Module({
-      imports: [
-        HttpConfigModule.forRoot(),
-        ModuleA,
-        ModuleB,
-      ],
+      imports: [HttpConfigModule.forRoot(), ModuleA, ModuleB],
     })
     class AppModule {}
 
@@ -74,7 +86,7 @@ describe('Multiple HttpModule Imports Issue', () => {
 
     const serviceA = module.get('SERVICE_A');
     const serviceB = module.get('SERVICE_B');
-    
+
     expect(serviceA).toBeDefined();
     expect(serviceB).toBeDefined();
     expect(serviceA.httpService).toBeInstanceOf(HttpService);
@@ -88,11 +100,13 @@ describe('Multiple HttpModule Imports Issue', () => {
     // used to fail to resolve UNDICI_INSTANCE_TOKEN
     @Module({
       imports: [HttpModule], // Import the module class directly
-      providers: [{
-        provide: 'BROKEN_SERVICE',
-        useFactory: (httpService: HttpService) => ({ httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'BROKEN_SERVICE',
+          useFactory: (httpService: HttpService) => ({ httpService }),
+          inject: [HttpService],
+        },
+      ],
     })
     class BrokenModule {}
 

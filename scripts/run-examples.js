@@ -5,11 +5,20 @@ const path = require('path');
 const http = require('http');
 
 const examples = [
-  { name: 'OpenTelemetry Integration', file: 'examples/opentelemetry-integration.ts' },
-  { name: 'Axios Compatibility Features', file: 'examples/axios-compatibility-features.ts' },
+  {
+    name: 'OpenTelemetry Integration',
+    file: 'examples/opentelemetry-integration.ts',
+  },
+  {
+    name: 'Axios Compatibility Features',
+    file: 'examples/axios-compatibility-features.ts',
+  },
   { name: 'Axios Headers Example', file: 'examples/axios-headers-example.ts' },
   { name: 'Interceptors', file: 'examples/interceptors.ts' },
-  { name: 'Axios to Undici Migration', file: 'examples/axios-to-undici-migration.ts' },
+  {
+    name: 'Axios to Undici Migration',
+    file: 'examples/axios-to-undici-migration.ts',
+  },
 ];
 
 // Local stand-in for the example APIs, so the run doesn't depend on external hosts.
@@ -53,7 +62,12 @@ async function runExample(example, baseUrl) {
     let errorOutput = '';
 
     const command = 'npx';
-    const args = ['ts-node', '--project', 'examples/tsconfig.json', example.file];
+    const args = [
+      'ts-node',
+      '--project',
+      'examples/tsconfig.json',
+      example.file,
+    ];
     const options = { cwd: path.resolve(__dirname, '..') };
 
     const child = spawn(command, args, {

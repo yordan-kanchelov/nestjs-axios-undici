@@ -24,7 +24,7 @@ describe('Type Inference Patterns E2E', () => {
       async fetchResponse() {
         // Response is already AxiosLikeResponse type
         return lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>(postUrl)
+          this.httpService.get<{ id: number; title: string }>(postUrl),
         );
       }
     }
@@ -58,7 +58,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchResponse() {
         return lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>(postUrl)
+          this.httpService.get<{ id: number; title: string }>(postUrl),
         );
       }
     }
@@ -94,9 +94,9 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>(postUrl)
+          this.httpService.get<{ id: number }>(postUrl),
         );
-        
+
         return response.data;
       }
     }
@@ -125,20 +125,18 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>(postUrl)
+          this.httpService.get<{ id: number }>(postUrl),
         );
         // Always returns AxiosLikeResponse
         return response.data;
       }
 
       async fetchWithHeaders() {
-        const response = await lastValueFrom(
-          this.httpService.get(postUrl)
-        );
+        const response = await lastValueFrom(this.httpService.get(postUrl));
         return {
           data: response.data,
           contentType: response.headers['content-type'],
-          status: response.status
+          status: response.status,
         };
       }
     }
@@ -150,10 +148,10 @@ describe('Type Inference Patterns E2E', () => {
       }).compile();
 
       const service = module.get<ResponseService>(ResponseService);
-      
+
       const data = await service.fetchData();
       expect(data.id).toBe(1);
-      
+
       const withHeaders = await service.fetchWithHeaders();
       expect(withHeaders.status).toBe(200);
       expect(withHeaders.contentType).toContain('application/json');
@@ -167,7 +165,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>(postUrl)
+          this.httpService.get<{ id: number }>(postUrl),
         );
         return response.data;
       }
@@ -193,20 +191,25 @@ describe('Type Inference Patterns E2E', () => {
   describe('Type assertions for compile-time safety', () => {
     it('should compile with correct types', () => {
       // These are compile-time checks - if they compile, the test passes
-      
+
       // HttpService now returns AxiosLikeResponse
       type GetReturn = ReturnType<HttpService['get']>;
-      type IsObservable = GetReturn extends Observable<AxiosLikeResponse> ? true : false;
+      type IsObservable =
+        GetReturn extends Observable<AxiosLikeResponse> ? true : false;
       const isObservable: IsObservable = true;
       expect(isObservable).toBe(true);
-      
+
       // Check that response has expected properties
-      type ResponseHasData = AxiosLikeResponse extends { data: any } ? true : false;
+      type ResponseHasData = AxiosLikeResponse extends { data: any }
+        ? true
+        : false;
       const hasData: ResponseHasData = true;
       expect(hasData).toBe(true);
-      
+
       // Check that response has status
-      type ResponseHasStatus = AxiosLikeResponse extends { status: number } ? true : false;
+      type ResponseHasStatus = AxiosLikeResponse extends { status: number }
+        ? true
+        : false;
       const hasStatus: ResponseHasStatus = true;
       expect(hasStatus).toBe(true);
     });

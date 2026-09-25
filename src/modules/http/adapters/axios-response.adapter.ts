@@ -90,10 +90,9 @@ export async function toAxiosLikeResponse(
   undiciResponse: Dispatcher.ResponseData,
 ): Promise<AxiosLikeResponse> {
   // Parse the body based on content type
-  const contentType =
-    (undiciResponse.headers['content-type'] as string) || '';
+  const contentType = (undiciResponse.headers['content-type'] as string) || '';
   let parsedData: any;
-  
+
   // Check if maxContentLength is set in options
   const maxContentLength = (request.options as any)?.maxContentLength;
   const responseType = (request.options as any)?.responseType;
@@ -108,27 +107,30 @@ export async function toAxiosLikeResponse(
     } else if (undiciResponse.body) {
       if (contentType.includes('application/json')) {
         const text = await undiciResponse.body.text();
-        
+
         // Check content length
         if (maxContentLength && Buffer.byteLength(text) > maxContentLength) {
           const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`
+            `maxContentLength size of ${maxContentLength} exceeded`,
           );
           error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
           throw error;
         }
-        
+
         parsedData = parseJsonOrText(text);
       } else if (
         contentType.includes('text/') ||
         contentType.includes('application/xml')
       ) {
         parsedData = await undiciResponse.body.text();
-        
+
         // Check content length
-        if (maxContentLength && Buffer.byteLength(parsedData) > maxContentLength) {
+        if (
+          maxContentLength &&
+          Buffer.byteLength(parsedData) > maxContentLength
+        ) {
           const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`
+            `maxContentLength size of ${maxContentLength} exceeded`,
           );
           error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
           throw error;
@@ -148,16 +150,16 @@ export async function toAxiosLikeResponse(
       } else {
         // For binary data, convert to Buffer
         const arrayBuffer = await undiciResponse.body.arrayBuffer();
-        
+
         // Check content length
         if (maxContentLength && arrayBuffer.byteLength > maxContentLength) {
           const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`
+            `maxContentLength size of ${maxContentLength} exceeded`,
           );
           error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
           throw error;
         }
-        
+
         parsedData = arrayBuffer.byteLength ? Buffer.from(arrayBuffer) : '';
       }
     } else {
@@ -180,17 +182,10 @@ export async function toAxiosLikeResponse(
 
   // Create Axios-compatible request config from original request
   const config: AxiosLikeRequestConfig = {
-    url:
-      typeof request.url === 'string'
-        ? request.url
-        : request.url.toString(),
+    url: typeof request.url === 'string' ? request.url : request.url.toString(),
     method: request.options.method || 'GET',
-    headers: request.options.headers as Record<
-      string,
-      string | string[]
-    >,
-    timeout:
-      request.options.headersTimeout || request.options.bodyTimeout,
+    headers: request.options.headers as Record<string, string | string[]>,
+    timeout: request.options.headersTimeout || request.options.bodyTimeout,
     validateStatus: request.options.validateStatus,
   };
 
@@ -199,10 +194,7 @@ export async function toAxiosLikeResponse(
     data: parsedData,
     status: undiciResponse.statusCode,
     statusText: STATUS_TEXT_MAP[undiciResponse.statusCode] || 'Unknown',
-    headers: undiciResponse.headers as Record<
-      string,
-      string | string[]
-    >,
+    headers: undiciResponse.headers as Record<string, string | string[]>,
     config,
   };
 

@@ -3,7 +3,9 @@ import type { AxiosResponseType } from '../interfaces/axios-compatible.interface
 
 function assertMaxContentLength(size: number, maxContentLength?: number): void {
   if (maxContentLength && maxContentLength > -1 && size > maxContentLength) {
-    const error: any = new Error(`maxContentLength size of ${maxContentLength} exceeded`);
+    const error: any = new Error(
+      `maxContentLength size of ${maxContentLength} exceeded`,
+    );
     error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
     throw error;
   }

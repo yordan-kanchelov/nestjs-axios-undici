@@ -19,12 +19,16 @@ import {
 } from '../lib';
 
 // `npm run test:examples` points this at a local echo server
-const API = process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
+const API =
+  process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
 
 // Adds auth headers to every request
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+  intercept(
+    request: HttpInterceptorRequest,
+    next: HttpInterceptorHandler,
+  ): Observable<any> {
     return next.handle({
       ...request,
       options: {
@@ -42,19 +46,33 @@ export class AuthInterceptor implements HttpInterceptor {
 // Sees the axios-style response on the way back
 @Injectable()
 export class ResponseLoggingInterceptor implements HttpInterceptor {
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
-    return next.handle(request).pipe(
-      tap(response => console.log(`🟢 ${request.url} -> ${response.status} ${response.statusText}`)),
-    );
+  intercept(
+    request: HttpInterceptorRequest,
+    next: HttpInterceptorHandler,
+  ): Observable<any> {
+    return next
+      .handle(request)
+      .pipe(
+        tap(response =>
+          console.log(
+            `🟢 ${request.url} -> ${response.status} ${response.statusText}`,
+          ),
+        ),
+      );
   }
 }
 
 // Function-based interceptor that times each request
-const timingInterceptor = (request: HttpInterceptorRequest, next: HttpInterceptorHandler) => {
+const timingInterceptor = (
+  request: HttpInterceptorRequest,
+  next: HttpInterceptorHandler,
+) => {
   const start = Date.now();
-  return next.handle(request).pipe(
-    tap(() => console.log(`⏱️  ${request.url} took ${Date.now() - start}ms`)),
-  );
+  return next
+    .handle(request)
+    .pipe(
+      tap(() => console.log(`⏱️  ${request.url} took ${Date.now() - start}ms`)),
+    );
 };
 
 @Injectable()
@@ -69,7 +87,11 @@ export class ApiService {
 @Module({
   imports: [
     HttpModule.register({
-      interceptors: [AuthInterceptor, ResponseLoggingInterceptor, timingInterceptor],
+      interceptors: [
+        AuthInterceptor,
+        ResponseLoggingInterceptor,
+        timingInterceptor,
+      ],
     }),
   ],
   providers: [ApiService],
@@ -77,7 +99,9 @@ export class ApiService {
 class AppModule {}
 
 export async function demonstrateInterceptors() {
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: false,
+  });
 
   try {
     const response = await app.get(ApiService).getPost(1);

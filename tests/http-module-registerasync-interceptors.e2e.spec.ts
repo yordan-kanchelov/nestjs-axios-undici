@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Injectable } from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
-import { HttpInterceptor, HttpInterceptorFunction, HttpInterceptorHandler, HttpInterceptorRequest } from '../src/modules/http/interfaces';
+import {
+  HttpInterceptor,
+  HttpInterceptorFunction,
+  HttpInterceptorHandler,
+  HttpInterceptorRequest,
+} from '../src/modules/http/interfaces';
 import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -9,7 +14,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
   describe('Function-based interceptors', () => {
     it('should register function interceptors via useFactory', async () => {
       const interceptorCalled = jest.fn();
-      
+
       const testInterceptor: HttpInterceptorFunction = (request, next) => {
         interceptorCalled();
         return next.handle(request);
@@ -28,7 +33,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // Check if interceptor is registered
       const interceptors = (httpService as any).interceptors;
       expect(interceptors).toContain(testInterceptor);
@@ -36,7 +41,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
     it('should handle multiple function interceptors', async () => {
       const order: number[] = [];
-      
+
       const interceptor1: HttpInterceptorFunction = (request, next) => {
         order.push(1);
         return next.handle(request);
@@ -59,7 +64,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       const interceptors = (httpService as any).interceptors;
-      
+
       expect(interceptors).toContain(interceptor1);
       expect(interceptors).toContain(interceptor2);
     });
@@ -69,7 +74,10 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
     it('should register class interceptors via useFactory', async () => {
       @Injectable()
       class TestInterceptor implements HttpInterceptor {
-        intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+        intercept(
+          request: HttpInterceptorRequest,
+          next: HttpInterceptorHandler,
+        ): Observable<any> {
           return next.handle(request).pipe(
             map(response => ({
               ...response,
@@ -91,7 +99,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // Check if interceptor class is available
       const interceptors = (httpService as any).interceptors;
       // Currently, class interceptors might not be properly instantiated in registerAsync
@@ -100,7 +108,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
     it('should handle mixed function and class interceptors', async () => {
       const functionInterceptorCalled = jest.fn();
-      
+
       const functionInterceptor: HttpInterceptorFunction = (request, next) => {
         functionInterceptorCalled();
         return next.handle(request);
@@ -108,7 +116,10 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       @Injectable()
       class ClassInterceptor implements HttpInterceptor {
-        intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+        intercept(
+          request: HttpInterceptorRequest,
+          next: HttpInterceptorHandler,
+        ): Observable<any> {
           return next.handle(request);
         }
       }
@@ -125,7 +136,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       const interceptors = (httpService as any).interceptors;
-      
+
       expect(interceptors).toContain(functionInterceptor);
       // Check if class interceptor is properly handled
       console.log('Mixed interceptors:', interceptors);
@@ -134,11 +145,11 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
   describe('Axios compatibility', () => {
     it('should handle axios transformRequest/transformResponse in registerAsync', async () => {
-      const transformRequest = jest.fn((data) => {
+      const transformRequest = jest.fn(data => {
         return JSON.stringify({ wrapped: data });
       });
 
-      const transformResponse = jest.fn((data) => {
+      const transformResponse = jest.fn(data => {
         return { unwrapped: data };
       });
 
@@ -156,7 +167,7 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // These transforms should be converted to interceptors
       const interceptors = (httpService as any).interceptors;
       console.log('Transform interceptors:', interceptors.length);
@@ -176,7 +187,10 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
       class AuthInterceptor implements HttpInterceptor {
         constructor(private readonly configService: ConfigService) {}
 
-        intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+        intercept(
+          request: HttpInterceptorRequest,
+          next: HttpInterceptorHandler,
+        ): Observable<any> {
           request.options.headers = {
             ...request.options.headers,
             'X-API-Key': this.configService.getApiKey(),
@@ -198,7 +212,9 @@ describe('HttpModule.registerAsync() with Interceptors', () => {
           ],
           providers: [ConfigService],
         }).compile(),
-      ).rejects.toThrow(/Nest can't resolve dependencies of the AuthInterceptor/);
+      ).rejects.toThrow(
+        /Nest can't resolve dependencies of the AuthInterceptor/,
+      );
     });
   });
 });

@@ -17,7 +17,14 @@ export async function startJsonServer(
   const server: Server = createServer((req, res) => {
     onRequest?.(req);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ id: 1, title: 'hello', path: req.url, method: req.method }));
+    res.end(
+      JSON.stringify({
+        id: 1,
+        title: 'hello',
+        path: req.url,
+        method: req.method,
+      }),
+    );
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 

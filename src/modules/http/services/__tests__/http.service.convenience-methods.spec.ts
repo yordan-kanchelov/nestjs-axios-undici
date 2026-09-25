@@ -11,7 +11,7 @@ describe('HttpService Convenience Methods', () => {
   let serverUrl: string;
 
   const createMockServer = (handler: http.RequestListener): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       mockServer = http.createServer(handler);
       mockServer.listen(0, 'localhost', () => {
         const port = (mockServer.address() as AddressInfo).port;
@@ -30,7 +30,7 @@ describe('HttpService Convenience Methods', () => {
 
   afterEach(async () => {
     if (mockServer) {
-      await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+      await new Promise<void>(resolve => mockServer.close(() => resolve()));
     }
   });
 
@@ -51,13 +51,13 @@ describe('HttpService Convenience Methods', () => {
   describe('POST method', () => {
     it('should make POST request with JSON data', async () => {
       const testData = { name: 'test', value: 123 };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('POST');
         expect(req.headers['content-type']).toBe('application/json');
-        
+
         let body = '';
-        req.on('data', chunk => body += chunk);
+        req.on('data', chunk => (body += chunk));
         req.on('end', () => {
           expect(JSON.parse(body)).toEqual(testData);
           res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -65,7 +65,9 @@ describe('HttpService Convenience Methods', () => {
         });
       });
 
-      const response: any = await firstValueFrom(service.post(serverUrl, testData));
+      const response: any = await firstValueFrom(
+        service.post(serverUrl, testData),
+      );
       expect(response.data.id).toBe(1);
       expect(response.data.name).toBe('test');
       expect(response.status).toBe(201);
@@ -86,14 +88,16 @@ describe('HttpService Convenience Methods', () => {
   describe('PUT method', () => {
     it('should make PUT request', async () => {
       const updateData = { id: 1, name: 'updated' };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PUT');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ updated: true, ...updateData }));
       });
 
-      const response: any = await firstValueFrom(service.put(serverUrl, updateData));
+      const response: any = await firstValueFrom(
+        service.put(serverUrl, updateData),
+      );
       expect(response.data.updated).toBe(true);
       expect(response.data.name).toBe('updated');
     });
@@ -115,14 +119,16 @@ describe('HttpService Convenience Methods', () => {
   describe('PATCH method', () => {
     it('should make PATCH request', async () => {
       const patchData = { status: 'active' };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PATCH');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ patched: true, ...patchData }));
       });
 
-      const response: any = await firstValueFrom(service.patch(serverUrl, patchData));
+      const response: any = await firstValueFrom(
+        service.patch(serverUrl, patchData),
+      );
       expect(response.data.patched).toBe(true);
       expect(response.data.status).toBe('active');
     });
@@ -132,9 +138,9 @@ describe('HttpService Convenience Methods', () => {
     it('should make HEAD request', async () => {
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('HEAD');
-        res.writeHead(200, { 
+        res.writeHead(200, {
           'Content-Type': 'application/json',
-          'X-Custom-Header': 'test-value'
+          'X-Custom-Header': 'test-value',
         });
         res.end();
       });
@@ -149,8 +155,8 @@ describe('HttpService Convenience Methods', () => {
     it('should make OPTIONS request', async () => {
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('OPTIONS');
-        res.writeHead(200, { 
-          'Allow': 'GET, POST, PUT, DELETE'
+        res.writeHead(200, {
+          Allow: 'GET, POST, PUT, DELETE',
         });
         res.end();
       });
@@ -164,13 +170,15 @@ describe('HttpService Convenience Methods', () => {
   describe('Form methods', () => {
     it('should make POST request with form data', async () => {
       const formData = { username: 'john', password: 'secret' };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('POST');
-        expect(req.headers['content-type']).toBe('application/x-www-form-urlencoded');
-        
+        expect(req.headers['content-type']).toBe(
+          'application/x-www-form-urlencoded',
+        );
+
         let body = '';
-        req.on('data', chunk => body += chunk);
+        req.on('data', chunk => (body += chunk));
         req.on('end', () => {
           expect(body).toBe('username=john&password=secret');
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -178,19 +186,23 @@ describe('HttpService Convenience Methods', () => {
         });
       });
 
-      const response: any = await firstValueFrom(service.postForm(serverUrl, formData));
+      const response: any = await firstValueFrom(
+        service.postForm(serverUrl, formData),
+      );
       expect(response.data.success).toBe(true);
     });
 
     it('should make PUT request with form data', async () => {
       const formData = { id: '123', name: 'updated name' };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PUT');
-        expect(req.headers['content-type']).toBe('application/x-www-form-urlencoded');
-        
+        expect(req.headers['content-type']).toBe(
+          'application/x-www-form-urlencoded',
+        );
+
         let body = '';
-        req.on('data', chunk => body += chunk);
+        req.on('data', chunk => (body += chunk));
         req.on('end', () => {
           expect(body).toBe('id=123&name=updated%20name');
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -198,21 +210,27 @@ describe('HttpService Convenience Methods', () => {
         });
       });
 
-      const response: any = await firstValueFrom(service.putForm(serverUrl, formData));
+      const response: any = await firstValueFrom(
+        service.putForm(serverUrl, formData),
+      );
       expect(response.data.updated).toBe(true);
     });
 
     it('should make PATCH request with form data', async () => {
       const formData = { status: 'active' };
-      
+
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PATCH');
-        expect(req.headers['content-type']).toBe('application/x-www-form-urlencoded');
+        expect(req.headers['content-type']).toBe(
+          'application/x-www-form-urlencoded',
+        );
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ patched: true }));
       });
 
-      const response: any = await firstValueFrom(service.patchForm(serverUrl, formData));
+      const response: any = await firstValueFrom(
+        service.patchForm(serverUrl, formData),
+      );
       expect(response.data.patched).toBe(true);
     });
   });
@@ -228,12 +246,14 @@ describe('HttpService Convenience Methods', () => {
 
       const config = {
         headers: {
-          'Authorization': 'Bearer token123',
-          'X-API-Key': 'secret-key'
-        }
+          Authorization: 'Bearer token123',
+          'X-API-Key': 'secret-key',
+        },
       };
 
-      const response: any = await firstValueFrom(service.get(serverUrl, config));
+      const response: any = await firstValueFrom(
+        service.get(serverUrl, config),
+      );
       expect(response.data.authorized).toBe(true);
     });
 
@@ -246,9 +266,13 @@ describe('HttpService Convenience Methods', () => {
       });
 
       const response: any = await firstValueFrom(
-        service.post(serverUrl, { data: 'test' }, {
-          headers: { 'X-Custom': 'value' }
-        })
+        service.post(
+          serverUrl,
+          { data: 'test' },
+          {
+            headers: { 'X-Custom': 'value' },
+          },
+        ),
       );
       expect(response.data.success).toBe(true);
     });

@@ -51,7 +51,7 @@ describe('Axios Full Compatibility E2E Tests', () => {
   afterEach(async () => {
     if (mockServer) {
       await new Promise<void>((resolve, reject) => {
-        mockServer.close((err) => {
+        mockServer.close(err => {
           if (err) reject(err);
           else resolve();
         });

@@ -13,8 +13,10 @@ export interface BodyMixin {
   json(): Promise<any>;
   text(): Promise<string>;
 }
-export interface HttpModuleAsyncOptions
-  extends Pick<ModuleMetadata, 'imports'> {
+export interface HttpModuleAsyncOptions extends Pick<
+  ModuleMetadata,
+  'imports'
+> {
   useExisting?: Type<HttpModuleOptionsFactory>;
   useClass?: Type<HttpModuleOptionsFactory>;
   useFactory?: (

@@ -1,20 +1,21 @@
-import * as http from "http";
-import * as https from "https";
+import * as http from 'http';
+import * as https from 'https';
 import { Test, TestingModule } from '@nestjs/testing';
-import { DynamicModule, Global, Module, OnModuleInit } from "@nestjs/common";
-import { HttpModule, HttpService } from "../src"; // Changed from @nestjs/axios
-import { context, propagation } from "@opentelemetry/api";
+import { DynamicModule, Global, Module, OnModuleInit } from '@nestjs/common';
+import { HttpModule, HttpService } from '../src'; // Changed from @nestjs/axios
+import { context, propagation } from '@opentelemetry/api';
 import nock from 'nock';
 import { lastValueFrom } from 'rxjs';
 
 // Mock OpenTelemetry
-jest.mock("@opentelemetry/api", () => ({
+jest.mock('@opentelemetry/api', () => ({
   context: {
     active: jest.fn(() => ({})),
   },
   propagation: {
     inject: jest.fn((context, headers) => {
-      headers['traceparent'] = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+      headers['traceparent'] =
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
       headers['tracestate'] = 'congo=t61rcWkgMzE';
     }),
   },
@@ -43,7 +44,7 @@ class HttpConfigModule implements OnModuleInit {
       // maxSockets: config?.maxSockets ?? 2000,
       // maxFreeSockets: config?.maxFreeSockets ?? 200,
     });
-    
+
     this.httpsAgent = new https.Agent({
       keepAlive: config?.keepAlive ?? true,
       // keepAliveMsecs: config?.keepAliveMilliseconds ?? 5000,
@@ -83,14 +84,14 @@ class HttpConfigModule implements OnModuleInit {
 
   public onModuleInit() {
     // Add Axios interceptor to inject OpenTelemetry trace context
-    this.httpService.axiosRef.interceptors.request.use((config) => {
+    this.httpService.axiosRef.interceptors.request.use(config => {
       // Inject OpenTelemetry trace context into headers
       const headers: Record<string, string> = {};
 
       propagation.inject(context.active(), headers);
 
       Object.entries(headers).forEach(([key, value]) => {
-        if (config.headers && typeof config.headers.set === "function") {
+        if (config.headers && typeof config.headers.set === 'function') {
           config.headers.set(key, value);
         } else if (config.headers) {
           // Fallback for different header types
@@ -247,9 +248,11 @@ describe('HttpConfigModule in application context', () => {
     // Create test server
     const server = http.createServer((req, res) => {
       // Verify OpenTelemetry headers were injected
-      expect(req.headers['traceparent']).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+      expect(req.headers['traceparent']).toBe(
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+      );
       expect(req.headers['tracestate']).toBe('congo=t61rcWkgMzE');
-      
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, data: 'test' }));
     });
@@ -257,10 +260,10 @@ describe('HttpConfigModule in application context', () => {
     await new Promise<void>((resolve, reject) => {
       server.listen(0, 'localhost', async () => {
         const port = (server.address() as any).port;
-        
+
         try {
           const response = await lastValueFrom(
-            httpService.get(`http://localhost:${port}/data`)
+            httpService.get(`http://localhost:${port}/data`),
           );
 
           expect(response.data).toEqual({ success: true, data: 'test' });
@@ -297,9 +300,11 @@ describe('HttpConfigModule in application context', () => {
       // Verify all headers are present
       expect(req.headers['authorization']).toBe('Bearer test-token');
       expect(req.headers['x-api-key']).toBe('secret');
-      expect(req.headers['traceparent']).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+      expect(req.headers['traceparent']).toBe(
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+      );
       expect(req.headers['tracestate']).toBe('congo=t61rcWkgMzE');
-      
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ authorized: true }));
     });
@@ -307,15 +312,15 @@ describe('HttpConfigModule in application context', () => {
     await new Promise<void>((resolve, reject) => {
       server.listen(0, 'localhost', async () => {
         const port = (server.address() as any).port;
-        
+
         try {
           const response = await lastValueFrom(
             httpService.get(`http://localhost:${port}/secure`, {
               headers: {
-                'Authorization': 'Bearer test-token',
-                'X-API-Key': 'secret'
-              }
-            })
+                Authorization: 'Bearer test-token',
+                'X-API-Key': 'secret',
+              },
+            }),
           );
 
           expect(response.data).toEqual({ authorized: true });
@@ -343,18 +348,20 @@ describe('HttpConfigModule in application context', () => {
     const httpService = module.get<HttpService>(HttpService);
 
     const requestBody = { name: 'test', value: 123 };
-    
+
     // Create test server
     const server = http.createServer((req, res) => {
       let body = '';
-      req.on('data', chunk => body += chunk);
+      req.on('data', chunk => (body += chunk));
       req.on('end', () => {
         // Verify headers
-        expect(req.headers['traceparent']).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+        expect(req.headers['traceparent']).toBe(
+          '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        );
         expect(req.headers['content-type']).toBe('application/json');
         // Verify body
         expect(JSON.parse(body)).toEqual(requestBody);
-        
+
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 456, ...requestBody }));
       });
@@ -363,10 +370,10 @@ describe('HttpConfigModule in application context', () => {
     await new Promise<void>((resolve, reject) => {
       server.listen(0, 'localhost', async () => {
         const port = (server.address() as any).port;
-        
+
         try {
           const response = await lastValueFrom(
-            httpService.post(`http://localhost:${port}/create`, requestBody)
+            httpService.post(`http://localhost:${port}/create`, requestBody),
           );
 
           expect(response.status).toBe(201);

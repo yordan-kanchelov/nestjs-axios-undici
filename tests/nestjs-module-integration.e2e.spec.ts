@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Injectable, Module } from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
-import { UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS } from '../src/modules/http/constants/http.constants';
+import {
+  UNDICI_INSTANCE_TOKEN,
+  HTTP_MODULE_OPTIONS,
+} from '../src/modules/http/constants/http.constants';
 import { HttpModuleOptionsFactory } from '../src/modules/http/interfaces';
 import { HttpModuleOptions } from '../src/modules/http/types';
 
@@ -55,14 +58,14 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       const moduleOptions = module.get(HTTP_MODULE_OPTIONS);
       expect(moduleOptions.baseURL).toBe('https://api.example.com');
     });
 
     it('should register interceptors correctly', async () => {
       const testInterceptor = jest.fn((request, next) => next.handle(request));
-      
+
       const config = {
         interceptors: [testInterceptor],
       };
@@ -73,7 +76,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // Verify interceptor is registered
       const interceptors = (httpService as any).interceptors;
       expect(interceptors).toContain(testInterceptor);
@@ -83,7 +86,7 @@ describe('NestJS Module Integration Tests', () => {
       @Injectable()
       class TestService {
         constructor(private readonly httpService: HttpService) {}
-        
+
         getHttpService() {
           return this.httpService;
         }
@@ -151,7 +154,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       const moduleOptions = module.get(HTTP_MODULE_OPTIONS);
       expect(moduleOptions.timeout).toBe(5000);
     });
@@ -176,7 +179,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       const moduleOptions = module.get(HTTP_MODULE_OPTIONS);
       expect(moduleOptions.timeout).toBe(4000);
     });
@@ -209,7 +212,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       const moduleOptions = module.get(HTTP_MODULE_OPTIONS);
       expect(moduleOptions.timeout).toBe(6000);
     });
@@ -233,7 +236,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       const extraService = module.get<ExtraService>(ExtraService);
-      
+
       expect(httpService).toBeDefined();
       expect(extraService).toBeDefined();
       expect(extraService.getValue()).toBe('extra');
@@ -272,7 +275,7 @@ describe('NestJS Module Integration Tests', () => {
       @Injectable()
       class TestController {
         constructor(private readonly httpService: HttpService) {}
-        
+
         getService() {
           return this.httpService;
         }
@@ -319,7 +322,7 @@ describe('NestJS Module Integration Tests', () => {
 
       const serviceA = module.get<ServiceA>(ServiceA);
       const serviceB = module.get<ServiceB>(ServiceB);
-      
+
       expect(serviceA).toBeDefined();
       expect(serviceB).toBeDefined();
     });

@@ -10,7 +10,7 @@ export interface HttpInterceptorRequest {
 export interface HttpInterceptor {
   intercept(
     request: HttpInterceptorRequest,
-    next: HttpInterceptorHandler
+    next: HttpInterceptorHandler,
   ): Observable<any>;
 }
 
@@ -20,5 +20,5 @@ export interface HttpInterceptorHandler {
 
 export type HttpInterceptorFunction = (
   request: HttpInterceptorRequest,
-  next: HttpInterceptorHandler
+  next: HttpInterceptorHandler,
 ) => Observable<any>;

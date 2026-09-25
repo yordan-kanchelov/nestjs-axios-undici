@@ -12,9 +12,7 @@ describe('Real-world NestJS Integration', () => {
       constructor(private readonly httpService: HttpService) {}
 
       fetchData(url: string): Observable<any> {
-        return this.httpService.get(url).pipe(
-          map(response => response.data)
-        );
+        return this.httpService.get(url).pipe(map(response => response.data));
       }
     }
 
@@ -151,7 +149,8 @@ describe('Real-world NestJS Integration', () => {
         ConfigModule,
         HttpModule.registerAsync({
           imports: [ConfigModule],
-          useFactory: (configService: ConfigService) => configService.getHttpConfig(),
+          useFactory: (configService: ConfigService) =>
+            configService.getHttpConfig(),
           inject: [ConfigService],
         }),
       ],
@@ -225,7 +224,7 @@ describe('Real-world NestJS Integration', () => {
       baseURL: 'https://api.example.com',
       timeout: 5000,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       maxRedirects: 5,

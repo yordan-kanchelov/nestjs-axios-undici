@@ -4,7 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
-import { mapAxiosConfigToUndici, getAxiosCompatibilityWarnings } from './adapters/axios-config.adapter';
+import {
+  mapAxiosConfigToUndici,
+  getAxiosCompatibilityWarnings,
+} from './adapters/axios-config.adapter';
 
 import {
   UNDICI_INSTANCE_TOKEN,
@@ -23,19 +26,26 @@ import type { HttpModuleOptions, UndiciRequestOptionsType } from './types';
 const INTERCEPTOR_METADATA = 'HTTP_INTERCEPTORS_METADATA';
 const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
 
-type InterceptorOption = Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction;
+type InterceptorOption =
+  Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction;
 
-function isInterceptorClass(interceptor: InterceptorOption): interceptor is Type<HttpInterceptor> {
+function isInterceptorClass(
+  interceptor: InterceptorOption,
+): interceptor is Type<HttpInterceptor> {
   return (
     typeof interceptor === 'function' &&
     (interceptor.toString().startsWith('class') ||
       (interceptor.prototype &&
         interceptor.prototype.constructor === interceptor &&
-        Object.getOwnPropertyNames(interceptor.prototype).includes('intercept')))
+        Object.getOwnPropertyNames(interceptor.prototype).includes(
+          'intercept',
+        )))
   );
 }
 
-function isInterceptorInstance(interceptor: InterceptorOption): interceptor is HttpInterceptor {
+function isInterceptorInstance(
+  interceptor: InterceptorOption,
+): interceptor is HttpInterceptor {
   return (
     typeof interceptor === 'object' &&
     interceptor !== null &&
@@ -64,7 +74,11 @@ export class HttpModule {
     // Extract interceptors - axios response adapter will be added in the service
     const interceptors = processedConfig.interceptors || [];
 
-    const { interceptors: _, global: _global, ...undiciOptions } = processedConfig;
+    const {
+      interceptors: _,
+      global: _global,
+      ...undiciOptions
+    } = processedConfig;
 
     // Classes are resolved through Nest DI; functions and instances are used as-is
     const functionInterceptors: HttpInterceptorFunction[] = [];
@@ -109,18 +123,30 @@ export class HttpModule {
           useFactory: (...args: any[]) => {
             // The injected arguments are the instantiated interceptors
             const interceptorInstances = args;
-            return [...functionInterceptors, ...instanceInterceptors, ...interceptorInstances];
+            return [
+              ...functionInterceptors,
+              ...instanceInterceptors,
+              ...interceptorInstances,
+            ];
           },
           inject: classInterceptors,
         },
         {
           provide: HttpService,
-          useFactory: (options: UndiciRequestOptionsType, moduleOptions: HttpModuleOptions, interceptors: Array<HttpInterceptor | HttpInterceptorFunction>) => {
+          useFactory: (
+            options: UndiciRequestOptionsType,
+            moduleOptions: HttpModuleOptions,
+            interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
+          ) => {
             const service = new HttpService(options, moduleOptions);
             service.setInterceptors(interceptors);
             return service;
           },
-          inject: [UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS, HTTP_SERVICE_INTERCEPTORS],
+          inject: [
+            UNDICI_INSTANCE_TOKEN,
+            HTTP_MODULE_OPTIONS,
+            HTTP_SERVICE_INTERCEPTORS,
+          ],
         },
       ],
       exports: [HttpService],
@@ -131,11 +157,13 @@ export class HttpModule {
    * Detects axios-style options (register() and registerAsync()) and maps
    * them to undici options plus interceptors (transforms, size limits, ...).
    */
-  private static processAxiosConfig(config: HttpModuleOptions & any = {}): HttpModuleOptions & any {
+  private static processAxiosConfig(
+    config: HttpModuleOptions & any = {},
+  ): HttpModuleOptions & any {
     // Check if this looks like axios configuration
     const hasAxiosOptions = !!(
-      config.httpAgent || 
-      config.httpsAgent || 
+      config.httpAgent ||
+      config.httpsAgent ||
       config.maxRedirects !== undefined ||
       config.auth ||
       config.baseURL ||
@@ -151,7 +179,7 @@ export class HttpModule {
     );
 
     let processedConfig = config;
-    
+
     // If axios-style options detected, map them to undici options
     if (hasAxiosOptions) {
       const warnings = getAxiosCompatibilityWarnings(config);
@@ -159,20 +187,25 @@ export class HttpModule {
         console.warn('[nestjs-axios-undici] Axios compatibility warnings:');
         warnings.forEach(warning => console.warn(`  - ${warning}`));
       }
-      
+
       // Map axios config to undici config
       const mappedConfig = mapAxiosConfigToUndici(config);
-      
+
       // Convert axios transformRequest/transformResponse to interceptors
       const additionalInterceptors: HttpInterceptorFunction[] = [];
-      
+
       if (config.transformRequest) {
-        const transforms = Array.isArray(config.transformRequest) ? config.transformRequest : [config.transformRequest];
+        const transforms = Array.isArray(config.transformRequest)
+          ? config.transformRequest
+          : [config.transformRequest];
         transforms.forEach(transform => {
           additionalInterceptors.push((request, next) => {
             // Apply transform to request data
             if (request.options.body) {
-              const transformedData = transform(request.options.body, request.options.headers);
+              const transformedData = transform(
+                request.options.body,
+                request.options.headers,
+              );
               return next.handle({
                 ...request,
                 options: {
@@ -185,14 +218,20 @@ export class HttpModule {
           });
         });
       }
-      
+
       if (config.transformResponse) {
-        const transforms = Array.isArray(config.transformResponse) ? config.transformResponse : [config.transformResponse];
+        const transforms = Array.isArray(config.transformResponse)
+          ? config.transformResponse
+          : [config.transformResponse];
         transforms.forEach(transform => {
           additionalInterceptors.push((request, next) => {
             return next.handle(request).pipe(
               map(response => {
-                if (response && typeof response === 'object' && 'data' in response) {
+                if (
+                  response &&
+                  typeof response === 'object' &&
+                  'data' in response
+                ) {
                   const transformedData = transform(response.data);
                   return {
                     ...response,
@@ -200,12 +239,12 @@ export class HttpModule {
                   };
                 }
                 return response;
-              })
+              }),
             );
           });
         });
       }
-      
+
       // Merge with original config, preserving any undici-specific options
       processedConfig = {
         ...mappedConfig,
@@ -214,11 +253,11 @@ export class HttpModule {
         interceptors: [
           ...(mappedConfig.interceptors || []), // Include interceptors from mapping (e.g., size limit)
           ...additionalInterceptors, // Include transform interceptors
-          ...(config.interceptors || []) // Include user-provided interceptors
+          ...(config.interceptors || []), // Include user-provided interceptors
         ],
       };
     }
-    
+
     return processedConfig;
   }
 
@@ -248,7 +287,8 @@ export class HttpModule {
               (config.interceptors || [])
                 .filter(
                   (interceptor: InterceptorOption) =>
-                    typeof interceptor === 'function' || isInterceptorInstance(interceptor),
+                    typeof interceptor === 'function' ||
+                    isInterceptorInstance(interceptor),
                 )
                 .map((interceptor: InterceptorOption) =>
                   isInterceptorClass(interceptor)
@@ -262,12 +302,20 @@ export class HttpModule {
         },
         {
           provide: HttpService,
-          useFactory: (options: UndiciRequestOptionsType, moduleOptions: HttpModuleOptions, interceptors: Array<HttpInterceptor | HttpInterceptorFunction>) => {
+          useFactory: (
+            options: UndiciRequestOptionsType,
+            moduleOptions: HttpModuleOptions,
+            interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
+          ) => {
             const service = new HttpService(options, moduleOptions);
             service.setInterceptors(interceptors);
             return service;
           },
-          inject: [UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS, HTTP_SERVICE_INTERCEPTORS],
+          inject: [
+            UNDICI_INSTANCE_TOKEN,
+            HTTP_MODULE_OPTIONS,
+            HTTP_SERVICE_INTERCEPTORS,
+          ],
         },
         ...(options.extraProviders || []),
       ],
@@ -309,5 +357,4 @@ export class HttpModule {
       inject: [options.useExisting || options.useClass],
     };
   }
-
 }

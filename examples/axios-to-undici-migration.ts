@@ -14,7 +14,8 @@ import { firstValueFrom } from 'rxjs';
 import * as UndiciNest from '../lib';
 
 // `npm run test:examples` points this at a local echo server
-const API = process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
+const API =
+  process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
 
 type AnyHttpService = AxiosNest.HttpService | UndiciNest.HttpService;
 
@@ -65,18 +66,28 @@ const UndiciPostsService = createPostsService(UndiciNest.HttpService);
 class AfterModule {}
 
 export async function demonstrateMigration() {
-  const before = await NestFactory.createApplicationContext(BeforeModule, { logger: false });
-  const after = await NestFactory.createApplicationContext(AfterModule, { logger: false });
+  const before = await NestFactory.createApplicationContext(BeforeModule, {
+    logger: false,
+  });
+  const after = await NestFactory.createApplicationContext(AfterModule, {
+    logger: false,
+  });
 
   try {
     const axiosResult = await before.get(AxiosPostsService).getPost(1);
     const undiciResult = await after.get(UndiciPostsService).getPost(1);
 
     console.log('@nestjs/axios       ->', axiosResult.status, axiosResult.data);
-    console.log('nestjs-axios-undici ->', undiciResult.status, undiciResult.data);
+    console.log(
+      'nestjs-axios-undici ->',
+      undiciResult.status,
+      undiciResult.data,
+    );
 
     if (axiosResult.status !== undiciResult.status) {
-      throw new Error('Status codes differ between @nestjs/axios and nestjs-axios-undici');
+      throw new Error(
+        'Status codes differ between @nestjs/axios and nestjs-axios-undici',
+      );
     }
     console.log('✅ Same service code, same response shape');
   } finally {

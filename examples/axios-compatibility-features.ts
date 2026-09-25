@@ -10,7 +10,8 @@ import { HttpModule, HttpService, AxiosHeaders } from '../lib';
 import { firstValueFrom } from 'rxjs';
 
 // `npm run test:examples` points this at a local echo server
-const API = process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
+const API =
+  process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
 
 // ===== 2. Using Axios-Style Interceptors =====
 
@@ -20,67 +21,79 @@ export class AxiosCompatibilityService implements OnModuleInit {
 
   onModuleInit() {
     // Request interceptors - exact same API as axios!
-    const requestInterceptorId = this.httpService.axiosRef.interceptors.request.use(
-      (config) => {
-        // Modify request config
-        config.headers = config.headers || new AxiosHeaders();
-        (config.headers as AxiosHeaders).set('X-Request-Time', new Date().toISOString());
-        (config.headers as AxiosHeaders).set('Authorization', 'Bearer my-token');
+    const requestInterceptorId =
+      this.httpService.axiosRef.interceptors.request.use(
+        config => {
+          // Modify request config
+          config.headers = config.headers || new AxiosHeaders();
+          (config.headers as AxiosHeaders).set(
+            'X-Request-Time',
+            new Date().toISOString(),
+          );
+          (config.headers as AxiosHeaders).set(
+            'Authorization',
+            'Bearer my-token',
+          );
 
-        // Add query parameters
-        if (!config.params) {
-          config.params = {};
-        }
-        config.params.timestamp = Date.now();
+          // Add query parameters
+          if (!config.params) {
+            config.params = {};
+          }
+          config.params.timestamp = Date.now();
 
-        console.log('Request:', config.method?.toUpperCase(), config.url);
-        return config;
-      },
-      (error) => {
-        console.error('Request error:', error);
-        return Promise.reject(error);
-      }
-    );
+          console.log('Request:', config.method?.toUpperCase(), config.url);
+          return config;
+        },
+        error => {
+          console.error('Request error:', error);
+          return Promise.reject(error);
+        },
+      );
 
     // Response interceptors - also identical to axios!
-    const responseInterceptorId = this.httpService.axiosRef.interceptors.response.use(
-      (response) => {
-        console.log('Response:', response.status, response.statusText);
+    const responseInterceptorId =
+      this.httpService.axiosRef.interceptors.response.use(
+        response => {
+          console.log('Response:', response.status, response.statusText);
 
-        // Transform response data
-        if (response.data && typeof response.data === 'object') {
-          response.data._processed = true;
-          response.data._timestamp = Date.now();
-        }
-
-        return response;
-      },
-      (error) => {
-        // Handle specific error cases
-        if (error.response) {
-          // The request was made and the server responded with a status code
-          // that falls out of the range of 2xx
-          console.error('Response error:', error.response.status, error.response.data);
-
-          if (error.response.status === 401) {
-            // Handle unauthorized - maybe refresh token
-            console.log('Unauthorized! Need to refresh token...');
-          } else if (error.response.status === 429) {
-            // Handle rate limiting
-            const retryAfter = error.response.headers['retry-after'];
-            console.log(`Rate limited. Retry after ${retryAfter} seconds`);
+          // Transform response data
+          if (response.data && typeof response.data === 'object') {
+            response.data._processed = true;
+            response.data._timestamp = Date.now();
           }
-        } else if (error.request) {
-          // The request was made but no response was received
-          console.error('No response received:', error.message);
-        } else {
-          // Something happened in setting up the request
-          console.error('Request setup error:', error.message);
-        }
 
-        return Promise.reject(error);
-      }
-    );
+          return response;
+        },
+        error => {
+          // Handle specific error cases
+          if (error.response) {
+            // The request was made and the server responded with a status code
+            // that falls out of the range of 2xx
+            console.error(
+              'Response error:',
+              error.response.status,
+              error.response.data,
+            );
+
+            if (error.response.status === 401) {
+              // Handle unauthorized - maybe refresh token
+              console.log('Unauthorized! Need to refresh token...');
+            } else if (error.response.status === 429) {
+              // Handle rate limiting
+              const retryAfter = error.response.headers['retry-after'];
+              console.log(`Rate limited. Retry after ${retryAfter} seconds`);
+            }
+          } else if (error.request) {
+            // The request was made but no response was received
+            console.error('No response received:', error.message);
+          } else {
+            // Something happened in setting up the request
+            console.error('Request setup error:', error.message);
+          }
+
+          return Promise.reject(error);
+        },
+      );
 
     // You can also eject interceptors (remove them)
     // this.httpService.axiosRef.interceptors.request.eject(requestInterceptorId);
@@ -93,15 +106,15 @@ export class AxiosCompatibilityService implements OnModuleInit {
     try {
       // All responses have the axios structure
       const response = await firstValueFrom(
-        this.httpService.get(`${API}/posts/1`)
+        this.httpService.get(`${API}/posts/1`),
       );
 
       console.log('Axios-compatible response properties:');
-      console.log('- data:', response.data);           // Parsed response body
-      console.log('- status:', response.status);       // HTTP status code
+      console.log('- data:', response.data); // Parsed response body
+      console.log('- status:', response.status); // HTTP status code
       console.log('- statusText:', response.statusText); // Status text
-      console.log('- headers:', response.headers);     // Response headers
-      console.log('- config:', response.config);       // Request configuration
+      console.log('- headers:', response.headers); // Response headers
+      console.log('- config:', response.config); // Request configuration
 
       // The response.config includes all the axios-style options
       console.log('Config properties:');
@@ -140,7 +153,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
 
     // AxiosHeaders methods
     console.log('Has Content-Type?', headers.has('content-type')); // Case-insensitive
-    console.log('Get Content-Type:', headers.get('Content-Type'));  // Case-insensitive
+    console.log('Get Content-Type:', headers.get('Content-Type')); // Case-insensitive
 
     // Convert to plain object
     const plainHeaders = headers.toJSON();
@@ -148,15 +161,18 @@ export class AxiosCompatibilityService implements OnModuleInit {
 
     // Create from various sources
     const fromObject = AxiosHeaders.from({ 'X-Test': 'value' });
-    const fromString = AxiosHeaders.from('Content-Type: text/html\nX-Test: value');
+    const fromString = AxiosHeaders.from(
+      'Content-Type: text/html\nX-Test: value',
+    );
     const concatenated = AxiosHeaders.concat(headers, fromObject, fromString);
 
     // Use in request
     const response = await firstValueFrom(
-      this.httpService.post(`${API}/posts`,
+      this.httpService.post(
+        `${API}/posts`,
         { test: 'data' },
-        { headers: headers.toJSON() as any }
-      )
+        { headers: headers.toJSON() as any },
+      ),
     );
 
     return response.data;
@@ -168,20 +184,21 @@ export class AxiosCompatibilityService implements OnModuleInit {
     // Note: transformRequest/transformResponse are handled via interceptors
     // This example shows how to achieve the same result
     const response = await firstValueFrom(
-      this.httpService.post(`${API}/posts`,
+      this.httpService.post(
+        `${API}/posts`,
         { name: 'John', age: 30, transformed: true },
         {
           headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      )
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
     );
 
     // Transform response data in the interceptor or after receiving
     const transformedData = {
       ...response.data,
-      processedAt: new Date().toISOString()
+      processedAt: new Date().toISOString(),
     };
 
     console.log('Transformed response:', transformedData);
@@ -195,7 +212,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
 
     // GET request
     const getResponse = await firstValueFrom(
-      this.httpService.get(`${baseURL}/posts/1`)
+      this.httpService.get(`${baseURL}/posts/1`),
     );
 
     // POST request
@@ -203,8 +220,8 @@ export class AxiosCompatibilityService implements OnModuleInit {
       this.httpService.post(`${baseURL}/posts`, {
         title: 'Test Post',
         body: 'This is a test',
-        userId: 1
-      })
+        userId: 1,
+      }),
     );
 
     // PUT request
@@ -213,25 +230,25 @@ export class AxiosCompatibilityService implements OnModuleInit {
         id: 1,
         title: 'Updated Post',
         body: 'This is updated',
-        userId: 1
-      })
+        userId: 1,
+      }),
     );
 
     // PATCH request
     const patchResponse = await firstValueFrom(
       this.httpService.patch(`${baseURL}/posts/1`, {
-        title: 'Patched Title'
-      })
+        title: 'Patched Title',
+      }),
     );
 
     // DELETE request
     const deleteResponse = await firstValueFrom(
-      this.httpService.delete(`${baseURL}/posts/1`)
+      this.httpService.delete(`${baseURL}/posts/1`),
     );
 
     // HEAD request
     const headResponse = await firstValueFrom(
-      this.httpService.head(`${baseURL}/posts/1`)
+      this.httpService.head(`${baseURL}/posts/1`),
     );
 
     // Form data methods
@@ -240,7 +257,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     formData.append('field2', 'value2');
 
     const postFormResponse = await firstValueFrom(
-      this.httpService.postForm(`${API}/posts`, formData)
+      this.httpService.postForm(`${API}/posts`, formData),
     );
 
     return {
@@ -250,7 +267,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
       patch: patchResponse.data,
       delete: deleteResponse.data,
       head: headResponse.status,
-      postForm: postFormResponse.data
+      postForm: postFormResponse.data,
     };
   }
 }
@@ -261,21 +278,21 @@ export class AxiosCompatibilityService implements OnModuleInit {
   imports: [
     HttpModule.register({
       // All these axios options are automatically detected and mapped!
-      timeout: 30000,              // Mapped to headersTimeout & bodyTimeout (30 seconds)
-      maxRedirects: 5,           // Follows up to 5 redirects (undici redirect interceptor)
-      validateStatus: (status) => status < 500,  // Works exactly like axios
+      timeout: 30000, // Mapped to headersTimeout & bodyTimeout (30 seconds)
+      maxRedirects: 5, // Follows up to 5 redirects (undici redirect interceptor)
+      validateStatus: status => status < 500, // Works exactly like axios
 
       // Request/response size limits (enforced via interceptors)
-      maxBodyLength: 10 * 1024 * 1024,    // 10MB request body limit
-      maxContentLength: 50 * 1024 * 1024,  // 50MB response body limit
+      maxBodyLength: 10 * 1024 * 1024, // 10MB request body limit
+      maxContentLength: 50 * 1024 * 1024, // 50MB response body limit
 
       // Cookie support
-      withCredentials: true,     // Enables automatic cookie handling
+      withCredentials: true, // Enables automatic cookie handling
 
       // Basic authentication
       auth: {
         username: 'user',
-        password: 'pass'
+        password: 'pass',
       },
 
       // Proxy configuration (automatically creates ProxyAgent)
@@ -289,12 +306,12 @@ export class AxiosCompatibilityService implements OnModuleInit {
       // Custom headers
       headers: {
         'User-Agent': 'My-App/1.0',
-        'X-Custom-Header': 'value'
-      }
-    })
+        'X-Custom-Header': 'value',
+      },
+    }),
   ],
   providers: [AxiosCompatibilityService],
-  exports: [AxiosCompatibilityService]
+  exports: [AxiosCompatibilityService],
 })
 export class AxiosCompatibleModule {}
 
@@ -325,7 +342,9 @@ export async function demonstrateFeatures() {
     console.log('\n=== Demonstrating HTTP Methods ===');
     await service.demonstrateHttpMethods();
 
-    console.log('\n✅ All axios compatibility features demonstrated successfully!');
+    console.log(
+      '\n✅ All axios compatibility features demonstrated successfully!',
+    );
   } catch (error: any) {
     console.error('❌ Error demonstrating features:', error);
     console.error('Error details:', {
@@ -335,7 +354,7 @@ export async function demonstrateFeatures() {
       response: error.response,
       request: error.request,
       config: error.config,
-      isAxiosError: error.isAxiosError
+      isAxiosError: error.isAxiosError,
     });
     throw error;
   } finally {

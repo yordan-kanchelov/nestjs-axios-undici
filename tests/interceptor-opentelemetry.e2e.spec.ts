@@ -1,6 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpModule, HttpService } from '../src';
-import { context, propagation, trace, SpanContext, TraceFlags } from '@opentelemetry/api';
+import {
+  context,
+  propagation,
+  trace,
+  SpanContext,
+  TraceFlags,
+} from '@opentelemetry/api';
 import { firstValueFrom } from 'rxjs';
 import { AddressInfo } from 'net';
 import * as http from 'http';
@@ -9,18 +15,18 @@ import * as https from 'https';
 // Mock OpenTelemetry APIs
 jest.mock('@opentelemetry/api', () => ({
   context: {
-    active: jest.fn()
+    active: jest.fn(),
   },
   propagation: {
-    inject: jest.fn()
+    inject: jest.fn(),
   },
   trace: {
     wrapSpanContext: jest.fn(),
-    setSpan: jest.fn()
+    setSpan: jest.fn(),
   },
   TraceFlags: {
-    SAMPLED: 1
-  }
+    SAMPLED: 1,
+  },
 }));
 
 // Example HttpConfigModule that would be used in a real application
@@ -66,7 +72,7 @@ class HttpConfigModule {
             return true;
           },
           inject: [HttpService],
-        }
+        },
       ],
     };
   }
@@ -78,13 +84,13 @@ describe('OpenTelemetry Interceptor Integration', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    
+
     module = await Test.createTestingModule({
       imports: [HttpConfigModule.forRoot()],
     }).compile();
 
     httpService = module.get<HttpService>(HttpService);
-    
+
     // Ensure the initialization runs
     module.get('HTTP_CONFIG_INIT');
   });
@@ -127,7 +133,8 @@ describe('OpenTelemetry Interceptor Integration', () => {
       (context.active as jest.Mock).mockReturnValue(mockContext);
 
       (propagation.inject as jest.Mock).mockImplementation((ctx, carrier) => {
-        carrier['traceparent'] = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+        carrier['traceparent'] =
+          '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
         carrier['tracestate'] = 'vendor1=value1';
       });
 
@@ -142,13 +149,18 @@ describe('OpenTelemetry Interceptor Integration', () => {
       );
 
       expect(response.data).toBe('success');
-      expect(receivedHeaders?.['traceparent']).toBe('00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
+      expect(receivedHeaders?.['traceparent']).toBe(
+        '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+      );
       expect(receivedHeaders?.['tracestate']).toBe('vendor1=value1');
       expect(receivedHeaders?.['x-custom-header']).toBe('custom-value');
 
       // Verify OpenTelemetry APIs were called
       expect(context.active).toHaveBeenCalled();
-      expect(propagation.inject).toHaveBeenCalledWith(mockContext, expect.any(Object));
+      expect(propagation.inject).toHaveBeenCalledWith(
+        mockContext,
+        expect.any(Object),
+      );
     });
 
     it('should handle requests without existing headers', async () => {
@@ -174,7 +186,7 @@ describe('OpenTelemetry Interceptor Integration', () => {
       await firstValueFrom(
         httpService.request(baseUrl, {
           headers: {
-            'authorization': 'Bearer token',
+            authorization: 'Bearer token',
           },
         }),
       );

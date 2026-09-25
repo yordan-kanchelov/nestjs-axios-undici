@@ -1,7 +1,10 @@
 import type { Observable } from 'rxjs';
 import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
-import type { AxiosLikeResponse, AxiosCompatibleRequestOptions } from './axios-compatible.interface';
+import type {
+  AxiosLikeResponse,
+  AxiosCompatibleRequestOptions,
+} from './axios-compatible.interface';
 
 /**
  * Type-safe HttpService interface that provides correct return types

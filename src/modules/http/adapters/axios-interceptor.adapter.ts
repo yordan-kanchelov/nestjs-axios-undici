@@ -76,7 +76,11 @@ function axiosConfigToInterceptorRequest(
     if (typeof data === 'string' || data instanceof Buffer) {
       options.body = data;
     } else {
-      options.body = serializeRequestData(data, options.headers, options.method);
+      options.body = serializeRequestData(
+        data,
+        options.headers,
+        options.method,
+      );
     }
   }
 

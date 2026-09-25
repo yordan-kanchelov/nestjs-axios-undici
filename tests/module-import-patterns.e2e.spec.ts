@@ -1,5 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Injectable, Module, DynamicModule, Global, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Module,
+  DynamicModule,
+  Global,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 
 describe('Module Import Patterns', () => {
@@ -128,7 +134,7 @@ describe('Module Import Patterns', () => {
       }
 
       public onModuleInit() {
-        this.httpService.axiosRef.interceptors.request.use((config) => {
+        this.httpService.axiosRef.interceptors.request.use(config => {
           console.log('Interceptor called');
           return config;
         });

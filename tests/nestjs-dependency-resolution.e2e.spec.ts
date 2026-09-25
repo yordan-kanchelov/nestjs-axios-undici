@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Injectable, Module } from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
-import { UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS } from '../src/modules/http/constants/http.constants';
+import {
+  UNDICI_INSTANCE_TOKEN,
+  HTTP_MODULE_OPTIONS,
+} from '../src/modules/http/constants/http.constants';
 
 describe('NestJS Dependency Resolution Tests', () => {
   describe('UNDICI_INSTANCE_TOKEN resolution', () => {
@@ -9,7 +12,7 @@ describe('NestJS Dependency Resolution Tests', () => {
       @Injectable()
       class TestService {
         constructor(private readonly httpService: HttpService) {}
-        
+
         async makeRequest() {
           return this.httpService.get('https://example.com');
         }
@@ -28,10 +31,10 @@ describe('NestJS Dependency Resolution Tests', () => {
       // This should not throw UnknownDependenciesException
       const testService = module.get<TestService>(TestService);
       expect(testService).toBeDefined();
-      
+
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // Verify the token is available
       const undiciToken = module.get(UNDICI_INSTANCE_TOKEN);
       expect(undiciToken).toBeDefined();
@@ -64,7 +67,7 @@ describe('NestJS Dependency Resolution Tests', () => {
 
       const appService = module.get<AppService>(AppService);
       const databaseService = module.get<DatabaseService>(DatabaseService);
-      
+
       expect(appService).toBeDefined();
       expect(databaseService).toBeDefined();
     });
@@ -74,7 +77,7 @@ describe('NestJS Dependency Resolution Tests', () => {
       @Injectable()
       class ApiService {
         constructor(private readonly httpService: HttpService) {}
-        
+
         async fetchData(url: string) {
           return this.httpService.get(url).toPromise();
         }
@@ -180,7 +183,7 @@ describe('NestJS Dependency Resolution Tests', () => {
       await expect(
         Test.createTestingModule({
           imports: [BrokenModule],
-        }).compile()
+        }).compile(),
       ).rejects.toThrow();
     });
   });
@@ -190,7 +193,7 @@ describe('NestJS Dependency Resolution Tests', () => {
       // This test demonstrates a current limitation:
       // Class-based interceptors with dependencies cannot be automatically
       // instantiated by HttpModule due to NestJS module scoping
-      
+
       @Injectable()
       class LoggerService {
         log(message: string) {
@@ -201,7 +204,7 @@ describe('NestJS Dependency Resolution Tests', () => {
       @Injectable()
       class LoggingInterceptor {
         constructor(private readonly logger: LoggerService) {}
-        
+
         intercept(request: any, next: any) {
           this.logger.log(`Request to ${request.url}`);
           return next.handle(request);
@@ -226,8 +229,10 @@ describe('NestJS Dependency Resolution Tests', () => {
       };
 
       // This will throw because HttpModule tries to instantiate the interceptor
-      await expect(createModuleWithClassInterceptor()).rejects.toThrow(/Nest can't resolve dependencies/);
-      
+      await expect(createModuleWithClassInterceptor()).rejects.toThrow(
+        /Nest can't resolve dependencies/,
+      );
+
       // Workaround: Use function-based interceptors or manually instantiate class interceptors
       // See the next test for the recommended approach
     });
@@ -254,7 +259,7 @@ describe('NestJS Dependency Resolution Tests', () => {
 
       const httpService = module.get<HttpService>(HttpService);
       expect(httpService).toBeDefined();
-      
+
       // Verify the interceptor is registered
       const interceptors = (httpService as any).interceptors;
       expect(interceptors).toContain(loggingInterceptor);

@@ -100,7 +100,10 @@ function flattenParams(
   const removeBrackets = (key: string) =>
     key.endsWith('[]') ? key.slice(0, -2) : key;
 
-  const renderKey = (path: Array<string | number> | undefined, key: string | number) => {
+  const renderKey = (
+    path: Array<string | number> | undefined,
+    key: string | number,
+  ) => {
     if (!path) return String(key);
     return path
       .concat(key)
@@ -111,14 +114,21 @@ function flattenParams(
       .join(dots ? '.' : '');
   };
 
-  const visit = (value: any, key: string | number, path?: Array<string | number>): boolean => {
+  const visit = (
+    value: any,
+    key: string | number,
+    path?: Array<string | number>,
+  ): boolean => {
     if (value && !path && typeof value === 'object') {
       if (typeof key === 'string' && key.endsWith('{}')) {
         pairs.push([key, JSON.stringify(value)]);
         return false;
       }
       const isFlatArray = Array.isArray(value) && !value.some(isVisitable);
-      if (isFlatArray || (typeof key === 'string' && key.endsWith('[]') && Array.isArray(value))) {
+      if (
+        isFlatArray ||
+        (typeof key === 'string' && key.endsWith('[]') && Array.isArray(value))
+      ) {
         const base = removeBrackets(String(key));
         value.forEach((el: any, index: number) => {
           if (el === undefined || el === null) return;
@@ -200,7 +210,10 @@ export function toUrlEncodedForm(data: any): string {
   if (typeof data === 'string') return data;
   if (data instanceof URLSearchParams) return data.toString();
   return flattenParams(data, {})
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    )
     .join('&');
 }
 
@@ -218,7 +231,8 @@ function forEachHeader(
     if (headers.length && Array.isArray(headers[0])) {
       headers.forEach(([key, value]: [string, any]) => fn(key, value));
     } else {
-      for (let i = 0; i + 1 < headers.length; i += 2) fn(headers[i], headers[i + 1]);
+      for (let i = 0; i + 1 < headers.length; i += 2)
+        fn(headers[i], headers[i + 1]);
     }
     return;
   }
@@ -249,7 +263,10 @@ export function mergeHeaders(...sources: any[]): HeaderRecord {
       if (value === null || value === false) {
         merged.delete(lower);
       } else {
-        merged.set(lower, [key, Array.isArray(value) ? value.map(String) : String(value)]);
+        merged.set(lower, [
+          key,
+          Array.isArray(value) ? value.map(String) : String(value),
+        ]);
       }
     });
   }
@@ -268,7 +285,11 @@ function findHeader(headers: HeaderRecord, name: string): string | undefined {
   return undefined;
 }
 
-function setHeaderIfMissing(headers: HeaderRecord, name: string, value: string): void {
+function setHeaderIfMissing(
+  headers: HeaderRecord,
+  name: string,
+  value: string,
+): void {
   if (findHeader(headers, name) === undefined) headers[name] = value;
 }
 
@@ -277,7 +298,9 @@ function setHeaderIfMissing(headers: HeaderRecord, name: string, value: string):
 // ---------------------------------------------------------------------------
 
 function isStreamLike(value: any): boolean {
-  return !!value && typeof value === 'object' && typeof value.pipe === 'function';
+  return (
+    !!value && typeof value === 'object' && typeof value.pipe === 'function'
+  );
 }
 
 function isGlobalFormData(value: unknown): value is FormData {
@@ -291,7 +314,10 @@ function isGlobalFormData(value: unknown): value is FormData {
  * the `undici` package's `request()` cannot always encode (the request hangs),
  * so it is encoded with the global `Response` instead.
  */
-function globalFormDataToStream(form: FormData, headers: HeaderRecord): Readable {
+function globalFormDataToStream(
+  form: FormData,
+  headers: HeaderRecord,
+): Readable {
   const encoded = new Response(form);
   const contentType = encoded.headers.get('content-type');
   const current = findHeader(headers, 'content-type');
@@ -316,7 +342,11 @@ export function serializeRequestData(
   const contentType = String(findHeader(headers, 'content-type') || '');
   let body: any;
 
-  if (data === undefined || data === null || (!data && typeof data !== 'object')) {
+  if (
+    data === undefined ||
+    data === null ||
+    (!data && typeof data !== 'object')
+  ) {
     // axios sends no body for null/undefined and falsy primitives (0, false, '')
     body = undefined;
   } else if (isGlobalFormData(data)) {
@@ -345,11 +375,21 @@ export function serializeRequestData(
   } else if (ArrayBuffer.isView(data)) {
     body = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   } else if (data instanceof URLSearchParams) {
-    setHeaderIfMissing(headers, 'Content-Type', `${FORM_URLENCODED};charset=utf-8`);
+    setHeaderIfMissing(
+      headers,
+      'Content-Type',
+      `${FORM_URLENCODED};charset=utf-8`,
+    );
     body = data.toString();
-  } else if (typeof data === 'object' && contentType.includes(FORM_URLENCODED)) {
+  } else if (
+    typeof data === 'object' &&
+    contentType.includes(FORM_URLENCODED)
+  ) {
     body = new URLSearchParams(flattenParams(data, {})).toString();
-  } else if (typeof data === 'object' || contentType.includes('application/json')) {
+  } else if (
+    typeof data === 'object' ||
+    contentType.includes('application/json')
+  ) {
     setHeaderIfMissing(headers, 'Content-Type', 'application/json');
     body = typeof data === 'string' ? data : JSON.stringify(data);
   } else {
@@ -359,7 +399,10 @@ export function serializeRequestData(
   // axios' dispatchRequest default for methods with a body (undici sets the
   // multipart Content-Type of its own FormData itself)
   const isFormData = !!body && (body as any)[Symbol.toStringTag] === 'FormData';
-  if (!isFormData && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+  if (
+    !isFormData &&
+    (method === 'POST' || method === 'PUT' || method === 'PATCH')
+  ) {
     setHeaderIfMissing(headers, 'Content-Type', FORM_URLENCODED);
   }
 
@@ -394,11 +437,13 @@ function resolveSignal(
 
   if (signal) {
     if (signal.aborted) abort(signal.reason);
-    else signal.addEventListener('abort', () => abort(signal.reason), { once: true });
+    else
+      signal.addEventListener('abort', () => abort(signal.reason), {
+        once: true,
+      });
   }
   return controller.signal;
 }
-
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -423,7 +468,9 @@ function hasOwnKeys(value: any): boolean {
   return false;
 }
 
-function flatDefaultHeaders(headers: Record<string, any> | undefined): HeaderRecord | undefined {
+function flatDefaultHeaders(
+  headers: Record<string, any> | undefined,
+): HeaderRecord | undefined {
   if (!headers) return undefined;
   let flat: HeaderRecord | undefined;
   for (const key of Object.keys(headers)) {
@@ -524,7 +571,7 @@ export function normalizeAxiosRequest(
   const mergedParams =
     isPlainObject(instance.params) && isPlainObject(params)
       ? { ...instance.params, ...params }
-      : params ?? instance.params;
+      : (params ?? instance.params);
   if (mergedParams) {
     url = buildURL(
       url.toString(),

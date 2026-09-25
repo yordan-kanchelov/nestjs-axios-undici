@@ -1,5 +1,8 @@
 import type { Observable } from 'rxjs';
-import type { HttpInterceptor, HttpInterceptorFunction } from './http-interceptor.interface';
+import type {
+  HttpInterceptor,
+  HttpInterceptorFunction,
+} from './http-interceptor.interface';
 import type {
   AxiosCompatibleRequestConfig,
   AxiosCompatibleRequestOptions,
@@ -20,7 +23,7 @@ export interface AxiosInterceptorManager<T> {
    */
   use(
     onFulfilled?: (value: T) => T | Promise<T>,
-    onRejected?: (error: any) => any
+    onRejected?: (error: any) => any,
   ): number;
 
   /**
@@ -69,14 +72,40 @@ export interface AxiosRef {
     response: AxiosInterceptorManager<AxiosLikeResponse>;
   };
   defaults: AxiosRefDefaults;
-  request<T = any>(config: AxiosCompatibleRequestConfig): Promise<AxiosLikeResponse<T>>;
-  get<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  delete<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  head<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  options<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  post<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  put<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
-  patch<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Promise<AxiosLikeResponse<T>>;
+  request<T = any>(
+    config: AxiosCompatibleRequestConfig,
+  ): Promise<AxiosLikeResponse<T>>;
+  get<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  delete<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  head<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  options<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  post<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  put<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
+  patch<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Promise<AxiosLikeResponse<T>>;
 }
 
 /**

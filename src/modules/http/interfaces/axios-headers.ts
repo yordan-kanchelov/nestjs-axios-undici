@@ -7,12 +7,7 @@
  * Valid axios header value types
  */
 export type AxiosHeaderValue =
-  | string
-  | string[]
-  | number
-  | boolean
-  | null
-  | undefined;
+  string | string[] | number | boolean | null | undefined;
 
 /**
  * Common HTTP request headers with proper typing
