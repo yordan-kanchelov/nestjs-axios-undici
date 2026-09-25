@@ -12,4 +12,6 @@ axiosRef request/response interceptors now run over one axios-shaped config obje
 - Fixed a pre-existing bug in `AxiosHeaders`: spreading an instance (`{ ...config.headers }`, a common pattern for adding a header in an interceptor) leaked its internal storage as an enumerable `headers` property, which undici then rejected as an invalid header value.
 - Added `AxiosHeaders#setAuthorization`, `#setContentType` and `#getContentType`.
 
-No cost for a request with no axiosRef interceptors and no transforms: `response.config`/`error.config` are still built correctly, but lazily (only when read).
+Requests with no axiosRef interceptors and no transforms keep the fast path; only `response.config`/`error.config` are built for them.
+
+`transformResponse` follows axios for binary and stream responses: it is skipped for `responseType: 'stream'` and receives the raw `Buffer` for `'arraybuffer'`.
