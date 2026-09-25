@@ -55,58 +55,53 @@ allow(ALLOWLIST, 'HttpService', ['instance', 'makeObservable'], {
     'protected @nestjs/axios internals (TypeScript `protected` is still enumerable at runtime), not part of the public API',
   tracked: 'plan/reports/automation.md §3 (API-surface parity)',
 });
-allow(ALLOWLIST, 'HttpService', ['query'], {
-  reason:
-    'HttpService.query() (the HTTP QUERY method) is new in @nestjs/axios 12 and not implemented yet',
-  tracked:
-    'plan.md phase 2 "feat(axiosRef): make it a real axios instance" (HttpService.query())',
-});
-
-const AXIOS_REF_REAL_INSTANCE: AllowedGap = {
-  reason:
-    'axiosRef is not yet a real axios instance: it is not callable, and getUri/create/*Form/query are missing',
-  tracked: 'plan.md phase 2 "feat(axiosRef): make it a real axios instance"',
-};
-allow(
-  ALLOWLIST,
-  'axiosRef',
-  [
-    'length',
-    'name',
-    'prototype',
-    'getUri',
-    'create',
-    'postForm',
-    'putForm',
-    'patchForm',
-    'query',
-  ],
-  AXIOS_REF_REAL_INSTANCE,
-);
+// axiosRef is now a real, callable axios instance (plan.md "feat(axiosRef):
+// make it a real axios instance"): callable, getUri/create/*Form/query,
+// full defaults (validateStatus/params/responseType/transformRequest/
+// transformResponse/timeout/baseURL/headers/adapter/withCredentials/
+// paramsSerializer), HttpService.query(). What's left, all separately
+// tracked:
 allow(
   ALLOWLIST,
   'axiosRef.defaults',
   [
     'hasOwnProperty',
     'transitional',
-    'adapter',
-    'transformRequest',
-    'transformResponse',
-    'timeout',
     'xsrfCookieName',
     'xsrfHeaderName',
     'maxContentLength',
     'maxBodyLength',
     'env',
-    'validateStatus',
   ],
-  AXIOS_REF_REAL_INSTANCE,
+  {
+    reason:
+      'not part of this item: axios options this library never maps at module level either (xsrfCookieName/xsrfHeaderName are a documented no-op; maxContentLength/maxBodyLength are read straight off module/request options, not defaults; transitional/env/hasOwnProperty are axios internals with no equivalent here)',
+    tracked: 'docs/axios-supported-options.md',
+  },
 );
+allow(ALLOWLIST, 'axiosRef.interceptors.request', ['handlers', 'forEach'], {
+  reason:
+    'internal @nestjs/axios/axios interceptor-manager implementation details (an array of registered handlers, and a raw forEach over it), not part of the public API this library mirrors',
+  tracked: 'plan.md phase 2 "types: axios interop"',
+});
+
+// This class' public members are deliberately a *subset* of axios' own
+// AxiosHeaders (not a superset): axios registers Accept-Encoding as a
+// runtime accessor (`AxiosHeaders.accessor([...])` in its own
+// core/AxiosHeaders.js) but never declares it in its own `.d.ts` - adding it
+// here would make this class *wider* than axios' declared type, breaking
+// the mutual TypeScript assignability plan.md "feat(axiosRef): make it a
+// real axios instance" needs. Use `setContentEncoding`/`set('Accept-Encoding',
+// ...)` instead (see axios-headers.ts).
 allow(
   ALLOWLIST,
-  'axiosRef.interceptors.request',
-  ['handlers', 'forEach'],
-  AXIOS_REF_REAL_INSTANCE,
+  'AxiosHeaders instance',
+  ['getAcceptEncoding', 'setAcceptEncoding', 'hasAcceptEncoding'],
+  {
+    reason:
+      "axios registers these at runtime (AxiosHeaders.accessor(['Accept-Encoding'])) but never declares them in its own .d.ts; matching its declared (not runtime) surface exactly is what makes this class mutually assignable with axios' own AxiosHeaders",
+    tracked: 'plan.md phase 2 "feat(axiosRef): make it a real axios instance"',
+  },
 );
 
 /** Public own keys along the whole prototype chain (methods and data props alike). */

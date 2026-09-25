@@ -18,8 +18,6 @@ import {
 } from 'rxjs';
 import { differential, Ctx } from './harness';
 
-const AXIOS_INSTANCE =
-  'plan.md phase 2: feat(axiosRef): make it a real axios instance';
 const TYPES = 'plan.md phase 2: types: axios interop';
 
 const routes = {
@@ -228,7 +226,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       };
     },
     normalize: (o: any) => o.result,
-    knownDifference: AXIOS_INSTANCE,
   },
   {
     name: 'axiosRef.defaults runtime mutations',

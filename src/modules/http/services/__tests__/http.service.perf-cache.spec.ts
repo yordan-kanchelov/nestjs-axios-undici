@@ -96,7 +96,12 @@ describe('HttpService - request-path caches stay live', () => {
 
   it('mutating a held reference to a replaced bucket still applies', async () => {
     const bucket: Record<string, string> = { 'X-Held': 'h1' };
-    service.axiosRef.defaults.headers.common = bucket;
+    // `common` is typed `AxiosHeaders` (matching axios' own
+    // `AxiosInstance.defaults.headers`) but stays a plain object at runtime
+    // - see the doc comment on `AxiosRefDefaults.headers` - so a plain
+    // object is still exactly what's assigned here in practice; the cast is
+    // only to satisfy the type.
+    service.axiosRef.defaults.headers.common = bucket as any;
     const first = await firstValueFrom(service.get(`${serverUrl}/x`));
     expect(first.data.headers['x-held']).toBe('h1');
 
@@ -121,7 +126,15 @@ describe('HttpService - request-path caches stay live', () => {
     expect(after.data.headers['x-defined']).toBe('d');
   });
 
-  it('module headers changed through undiciRef after the first request still apply', async () => {
+  it('module headers seed axiosRef.defaults at setup; mutating undiciRef afterwards no longer has any effect (request > defaults > module)', async () => {
+    // Precedence change from PR #16 (plan.md "feat(axiosRef): make it a
+    // real axios instance"): module options only ever *seed*
+    // `axiosRef.defaults` once, at construction (`createAxiosRefDefaults`).
+    // From then on `axiosRef.defaults` is the single source of truth, so a
+    // later mutation of the raw module options object (`undiciRef`, a
+    // lower-level, mostly-transport-focused handle) is no longer picked up -
+    // use `axiosRef.defaults.headers` instead (covered by the other cases
+    // in this file).
     const moduleWithHeaders = await Test.createTestingModule({
       imports: [
         HttpModule.register({ headers: { common: { 'X-Module': 'v1' } } }),
@@ -134,7 +147,12 @@ describe('HttpService - request-path caches stay live', () => {
 
       (svc.undiciRef as any).headers.common['X-Module'] = 'v2';
       const after = await firstValueFrom(svc.get(`${serverUrl}/x`));
-      expect(after.data.headers['x-module']).toBe('v2');
+      expect(after.data.headers['x-module']).toBe('v1');
+
+      // The supported way to change it at runtime:
+      (svc.axiosRef.defaults.headers.common as any)['X-Module'] = 'v3';
+      const viaDefaults = await firstValueFrom(svc.get(`${serverUrl}/x`));
+      expect(viaDefaults.data.headers['x-module']).toBe('v3');
     } finally {
       await moduleWithHeaders.close();
     }

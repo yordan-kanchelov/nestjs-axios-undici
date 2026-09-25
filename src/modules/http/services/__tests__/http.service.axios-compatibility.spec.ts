@@ -62,14 +62,7 @@ describe('HttpService - Axios Compatibility', () => {
       // Add request interceptor
       const interceptorId = service.axiosRef.interceptors.request.use(
         config => {
-          if (!config.headers) {
-            config.headers = new AxiosHeaders();
-          }
-          if (config.headers instanceof AxiosHeaders) {
-            config.headers.set('X-Test-Header', 'test-value');
-          } else {
-            config.headers['X-Test-Header'] = 'test-value';
-          }
+          config.headers.set('X-Test-Header', 'test-value');
           return config;
         },
       );
@@ -168,24 +161,13 @@ describe('HttpService - Axios Compatibility', () => {
 
       service.axiosRef.interceptors.request.use(config => {
         order.push('request1');
-        if (!config.headers) {
-          config.headers = new AxiosHeaders();
-        }
-        if (config.headers instanceof AxiosHeaders) {
-          config.headers.set('X-First', 'first');
-        } else {
-          config.headers['X-First'] = 'first';
-        }
+        config.headers.set('X-First', 'first');
         return config;
       });
 
       service.axiosRef.interceptors.request.use(config => {
         order.push('request2');
-        if (config.headers instanceof AxiosHeaders) {
-          config.headers.set('X-Second', 'second');
-        } else {
-          config.headers['X-Second'] = 'second';
-        }
+        config.headers.set('X-Second', 'second');
         return config;
       });
 

@@ -162,10 +162,14 @@ describe('HttpService Observable semantics: abort on unsubscribe', () => {
     let n = 0;
     service.axiosRef.interceptors.request.use(config => {
       n += 1;
+      // Replacing `config.headers` with a plain object is a runtime-only
+      // pattern (axios' own `InternalAxiosRequestConfig.headers` is
+      // similarly typed as `AxiosHeaders`, not a plain object, so this needs
+      // a cast against real axios' types too).
       config.headers = {
         ...(config.headers as Record<string, string>),
         'X-Attempt': String(n),
-      };
+      } as any;
       return config;
     });
 

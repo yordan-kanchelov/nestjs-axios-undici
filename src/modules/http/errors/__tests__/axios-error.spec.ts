@@ -6,6 +6,7 @@ import {
   isCancel,
   toAxiosError,
 } from '../axios-error';
+import { AxiosHeaders } from '../../interfaces/axios-headers';
 
 const request = {
   url: 'http://api/x',
@@ -22,7 +23,7 @@ describe('axios errors', () => {
       status: 404,
       statusText: 'Not Found',
       headers: {},
-      config: { headers: {} },
+      config: { headers: new AxiosHeaders() },
     };
     const error = createStatusError(response);
     expect(error).toBeInstanceOf(AxiosError);
@@ -90,7 +91,7 @@ describe('axios errors', () => {
     const error = new AxiosError('boom', 'ERR_X', {
       url: '/x',
       method: 'GET',
-      headers: {},
+      headers: new AxiosHeaders(),
     });
     expect(error.toJSON()).toMatchObject({
       message: 'boom',
