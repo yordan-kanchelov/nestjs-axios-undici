@@ -10,7 +10,7 @@ import {
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
-import { Observable, of } from 'rxjs';
+import { Observable, defer, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 
 import {
@@ -56,6 +56,34 @@ function compatibleGlobalDispatcher(): Dispatcher {
   }
   fallbackAgent ??= new UndiciAgent();
   return fallbackAgent;
+}
+
+/**
+ * The per-request abort signal passed to undici. undici only needs `aborted`,
+ * `reason` and a single 'abort' listener, so this is cheaper than an
+ * AbortController (no EventTarget) on every request.
+ */
+class RequestAbortSignal {
+  aborted = false;
+  reason: unknown = undefined;
+  private listener: (() => void) | undefined;
+
+  addEventListener(_type: 'abort', listener: () => void): void {
+    this.listener = listener;
+  }
+
+  removeEventListener(): void {
+    this.listener = undefined;
+  }
+
+  abort(reason?: unknown): void {
+    if (this.aborted) return;
+    this.aborted = true;
+    this.reason = reason;
+    const listener = this.listener;
+    this.listener = undefined;
+    listener?.();
+  }
 }
 
 @Injectable()
@@ -157,74 +185,81 @@ export class HttpService {
     urlOrConfig: string | URL | UrlObject | AxiosCompatibleRequestConfig,
     requestOptions?: HttpRequestOptions,
   ): Observable<AxiosLikeResponse<T>> {
-    // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
-    const { url, options } = normalizeAxiosRequest(
-      urlOrConfig,
-      requestOptions,
-      {
-        defaults: this._axiosRef.defaults,
-        instanceOptions: this.instanceOptions,
-      },
-    ) as {
-      url: string | URL | UrlObject;
-      options: Omit<HttpRequestOptions, 'headers'> &
-        Pick<Dispatcher.RequestOptions, 'headers'>;
-    };
+    // `defer()` makes the Observable cold and re-runs everything below (config
+    // normalization, the axiosRef request interceptors, the actual request)
+    // on every subscription, as `@nestjs/axios`' `makeObservable` does. This
+    // matters for `get().pipe(retry())`: each attempt must build its own
+    // headers/config rather than reusing the first attempt's.
+    return defer(() => {
+      // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
+      const { url, options } = normalizeAxiosRequest(
+        urlOrConfig,
+        requestOptions,
+        {
+          defaults: this._axiosRef.defaults,
+          instanceOptions: this.instanceOptions,
+        },
+      ) as {
+        url: string | URL | UrlObject;
+        options: Omit<HttpRequestOptions, 'headers'> &
+          Pick<Dispatcher.RequestOptions, 'headers'>;
+      };
 
-    // Handle timeout option for axios compatibility
-    const { timeout, ...restOptions } = options || {};
-    const mergedOptions = {
-      ...this.instanceOptions,
-      ...restOptions,
-    };
+      // Handle timeout option for axios compatibility
+      const { timeout, ...restOptions } = options || {};
+      const mergedOptions = {
+        ...this.instanceOptions,
+        ...restOptions,
+      };
 
-    // Map timeout to undici's timeout options
-    if (timeout !== undefined) {
-      mergedOptions.headersTimeout = timeout;
-      mergedOptions.bodyTimeout = timeout;
-    }
-
-    // Pass through size limit options from module config
-    const moduleOpts = this.moduleOptions as any;
-    if (moduleOpts?.maxBodyLength !== undefined) {
-      (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
-    }
-    if (moduleOpts?.maxContentLength !== undefined) {
-      (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
-    }
-
-    // Handle axios-specific options from module configuration
-    let finalUrl = url;
-    const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
-
-    if (axiosCompat?.baseURL) {
-      // Apply baseURL if the URL is relative
-      const urlString = typeof url === 'string' ? url : url.toString();
-      if (
-        !urlString.startsWith('http://') &&
-        !urlString.startsWith('https://')
-      ) {
-        finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
+      // Map timeout to undici's timeout options
+      if (timeout !== undefined) {
+        mergedOptions.headersTimeout = timeout;
+        mergedOptions.bodyTimeout = timeout;
       }
-    }
 
-    // Handle socket path
-    if (moduleOpts?.__socketPath) {
-      // Transform URL to use unix socket
-      const urlString =
-        typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
-      const urlObj = new URL(urlString);
-      finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
-    }
+      // Pass through size limit options from module config
+      const moduleOpts = this.moduleOptions as any;
+      if (moduleOpts?.maxBodyLength !== undefined) {
+        (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
+      }
+      if (moduleOpts?.maxContentLength !== undefined) {
+        (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
+      }
 
-    // Create the request object for interceptors
-    const interceptorRequest: HttpInterceptorRequest = {
-      url: finalUrl,
-      options: mergedOptions,
-    };
+      // Handle axios-specific options from module configuration
+      let finalUrl = url;
+      const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
 
-    // Create the interceptor chain (always includes axios adapter)
-    return this.executeInterceptorChain(interceptorRequest);
+      if (axiosCompat?.baseURL) {
+        // Apply baseURL if the URL is relative
+        const urlString = typeof url === 'string' ? url : url.toString();
+        if (
+          !urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')
+        ) {
+          finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
+        }
+      }
+
+      // Handle socket path
+      if (moduleOpts?.__socketPath) {
+        // Transform URL to use unix socket
+        const urlString =
+          typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
+        const urlObj = new URL(urlString);
+        finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
+      }
+
+      // Create the request object for interceptors
+      const interceptorRequest: HttpInterceptorRequest = {
+        url: finalUrl,
+        options: mergedOptions,
+      };
+
+      // Create the interceptor chain (always includes axios adapter)
+      return this.executeInterceptorChain(interceptorRequest);
+    });
   }
 
   /**
@@ -246,20 +281,54 @@ export class HttpService {
         this.customDispatcher ||
         requestOptions.dispatcher ||
         this.instanceOptions.dispatcher;
+
+      // Abort the undici request when the Observable is unsubscribed before
+      // it settles (rxjs `timeout()`, `switchMap`, `takeUntil`, `race`, ...),
+      // matching `@nestjs/axios`' `makeObservable` teardown. Each subscription
+      // gets its own signal (so `defer()`/`retry()` attempts don't share one),
+      // combined with any user-supplied signal (already merged with
+      // `cancelToken` by `normalizeAxiosRequest`). `settled` flips to true once
+      // the response (or, for a `stream` response, the headers) has been handed
+      // to the subscriber; after that neither the teardown nor the user signal
+      // may abort, or a stream body the caller is still reading would break.
+      const userSignal = requestOptions.signal as AbortSignal | undefined;
+      const abortSignal = new RequestAbortSignal();
+      let settled = false;
+      let onUserAbort: (() => void) | undefined;
+      if (userSignal) {
+        if (userSignal.aborted) {
+          abortSignal.abort(userSignal.reason);
+        } else {
+          onUserAbort = () => {
+            if (!settled) abortSignal.abort(userSignal.reason);
+          };
+          userSignal.addEventListener('abort', onUserAbort, { once: true });
+        }
+      }
+
       const options = {
         ...requestOptions,
         ...this.resolveRedirectOptions(dispatcher, maxRedirections),
+        signal: abortSignal as any,
       };
 
       request(interceptorRequest.url, options)
         .then(res => toAxiosLikeResponse(interceptorRequest, res))
         .then(res => {
+          settled = true;
           subscriber.next(res);
           subscriber.complete();
         })
         .catch(error => {
+          settled = true;
           subscriber.error(toAxiosError(error, interceptorRequest));
         });
+
+      return () => {
+        if (!settled) abortSignal.abort();
+        // Don't leave a listener on a long-lived user signal for every request
+        if (onUserAbort) userSignal!.removeEventListener('abort', onUserAbort);
+      };
     });
   }
 

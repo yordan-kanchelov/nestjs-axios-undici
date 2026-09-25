@@ -711,25 +711,40 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(order).toEqual(['req1', 'req2', 'res2', 'res1']);
     });
 
-    it('documented difference: unsubscribing does not abort the in-flight request', async () => {
-      let finished: boolean | undefined;
+    it('unsubscribing aborts the in-flight request (fixed: previously ran to completion)', async () => {
+      let resolveClosed!: (finished: boolean) => void;
+      const closed = new Promise<boolean>(resolve => {
+        resolveClosed = resolve;
+      });
       const slowServer = createServer((_req, res) => {
-        res.on('close', () => (finished = res.writableFinished));
-        setTimeout(() => res.end('done'), 300);
+        res.on('close', () => resolveClosed(res.writableFinished));
+        setTimeout(() => {
+          if (!res.writableEnded && !res.destroyed) res.end('done');
+        }, 300);
       });
       await new Promise<void>(resolve =>
         slowServer.listen(0, '127.0.0.1', resolve),
       );
       const url = `http://127.0.0.1:${(slowServer.address() as AddressInfo).port}/`;
+
+      // Wait for the connection to actually reach the server before
+      // unsubscribing, so the abort can't win the race against the socket
+      // ever being opened.
+      const started = new Promise<void>(resolve =>
+        slowServer.once('request', () => resolve()),
+      );
       const subscription = undiciService
         .get(url)
         .subscribe({ error: () => undefined });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await started;
       subscription.unsubscribe();
-      await new Promise(resolve => setTimeout(resolve, 400));
+
+      // Resolves once the server observes the connection close; the response
+      // must not have been written, since the client aborted before it.
+      expect(await closed).toBe(false);
+
       slowServer.closeAllConnections();
       await new Promise<void>(resolve => slowServer.close(() => resolve()));
-      expect(finished).toBe(true);
     });
   });
 
