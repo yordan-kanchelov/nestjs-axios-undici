@@ -147,7 +147,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
 - [x] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19, merged.
 - [x] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in. PR #20, merged.
-- [~] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.) PR #21 open (`claude/cookie-jar`).
+- [x] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.) PR #21, merged.
 - [ ] ★ **types: axios interop.**
   - `AxiosRequestConfig` / `AxiosResponse` / `AxiosInstance` assignability and `post<T, D>`.
   - Typed `HttpModuleOptions`.
@@ -278,3 +278,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - New test: `registerAsync` with a jar from a factory.
 - 2026-09-25: Owner decision: breaking changes are fine before 1.0.0, so do things the right way (see Decisions). This affects the remaining types, API trim, HttpService members and default-dispatcher items.
 - 2026-09-25: Owner offered to drop Node 22 / undici 7. Kept them, because nothing is simplified by dropping them now; recorded in Decisions.
+- 2026-09-25: PR #21 merged: `withCredentials` is a no-op; cookies are opt-in via `cookieJar`; the cookie libs are lazy optional peers (25 known differences left). CI all green. Next: types: axios interop (strict types, per the breaking-changes-are-fine decision).
