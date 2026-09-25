@@ -39,13 +39,8 @@ export class AxiosError<T = any> extends Error {
   public status?: number;
   public override cause?: unknown;
 
-  // `config` is a getter/setter (defined once, on the prototype) rather than
-  // a plain field so a config built lazily - via `_setLazyConfig`, from a
-  // `HttpInterceptorRequest` - costs nothing until first read. A plain
-  // per-instance `Object.defineProperty` accessor was tried first and
-  // measurably cost more than building the config eagerly would have.
-  private _config?: AxiosLikeRequestConfig;
-  private _configRequest?: HttpInterceptorRequest;
+  // A plain own property, as in axios, so it survives spreading and cloning.
+  public config?: AxiosLikeRequestConfig;
 
   constructor(
     message?: string,
@@ -57,7 +52,7 @@ export class AxiosError<T = any> extends Error {
     super(message);
     this.name = 'AxiosError';
     if (code) this.code = code;
-    if (config) this._config = config;
+    if (config) this.config = config;
     if (request) this.request = request;
     if (response) {
       this.response = response;
@@ -65,27 +60,12 @@ export class AxiosError<T = any> extends Error {
     }
   }
 
-  get config(): AxiosLikeRequestConfig | undefined {
-    if (this._config === undefined && this._configRequest) {
-      this._config = buildLazyAxiosConfig(this._configRequest);
-      this._configRequest = undefined;
-    }
-    return this._config;
-  }
-
-  set config(value: AxiosLikeRequestConfig | undefined) {
-    this._config = value;
-    this._configRequest = undefined;
-  }
-
   /**
-   * Internal: defers building `config` until first read (see
-   * `buildLazyAxiosConfig`), instead of paying for it on every error
-   * regardless of whether anyone reads `.config`.
+   * Internal: sets `config` from the request that produced this error (see
+   * `buildLazyAxiosConfig`).
    */
   _setLazyConfig(request: HttpInterceptorRequest): void {
-    this._configRequest = request;
-    this._config = undefined;
+    this.config = buildLazyAxiosConfig(request);
   }
 
   /**

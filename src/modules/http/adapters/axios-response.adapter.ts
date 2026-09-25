@@ -27,9 +27,10 @@ const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
  * unlike installing a per-instance accessor on every response.
  */
 class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
+  // `config` is a plain own property, as in axios, so it survives
+  // `{ ...response }`, `JSON.stringify` and `structuredClone`.
+  public config: AxiosLikeRequestConfig;
   public request: any = RESPONSE_REQUEST_PLACEHOLDER;
-  private _config?: AxiosLikeRequestConfig;
-  private _configRequest?: HttpInterceptorRequest;
 
   constructor(
     public data: T,
@@ -38,20 +39,7 @@ class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
     public headers: any,
     configRequest: HttpInterceptorRequest,
   ) {
-    this._configRequest = configRequest;
-  }
-
-  get config(): AxiosLikeRequestConfig {
-    if (this._config === undefined) {
-      this._config = buildLazyAxiosConfig(this._configRequest!);
-      this._configRequest = undefined;
-    }
-    return this._config;
-  }
-
-  set config(value: AxiosLikeRequestConfig) {
-    this._config = value;
-    this._configRequest = undefined;
+    this.config = buildLazyAxiosConfig(configRequest);
   }
 }
 
@@ -153,10 +141,22 @@ export async function toAxiosLikeResponse(
   const transformResponse = request.axiosConfig?.transformResponse;
 
   try {
-    if (transformResponse) {
-      const raw = undiciResponse.body
-        ? await readText(undiciResponse.body, { contentEncoding, decompress })
-        : '';
+    if (transformResponse && responseType !== 'stream') {
+      // As in axios: a stream is never transformed, and binary response
+      // types hand the transform the raw bytes rather than decoded text.
+      const raw = !undiciResponse.body
+        ? ''
+        : responseType === 'arraybuffer' || responseType === 'blob'
+          ? await readBodyAsResponseType(
+              undiciResponse.body,
+              responseType,
+              maxContentLength,
+              { contentEncoding, decompress },
+            )
+          : await readText(undiciResponse.body, {
+              contentEncoding,
+              decompress,
+            });
       const transforms = Array.isArray(transformResponse)
         ? transformResponse
         : [transformResponse];
