@@ -92,7 +92,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
     - axiosRef interceptor configs: `config.headers['Authorization'] = ...` and `config.headers.set(...)` don't type-check; a callback typed `InternalAxiosRequestConfig` doesn't fit.
     - A response mock typed `Observable<AxiosResponse<T>>` doesn't fit `HttpService['get']`'s return type.
     - Not expressible as `@ts-expect-error` (no error is raised, so nothing to pin): `HttpModuleOptions` accepts typos (e.g. `{ timeuot: 5 }`) because it's effectively `& any`.
-- [~] **D. test: table-driven differential harness** (`claude/differential-harness`, PR open)
+- [x] **D. test: table-driven differential harness** (`claude/differential-harness`, PR #12, merged)
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
@@ -196,3 +196,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #9 merged. PR #10 approved; fixed the CI pack step and formatting, waiting for green.
 - 2026-09-25: PR #10 merged (consumer matrix green on Node 22.17.0/22.19.0/22/24/26). Worker C started (`claude/api-parity-checks`).
 - 2026-09-25: PR #11 (C) merged. PR #12 (D, 183 differential scenarios, 77 known differences) open, in review.
+- 2026-09-25: PR #12 (D) merged; the differential tests pass on Nest 10/11/12. Worker E (perf check) next.
