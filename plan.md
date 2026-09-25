@@ -81,7 +81,11 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
-- [ ] **E. perf: wider micro-benchmark scenarios, and make the regression check a required check.** Waiting on `plan/reports/performance.md`.
+- [ ] **E. perf: rebuild the PR regression check.** It isn't reliable today: 2 of 4 runs of identical code failed at the 10% threshold.
+  - Switch to client CPU time per request, compared with raw undici in the same round. That cancels out runner speed; the worst drift seen was ±3.9%.
+  - Scenarios: get, post JSON, params and headers, the 404 error path, axiosRef interceptors.
+  - Make it a required check, with one automatic re-run.
+  - Prototypes: `plan/prototypes/perf/compare2.js`, `client.js`, `server.js`.
 
 ### Phase 2: compatibility fixes (one small PR each; each flips differential cases and passes the perf check)
 
@@ -126,10 +130,19 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 - [ ] `strict` TypeScript in `tsconfig.build.json` (7 errors).
 - [ ] Duplicate undici copy: plain requests should also use an Agent from this package's undici copy.
 
-### Phase 4: performance (waiting on `plan/reports/performance.md`)
+### Phase 4: performance (see `plan/reports/performance.md`)
 
-- [ ] A fair benchmark app set: one shared app source, `CLIENT=axios|undici`, Express and Fastify, and the same axiosRef interceptor. Drop the upstream `nestjs-undici` app.
-- [ ] Hot-path optimizations from the performance report.
+Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs for raw undici and 510–560 µs for @nestjs/axios. No memory leak, and keep-alive reuse works.
+
+- [ ] ★ **Abort the request on unsubscribe.** This is the same item as in phase 2. It costs 1–3 µs per request.
+- [ ] ★ **bench: a fair app set.**
+  - Configurations: `@nestjs/axios` and nestjs-axios-undici in identical apps, each with and without the same axiosRef interceptor (no stdout logging), plus raw undici as the floor.
+  - The mock backend runs with `logger: false`.
+  - Drop `nestjs-fastify-undici`, the upstream `nestjs-undici` dependency, and the 3 separate compose files.
+  - Open choice: Fastify only (performance report) or Express and Fastify (docs report).
+  - Update the k6 script and the report generator to match.
+- [ ] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
+- [ ] Later: cheaper request-adapter paths (saves 2–8 µs), a streaming `maxContentLength` check, instruction-count benchmarks, and the full k6 run on the version PR before publish.
 
 ### Phase 5: docs (see `plan/reports/docs-critic.md`)
 
@@ -147,4 +160,4 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 
 ## Log
 
-- 2026-09-25: Explorations done for automation, package quality, axios compatibility and docs (reports in `plan/reports/`). Performance exploration still running. Workers A and B started. Created `claude/v1.0.0` and this plan.
+- 2026-09-25: Explorations done for automation, package quality, axios compatibility and docs (reports in `plan/reports/`). Performance exploration done too. Workers A and B started. Created `claude/v1.0.0` and this plan.
