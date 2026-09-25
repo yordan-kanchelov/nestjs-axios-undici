@@ -54,6 +54,7 @@ Released so far:
 - [x] **Public API: trim it where nothing is lost.** Remove the legacy and internal exports listed in `plan/reports/package-quality.md`, keeping everything with a real use. For each removal, check that a supported alternative exists, and list it in the 1.0 migration notes.
 - [x] **Benchmark apps: both Express and Fastify.** Use one shared app source with `CLIENT=axios|undici` and `PLATFORM=express|fastify`, and the same axiosRef interceptor in both. Raw undici is the floor.
 - [x] **Minimum Node version:** `>=22.17.0` (PR #10, decided from the consumer-matrix results).
+- [x] **Node 24+ / undici 8 only: offered by the owner, not taken for now** (2026-09-25). The owner said we may drop Node 22 and undici 7 if that makes things easier. It doesn't yet. Only one comment in `src/` is version-specific (setting `allowH2` explicitly). The Node 22 bundled-undici case gets fixed on every version by the planned per-service `Agent`. The CI cost is three short rows. Node 22 is LTS until April 2027 and common among Nest 10/11 users. Revisit only if an item needs a Node 24 / undici 8 feature, and bring the concrete trade-off to the owner.
 - [x] **Breaking changes are fine before 1.0.0: do it the right way** (owner, 2026-09-25). Don't add compatibility shims, deprecation cycles or loose types just to avoid a break. Every break gets a changeset with a **BREAKING** note (`minor` until the final 1.0.0 `major`) and a line in the 1.0 migration notes. What this means for the remaining items:
   - **Types:** `HttpModuleOptions` becomes strictly typed (no `& any` / `Partial<any>`). Typos and unsupported keys become compile errors. `register()` takes a real type.
   - **API trim:** remove the legacy and internal exports outright (no 0.7 `@deprecated` step): the typed module, the no-op interceptors, internal error helpers and unused types.
@@ -276,3 +277,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - The docs note that a `cookieJar` next to an explicit `dispatcher` is ignored.
   - New test: `registerAsync` with a jar from a factory.
 - 2026-09-25: Owner decision: breaking changes are fine before 1.0.0, so do things the right way (see Decisions). This affects the remaining types, API trim, HttpService members and default-dispatcher items.
+- 2026-09-25: Owner offered to drop Node 22 / undici 7. Kept them, because nothing is simplified by dropping them now; recorded in Decisions.
