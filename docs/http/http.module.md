@@ -1,8 +1,6 @@
 # HttpModule
 
-The `HttpModule` is the main module that provides HTTP client functionality for NestJS applications using the high-performance Undici client. It always returns axios-compatible responses.
-
-## Basic Usage
+`HttpModule` provides `HttpService`. Its API matches `@nestjs/axios`' `HttpModule`: import it as is, or configure it with `register()` or `registerAsync()`.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -10,204 +8,86 @@ import { HttpModule } from 'nestjs-axios-undici';
 
 @Module({
   imports: [HttpModule],
-  // ... providers that use HttpService
 })
 export class AppModule {}
 ```
 
-## Configuration
+Each import of `HttpModule.register()` / `registerAsync()` creates its own `HttpService` with its own configuration and interceptors.
 
-The module supports configuration options through the `register` method:
-
-```typescript
-@Module({
-  imports: [
-    HttpModule.register({
-      timeout: 5000, // 5 seconds
-      headers: {
-        'User-Agent': 'MyApp/1.0',
-      },
-      // Add interceptors
-      interceptors: [authInterceptor, loggingInterceptor],
-    }),
-  ],
-})
-export class AppModule {}
-```
-
-### Async Configuration
-
-You can also use the `registerAsync` method to provide options asynchronously:
+## `register(options)`
 
 ```typescript
-@Module({
-  imports: [
-    HttpModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        timeout: configService.get('HTTP_TIMEOUT'),
-        headers: {
-          'Authorization': await configService.get('API_KEY'),
-        },
-      }),
-      inject: [ConfigService],
-    }),
-  ],
-})
-export class AppModule {}
-```
-
-## Interceptors
-
-The module supports both function-based and class-based interceptors:
-
-### Function-based Interceptors
-
-```typescript
-const authInterceptor = (request, next) => {
-  request.headers['Authorization'] = 'Bearer token';
-  return next.handle(request);
-};
-
 HttpModule.register({
-  interceptors: [authInterceptor],
+  baseURL: 'https://api.example.com',
+  timeout: 5000,
+  headers: { 'User-Agent': 'MyApp/1.0' },
+  interceptors: [authInterceptor, LoggingInterceptor],
 });
 ```
 
-### Class-based Interceptors
+## `registerAsync(options)`
+
+Resolves the options at startup, for example from a `ConfigService`:
+
+```typescript
+HttpModule.registerAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: async (config: ConfigService) => ({
+    baseURL: config.get('API_URL'),
+    timeout: config.get('HTTP_TIMEOUT'),
+  }),
+});
+```
+
+| Option | Description |
+|--------|-------------|
+| `useFactory` | Function returning the options (or a Promise of them). |
+| `inject` | Providers passed to `useFactory`. |
+| `imports` | Modules whose exported providers `useFactory`, `useClass` or `useExisting` need. |
+| `useClass` | A class implementing `HttpModuleOptionsFactory` (`createHttpOptions()`), instantiated by the module. |
+| `useExisting` | Like `useClass`, but reuses an existing provider. |
+| `extraProviders` | Additional providers registered in the module. |
+| `global` | Registers the module as global. |
 
 ```typescript
 @Injectable()
-export class LoggingInterceptor implements HttpInterceptor {
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
-    console.log('Request:', request.url);
-    return next.handle(request).pipe(
-      tap(response => console.log('Response:', response.status))
-    );
+class HttpConfigService implements HttpModuleOptionsFactory {
+  createHttpOptions(): HttpModuleOptions {
+    return { timeout: 5000 };
   }
 }
 
-HttpModule.register({
-  interceptors: [LoggingInterceptor],
-});
+HttpModule.registerAsync({ useClass: HttpConfigService });
 ```
 
-## Global Dispatcher
+## Options
 
-The module uses Undici's dispatcher system. By default, it creates a new Agent for each module instance. You can also use the global dispatcher:
+`register()` and the object returned by `registerAsync()` accept:
+
+- **Axios options**: `baseURL`, `headers`, `timeout`, `params`, `paramsSerializer`, `auth`, `validateStatus`, `responseType`, `maxRedirects`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`. They are detected and mapped to undici; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for what each one does and how it differs from axios.
+- **Undici request options**, used as defaults for every request, for example `dispatcher`, `headersTimeout` and `bodyTimeout`. See the [undici `request()` options](https://github.com/nodejs/undici#undicirequesturl-options-promise).
+- **`interceptors`**: an array of interceptors (see below).
+- **`global`**: registers the module as global, as in `@nestjs/axios`.
+
+## `interceptors`
+
+An array of native interceptors, run in order for every request made through this module's `HttpService`:
 
 ```typescript
 HttpModule.register({
-  useGlobalDispatcher: true,
-});
-```
-
-## Migration from @nestjs/axios
-
-nestjs-axios-undici now provides enhanced axios compatibility, making migration much simpler:
-
-### Automatic Axios Configuration Detection
-
-The `HttpModule.register()` method now automatically detects and handles axios-style configuration:
-
-```typescript
-HttpModule.register({
-  // These axios options are automatically detected and mapped!
-  baseURL: 'https://api.example.com',
-  timeout: 5000,
-  maxRedirects: 5,
-  httpAgent: new http.Agent({ keepAlive: true }),
-  httpsAgent: new https.Agent({ keepAlive: true }),
-  auth: { username: 'user', password: 'pass' },
-  transformRequest: [(data) => JSON.stringify(data)],
-  transformResponse: [(data) => JSON.parse(data)],
-  validateStatus: (status) => status < 400,
-})
-```
-
-### Response Handling (Compatible ✅)
-```typescript
-// Both libraries return the same response structure
-const response = await httpService.get('/api/data').toPromise();
-console.log(response.data);    // ✅ Works the same
-console.log(response.status);  // ✅ Works the same
-console.log(response.headers); // ✅ Works the same
-```
-
-### Interceptors (Both APIs Supported! ✅)
-```typescript
-// Option 1: Use axios-style interceptors
-httpService.axiosRef.interceptors.request.use((config) => {
-  config.headers['Authorization'] = 'Bearer token';
-  return config;
-});
-
-// Option 2: Use undici-style interceptors (more control)
-httpService.addInterceptor((request, next) => {
-  const updatedRequest = {
-    ...request,
-    options: {
-      ...request.options,
-      headers: {
-        ...request.options.headers,
-        'Authorization': 'Bearer token',
-      },
-    },
-  };
-  return next.handle(updatedRequest);
-});
-
-// Both APIs can be used together!
-```
-
-### Configuration Options (Automatically Mapped! ✅)
-```typescript
-// This axios configuration now works directly!
-HttpModule.register({
-  httpAgent: new http.Agent({ keepAlive: true }),
-  httpsAgent: new https.Agent({ keepAlive: true }),
-  maxRedirects: 5,  // Automatically mapped to maxRedirections
-  baseURL: 'https://api.example.com',
-  auth: { username: 'user', password: 'pass' },
-  // ... other axios options
-});
-```
-
-The library automatically:
-- Detects axios-style configuration options
-- Maps them to undici equivalents where possible
-- Logs warnings for unsupported features
-- Converts transformRequest/transformResponse to interceptors
-
-See the [migration example](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts) and [enhanced compatibility demo](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/enhanced-axios-compatibility.ts) for detailed patterns.
-
-## Available Options
-
-All options from [@nodejs/undici](https://github.com/nodejs/undici) are supported, including:
-
-- `timeout`: Request timeout in milliseconds
-- `headers`: Default headers for all requests
-- `bodyTimeout`: Body timeout in milliseconds
-- `headersTimeout`: Headers timeout in milliseconds
-- `keepAliveTimeout`: Keep-alive timeout
-- `maxRedirections`: Maximum number of redirects to follow
-- `interceptors`: Array of interceptors (specific to this fork)
-
-## Type-Safe Module
-
-For better TypeScript support, you can also use `TypedHttpModule`:
-
-```typescript
-import { TypedHttpModule } from 'nestjs-axios-undici';
-
-@Module({
-  imports: [
-    TypedHttpModule.register({
-      // Same options as HttpModule
-    }),
+  interceptors: [
+    (request, next) => next.handle(request), // function interceptor
+    LoggingInterceptor,                      // class implementing HttpInterceptor
   ],
-})
-export class AppModule {}
+});
 ```
 
-This provides enhanced type inference for response data.
+- In `register()`, classes are instantiated by Nest inside `HttpModule`. Their constructor dependencies must be available there (for example from a `@Global()` module); providers of your own module are not visible to it.
+- In `registerAsync()`, only functions are used.
+
+See [Interceptors](/docs/guides/interceptors.md) for writing interceptors and for interceptors that inject other providers.
+
+## `TypedHttpModule`
+
+`TypedHttpModule.register(options)` behaves like `HttpModule.register(options)`. The returned module also carries a type-only marker, which `ExtractHttpServiceType<typeof module>` resolves to `HttpService`.
