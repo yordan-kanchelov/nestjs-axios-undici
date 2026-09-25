@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The one test run on main (Coverage and Example Tests run on pull requests)
+      # The one test run on main (the Tests workflow runs on pull requests)
       - name: Lint and test
         run: npm run lint && npm run typecheck && npm run test:cov
 
@@ -67,11 +67,8 @@ jobs:
           createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only needed until npm trusted publishing is configured for this
-          # package (it can only be set up once the package exists on npm).
-          # With trusted publishing set up, npm authenticates via OIDC and this
-          # secret can be deleted.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No npm token: npm authenticates with trusted publishing (OIDC,
+          # `id-token: write`), configured on npmjs.com for this workflow.
 
       - name: Release summary
         if: steps.changesets.outputs.published == 'true'
