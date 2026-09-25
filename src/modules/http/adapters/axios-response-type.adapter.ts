@@ -216,7 +216,9 @@ export async function readDefaultBody(
   }
 
   const text = await readText(body, options);
-  assertMaxContentLength(Buffer.byteLength(text), options.maxContentLength);
+  if (options.maxContentLength) {
+    assertMaxContentLength(Buffer.byteLength(text), options.maxContentLength);
+  }
   return kind === 'json' ? parseJsonOrText(text) : parseTextMaybeJson(text);
 }
 
@@ -254,6 +256,8 @@ export async function readBodyAsResponseType(
   }
 
   const text = await readText(body, options);
-  assertMaxContentLength(Buffer.byteLength(text), maxContentLength);
+  if (maxContentLength) {
+    assertMaxContentLength(Buffer.byteLength(text), maxContentLength);
+  }
   return responseType === 'json' ? parseJsonOrText(text) : text;
 }

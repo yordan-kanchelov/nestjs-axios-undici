@@ -121,8 +121,13 @@ export async function toAxiosLikeResponse(
       parsedData = '';
     }
   } catch (error) {
-    // If it's a size limit error, re-throw it
-    if ((error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED') {
+    // Size-limit errors, and failures after the body was read (for example
+    // corrupt gzip/br/deflate data), reject like axios does: the body can't be
+    // read again, so falling back would silently return empty data.
+    if (
+      (error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED' ||
+      (undiciResponse.body as any)?.bodyUsed
+    ) {
       throw error;
     }
 
