@@ -5,6 +5,7 @@ import {
   interceptors as undiciInterceptors,
   ProxyAgent,
   Agent as UndiciAgent,
+  Dispatcher as UndiciDispatcher,
 } from 'undici';
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
@@ -39,6 +40,23 @@ import {
 } from '../adapters/axios-request.adapter';
 import { toAxiosLikeResponse } from '../adapters/axios-response.adapter';
 import { toAxiosError } from '../errors/axios-error';
+
+let fallbackAgent: UndiciAgent | undefined;
+
+/**
+ * The global dispatcher, when it comes from this copy of undici. Another copy
+ * (such as the undici bundled with Node.js 22, which installs itself as the
+ * global dispatcher when anything reads the global `fetch` first) can't run
+ * this copy's interceptors, so a shared Agent from this copy is used instead.
+ */
+function compatibleGlobalDispatcher(): Dispatcher {
+  const globalDispatcher = getGlobalDispatcher();
+  if (globalDispatcher instanceof UndiciDispatcher) {
+    return globalDispatcher;
+  }
+  fallbackAgent ??= new UndiciAgent();
+  return fallbackAgent;
+}
 
 @Injectable()
 export class HttpService {
@@ -247,7 +265,7 @@ export class HttpService {
       return { dispatcher };
     }
 
-    const base = dispatcher || getGlobalDispatcher();
+    const base = dispatcher || compatibleGlobalDispatcher();
     if (
       typeof undiciInterceptors?.redirect !== 'function' ||
       typeof base.compose !== 'function'

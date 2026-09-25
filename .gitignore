@@ -3,7 +3,6 @@ node_modules
 
 # IDE
 /.idea
-/.awcache
 /.vscode
 
 # misc
@@ -11,20 +10,13 @@ npm-debug.log
 .DS_Store
 
 # tests
-/test
 /coverage
-/.nyc_output
 
-# lib
+# build output
 /lib
-
-# build artifacts
 *.tsbuildinfo
-examples/interceptor-demo/dist/
-examples/**/*.js
-examples/**/dist
-!scripts/*.js
+examples/dist
 
-# enviroment
+# environment
 .env
 *.env*

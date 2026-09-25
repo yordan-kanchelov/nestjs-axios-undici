@@ -6,9 +6,22 @@ import {
   HttpModuleOptionsFactory,
 } from '../http-module.interface';
 
-import { HttpModuleOptionsFactoryImplMock } from '../../../../shared/mocks/createHttpOptions.mock';
-
 import type { HttpModuleOptions } from '../../types';
+
+class HttpModuleOptionsFactoryImplMock implements HttpModuleOptionsFactory {
+  createHttpOptions(): Promise<HttpModuleOptions> | HttpModuleOptions {
+    return {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      method: 'GET',
+      path: '/',
+      protocol: 'http',
+      hostname: 'localhost',
+      port: 3000,
+    };
+  }
+}
 
 describe('http-module.interface', () => {
   describe('HttpModuleOptionsFactory', () => {

@@ -1,0 +1,2228 @@
+{
+  "apps/mock-service": {
+    "root": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets": [
+      "apps/mock-service/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/mock-service/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "name": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.executor": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.outputs": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.defaultConfiguration": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.platform": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.outputPath": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.format": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.bundle": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.main": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.tsConfig": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.assets": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.esbuildOptions": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.production": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.production.esbuildOptions": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/mock-service/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.dependsOn": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.inputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/nestjs-express-axios": {
+    "root": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-express-axios/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-express-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-express-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-express-axios/package.json",
+      "nx/core/package-json"
+    ]
+  },
+  "apps/nestjs-express-axios-interceptor": {
+    "root": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-express-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-express-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-express-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ]
+  },
+  "apps/nestjs-fastify-axios": {
+    "root": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-fastify-axios/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-fastify-axios/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-fastify-axios/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-fastify-axios/package.json",
+      "nx/core/package-json"
+    ]
+  },
+  "apps/nestjs-fastify-axios-interceptor": {
+    "root": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-fastify-axios-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-fastify-axios-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-fastify-axios-interceptor/package.json",
+      "nx/core/package-json"
+    ]
+  },
+  "apps/nestjs-fastify-undici": {
+    "root": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-fastify-undici/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-fastify-undici/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-fastify-undici/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-fastify-undici/package.json",
+      "nx/core/package-json"
+    ]
+  },
+  "apps/nestjs-fastify-undici-interceptor": {
+    "root": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "projectType": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.app.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.dependsOn": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.cache": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.inputs": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.outputs": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.syncGenerators": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.executor": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.cwd": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.options.command": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.description": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.command": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.typecheck.metadata.help.example": [
+      "apps/nestjs-fastify-undici-interceptor/tsconfig.json",
+      "@nx/js/typescript"
+    ],
+    "targets.build": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.cache": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.dependsOn": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.inputs": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.outputs": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.executor": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.cwd": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.options.args": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.options.command": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.metadata.technologies": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.description": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.command": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build.metadata.help.example": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.continuous": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.executor": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.cwd": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.args": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.options.command": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.technologies.0": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.description": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.command": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.preview.metadata.help.example": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.build-deps.dependsOn": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.continuous": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.dependsOn": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.executor": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "targets.watch-deps.options.command": [
+      "apps/nestjs-fastify-undici-interceptor/webpack.config.js",
+      "@nx/webpack/plugin"
+    ],
+    "name": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "tags.npm:private": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.targetGroups": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.packageName": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "metadata.js.isInPackageManagerWorkspaces": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.build.configurations.development.args": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.continuous": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.executor": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.defaultConfiguration": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.dependsOn": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.options.runBuildTargetDependencies": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.development.buildTarget": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ],
+    "targets.serve.configurations.production.buildTarget": [
+      "apps/nestjs-fastify-undici-interceptor/package.json",
+      "nx/core/package-json"
+    ]
+  }
+}

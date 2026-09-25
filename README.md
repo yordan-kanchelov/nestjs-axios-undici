@@ -4,8 +4,8 @@
 
 [![npm version](https://img.shields.io/npm/v/nestjs-axios-undici.svg)](https://www.npmjs.com/package/nestjs-axios-undici)
 [![Benchmarks](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/benchmarks.yml)
-[![Tests](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/coverage.yml/badge.svg)](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/coverage.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/release.yml/badge.svg)](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/LICENSE)
 
 📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-axios-undici/)** · 📊 **[Benchmarks](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks)** · 🔁 **[Migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide)** · ✨ **[Features](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/features)**
 
@@ -13,7 +13,7 @@
 
 `@nestjs/axios` is the default way to make HTTP calls in NestJS, and axios is not built for throughput. Undici is Node.js's own HTTP client: it keeps connections alive and pools them by default, and it does less work per request. This package gives you Undici without rewriting your services.
 
-- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The benchmarks run in CI on every change; see the [results](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
+- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The full benchmark runs in CI for every release and a performance regression check runs on every pull request; see the [results](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
 - 🔁 **Drop-in replacement.** Same `HttpModule` / `HttpService`, same `register` / `registerAsync` options, same `get` / `post` / `put` / `patch` / `delete` methods and `request(config)`, the same response shape (`data`, `status`, `headers`) and the same errors (`isAxiosError`, `error.response`, `error.code`). A 65-test compatibility matrix runs every case against real `@nestjs/axios`.
 - 🧩 **Interceptors, two ways.** Keep your `httpService.axiosRef.interceptors.request.use(...)` code, or use native interceptors: functions or injectable classes that wrap every request.
 - 🪶 **No axios dependency.** Requests go straight through Undici.
@@ -132,7 +132,7 @@ More in [Interceptors](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/
 
 ## Contributing
 
-Contributions are welcome. Run `npm test` (unit, e2e and examples) before opening a pull request, and add a changeset (`npx changeset`) describing any change to the published package. Releases are cut automatically from the changesets; see [CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome. Run `npm test` (unit, e2e and examples) before opening a pull request, and add a changeset (`npx changeset`) describing any change to the published package. Releases are cut automatically from the changesets; see [CHANGELOG.md](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/CHANGELOG.md).
 
 ## Credits
 
@@ -140,4 +140,4 @@ This project started as a fork of [nestjs-undici](https://github.com/hebertcisco
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/LICENSE)

@@ -1,10 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpModule, HttpService } from '../../src';
 import { firstValueFrom } from 'rxjs';
+import { closedPortUrl, JsonServer, startJsonServer } from '../test-helpers/json-server';
 
 describe('HttpService with Interceptors (e2e)', () => {
     let service: HttpService;
     let interceptorCalls: string[] = [];
+    let server: JsonServer;
+    let postUrl: string;
+    let unreachableUrl: string;
+
+    beforeAll(async () => {
+        server = await startJsonServer();
+        postUrl = `${server.baseUrl}/posts/1`;
+        unreachableUrl = await closedPortUrl();
+    });
+
+    afterAll(() => server.close());
 
     beforeEach(() => {
         interceptorCalls = [];
@@ -46,7 +58,7 @@ describe('HttpService with Interceptors (e2e)', () => {
         });
 
         it('should execute interceptors in order', async () => {
-            const result = service.request('https://jsonplaceholder.typicode.com/posts/1', {
+            const result = service.request(postUrl, {
                 method: 'GET',
             });
 
@@ -91,7 +103,7 @@ describe('HttpService with Interceptors (e2e)', () => {
             expect(service.interceptorCount).toBe(3);
 
             // Make request
-            const result = service.request('https://jsonplaceholder.typicode.com/posts/1');
+            const result = service.request(postUrl);
             const response = await firstValueFrom(result);
 
             expect(response.status).toBe(200);
@@ -110,7 +122,7 @@ describe('HttpService with Interceptors (e2e)', () => {
                                 // Modify URL to cause an error
                                 const errorRequest = {
                                     ...request,
-                                    url: 'https://invalid-domain-that-does-not-exist.com',
+                                    url: unreachableUrl,
                                 };
                                 return next.handle(errorRequest);
                             },
@@ -123,9 +135,9 @@ describe('HttpService with Interceptors (e2e)', () => {
         });
 
         it('should handle errors in interceptor chain', async () => {
-            const result = service.request('https://jsonplaceholder.typicode.com/posts/1');
+            const result = service.request(postUrl);
 
-            await expect(firstValueFrom(result)).rejects.toThrow();
+            await expect(firstValueFrom(result)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
             expect(interceptorCalls).toContain('error-interceptor');
         });
     });

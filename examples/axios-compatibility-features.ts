@@ -9,6 +9,9 @@ import { Module, Injectable, OnModuleInit } from '@nestjs/common';
 import { HttpModule, HttpService, AxiosHeaders } from '../lib';
 import { firstValueFrom } from 'rxjs';
 
+// `npm run test:examples` points this at a local echo server
+const API = process.env.EXAMPLES_BASE_URL ?? 'https://jsonplaceholder.typicode.com';
+
 // ===== 2. Using Axios-Style Interceptors =====
 
 @Injectable()
@@ -90,7 +93,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     try {
       // All responses have the axios structure
       const response = await firstValueFrom(
-        this.httpService.get('https://jsonplaceholder.typicode.com/posts/1')
+        this.httpService.get(`${API}/posts/1`)
       );
 
       console.log('Axios-compatible response properties:');
@@ -150,7 +153,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
 
     // Use in request
     const response = await firstValueFrom(
-      this.httpService.post('https://httpbin.org/post',
+      this.httpService.post(`${API}/posts`,
         { test: 'data' },
         { headers: headers.toJSON() as any }
       )
@@ -165,7 +168,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     // Note: transformRequest/transformResponse are handled via interceptors
     // This example shows how to achieve the same result
     const response = await firstValueFrom(
-      this.httpService.post('https://httpbin.org/post',
+      this.httpService.post(`${API}/posts`,
         { name: 'John', age: 30, transformed: true },
         {
           headers: {
@@ -188,7 +191,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
   // ===== 6. All HTTP Methods with Axios Signature =====
 
   async demonstrateHttpMethods() {
-    const baseURL = 'https://jsonplaceholder.typicode.com';
+    const baseURL = API;
 
     // GET request
     const getResponse = await firstValueFrom(
@@ -237,7 +240,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     formData.append('field2', 'value2');
 
     const postFormResponse = await firstValueFrom(
-      this.httpService.postForm('https://httpbin.org/post', formData)
+      this.httpService.postForm(`${API}/posts`, formData)
     );
 
     return {
@@ -259,7 +262,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     HttpModule.register({
       // All these axios options are automatically detected and mapped!
       timeout: 30000,              // Mapped to headersTimeout & bodyTimeout (30 seconds)
-      maxRedirects: 5,           // Mapped to maxRedirections
+      maxRedirects: 5,           // Follows up to 5 redirects (undici redirect interceptor)
       validateStatus: (status) => status < 500,  // Works exactly like axios
 
       // Request/response size limits (enforced via interceptors)

@@ -1,4 +1,4 @@
-# What's New in This Fork
+# Features
 
 `nestjs-axios-undici` (previously `nestjs-undici-interceptors`) gives you the `@nestjs/axios` API on top of Undici. It started as a fork of [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) and adds what you need to replace `@nestjs/axios`: interceptors, axios-compatible responses and errors, and axios-style configuration. It tracks upstream, most recently merged at upstream v0.2.60.
 
@@ -36,7 +36,7 @@ const authInterceptor: HttpInterceptorFunction = (request, next) => {
   return next.handle(request);
 };
 
-// Class-based (resolved through Nest DI)
+// Class-based (instantiated by Nest)
 @Injectable()
 export class LoggingInterceptor implements HttpInterceptor {
   intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler) {
@@ -50,7 +50,7 @@ export class LoggingInterceptor implements HttpInterceptor {
 HttpModule.register({ interceptors: [authInterceptor, LoggingInterceptor] });
 ```
 
-Interceptors can also be added at runtime with `httpService.addInterceptor(...)`. See [Interceptors](/docs/guides/interceptors.md) and [Interceptor Patterns](/docs/interceptor-patterns.md).
+Interceptors can also be added at runtime with `httpService.addInterceptor(...)`. See [Interceptors](/docs/guides/interceptors.md), including how to use interceptors that inject other providers.
 
 ## Axios-style Interceptor API
 
@@ -90,23 +90,7 @@ JSON is parsed only for JSON content types, and unknown binary content types are
 
 ## Axios Configuration Auto-mapping
 
-`HttpModule.register()` and `HttpModule.registerAsync()` detect axios options and map them to Undici equivalents:
-
-| Axios option | Undici behaviour |
-|--------------|------------------|
-| `baseURL` | Joined with relative request URLs like axios (a path prefix is kept) |
-| `headers`, `auth`, `params`, `paramsSerializer`, `responseType` | Applied to every request |
-| `timeout` | `headersTimeout` + `bodyTimeout` (about 1s resolution) |
-| `maxRedirects` | Undici redirect interceptor (works on undici 7.x). Redirects are not followed unless it is set |
-| `httpAgent` / `httpsAgent` | Undici `Agent` connection options |
-| `proxy` | Undici `ProxyAgent` (with auth) |
-| `withCredentials` | Cookie jar via `http-cookie-agent` |
-| `maxBodyLength` / `maxContentLength` | Size-limit interceptor |
-| `auth` | `Authorization: Basic ...` header |
-| `validateStatus` | Applied when the response is adapted |
-| `transformRequest`, `transformResponse` | Applied in the interceptor chain, on the serialized request body and the parsed response data |
-
-`decompress` and `socketPath` are not supported. Details and the full compatibility matrix: [Axios Compatibility](/docs/axios-supported-options.md).
+`HttpModule.register()` and `HttpModule.registerAsync()` detect axios options (`baseURL`, `timeout`, `maxRedirects`, `auth`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`, ...) and map them to Undici equivalents. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for the full list and the differences from axios.
 
 ## Migrating from @nestjs/axios
 

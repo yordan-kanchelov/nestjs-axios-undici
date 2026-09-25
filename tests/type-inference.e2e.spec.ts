@@ -3,9 +3,19 @@ import { Injectable, Inject } from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 import { lastValueFrom, Observable } from 'rxjs';
 import type { AxiosLikeResponse } from '../src/modules/http/interfaces';
-import type { Dispatcher } from 'undici';
+import { JsonServer, startJsonServer } from './test-helpers/json-server';
 
 describe('Type Inference Patterns E2E', () => {
+  let server: JsonServer;
+  let postUrl: string;
+
+  beforeAll(async () => {
+    server = await startJsonServer();
+    postUrl = `${server.baseUrl}/posts/1`;
+  });
+
+  afterAll(() => server.close());
+
   describe('Standard HttpService (axios-compatible by default)', () => {
     @Injectable()
     class StandardTestService {
@@ -13,7 +23,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number; title: string }>(postUrl)
         );
         
         // Response is already AxiosLikeResponse type
@@ -49,7 +59,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number; title: string }>(postUrl)
         );
         
         // TypeScript knows these properties exist
@@ -86,7 +96,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl)
         );
         
         return response.data;
@@ -117,7 +127,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl)
         );
         // Always returns AxiosLikeResponse
         return response.data;
@@ -125,7 +135,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchWithHeaders() {
         const response = await lastValueFrom(
-          this.httpService.get('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get(postUrl)
         );
         return {
           data: response.data,
@@ -159,7 +169,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl)
         );
         return response.data;
       }

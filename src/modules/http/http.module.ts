@@ -3,7 +3,6 @@ import { randomStringGenerator } from '@nestjs/common/utils/random-string-genera
 import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
-import { axiosResponseAdapter } from './interceptors/axios-response-adapter.interceptor';
 import { mapAxiosConfigToUndici, getAxiosCompatibilityWarnings } from './adapters/axios-config.adapter';
 
 import {

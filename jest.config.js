@@ -1,13 +1,13 @@
 module.exports = {
-  setupFiles: ['<rootDir>/jest.setup.js'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
+  // Unit tests live next to the code in src/**/__tests__, e2e tests in tests/
+  roots: ['<rootDir>/src', '<rootDir>/tests'],
   testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.(t|j)s$',
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
-  // benchmarks/ is a separate npm project (see benchmarks/README.md)
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/benchmarks/'],
-  modulePathIgnorePatterns: ['<rootDir>/benchmarks/'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/__tests__/**'],
+  testEnvironment: 'node',
   forceExit: true,
   testTimeout: 10000,
 };

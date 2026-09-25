@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { firstValueFrom } from 'rxjs';
+import { Agent, Dispatcher, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { HttpModule, HttpService } from '../src';
 
 describe('HttpService redirects', () => {
@@ -78,5 +79,36 @@ describe('HttpService redirects', () => {
 
     expect(response.status).toBe(200);
     expect(response.data).toEqual({ path: '/final' });
+  });
+
+  it('follows redirects when the global dispatcher comes from another copy of undici', async () => {
+    // Node.js 22 bundles undici 6. When anything reads the global `fetch` before
+    // this package loads undici, that copy becomes the global dispatcher, and
+    // interceptors from undici 7 can't be composed onto it.
+    const agent = new Agent();
+    const foreignDispatcher = {
+      dispatch: (opts: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) =>
+        agent.dispatch(opts, handler),
+      compose: jest.fn(() => {
+        throw new Error('interceptors from another undici copy are not supported');
+      }),
+      close: () => agent.close(),
+      destroy: () => agent.destroy(),
+    };
+    const previous = getGlobalDispatcher();
+    setGlobalDispatcher(foreignDispatcher as unknown as Dispatcher);
+
+    try {
+      const response = await firstValueFrom(
+        service.request(`${baseUrl}/start`, { maxRedirections: 5 }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({ path: '/final' });
+      expect(foreignDispatcher.compose).not.toHaveBeenCalled();
+    } finally {
+      setGlobalDispatcher(previous);
+      await agent.close();
+    }
   });
 });

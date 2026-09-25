@@ -15,4 +15,4 @@ ENV NODE_ENV=production
 
 EXPOSE 3004
 
-CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-express-axios/tsconfig.app.json", "-r", "tsconfig-paths/register", "apps/nestjs-express-axios/src/main.ts"]
+CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-express-axios/tsconfig.app.json", "apps/nestjs-express-axios/src/main.ts"]
