@@ -1,6 +1,6 @@
 # HttpModule
 
-The `HttpModule` is the main module that provides HTTP client functionality for NestJS applications using the high-performance Undici client. As of v0.4.0+, it always returns axios-compatible responses by default.
+The `HttpModule` is the main module that provides HTTP client functionality for NestJS applications using the high-performance Undici client. It always returns axios-compatible responses.
 
 ## Basic Usage
 
@@ -136,7 +136,7 @@ console.log(response.headers); // ✅ Works the same
 
 ### Interceptors (Both APIs Supported! ✅)
 ```typescript
-// Option 1: Use axios-style interceptors (NEW!)
+// Option 1: Use axios-style interceptors
 httpService.axiosRef.interceptors.request.use((config) => {
   config.headers['Authorization'] = 'Bearer token';
   return config;

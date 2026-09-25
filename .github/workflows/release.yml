@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Changesets needs the full history to build changelogs
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and test
+        run: npm run lint && npm run test:unit
+
+      # Pending changesets -> open/update the "chore: version packages" PR.
+      # No pending changesets and an unpublished version -> publish to npm
+      # (with provenance) and create the GitHub release.
+      - name: Create release pull request or publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run version-packages
+          publish: npm run release
+          commit: 'chore: version packages'
+          title: 'chore: version packages'
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only needed until npm trusted publishing is configured for this
+          # package (it can only be set up once the package exists on npm).
+          # With trusted publishing set up, npm authenticates via OIDC and this
+          # secret can be deleted.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Release summary
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          echo "## Published" >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ steps.changesets.outputs.publishedPackages }}' >> "$GITHUB_STEP_SUMMARY"
