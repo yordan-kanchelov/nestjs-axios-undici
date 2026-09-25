@@ -1003,6 +1003,7 @@ export function buildAxiosConfig(
     cancelToken,
     timeout: input.timeout ?? defaultTimeout,
     maxRedirects,
+    beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
     validateStatus: input.validateStatus ?? instance.validateStatus,
     responseType: input.responseType ?? instance.responseType,
     decompress: input.decompress ?? instance.decompress,
@@ -1085,6 +1086,9 @@ export function serializeAxiosConfig(
   }
   if (config.maxRedirects !== undefined) {
     options.maxRedirections = config.maxRedirects;
+  }
+  if (config.beforeRedirect !== undefined) {
+    options.beforeRedirect = config.beforeRedirect;
   }
   if (config.validateStatus !== undefined) {
     options.validateStatus = config.validateStatus;

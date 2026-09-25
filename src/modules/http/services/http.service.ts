@@ -1,12 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import {
-  request,
-  getGlobalDispatcher,
-  interceptors as undiciInterceptors,
-  ProxyAgent,
-  Agent as UndiciAgent,
-  Dispatcher as UndiciDispatcher,
-} from 'undici';
+import { request, ProxyAgent, Agent as UndiciAgent } from 'undici';
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
@@ -49,8 +42,19 @@ import {
 } from '../adapters/axios-request.adapter';
 import { toAxiosLikeResponse } from '../adapters/axios-response.adapter';
 import { toAxiosError } from '../errors/axios-error';
+import {
+  DEFAULT_MAX_REDIRECTS,
+  buildRedirectHop,
+  createTooManyRedirectsError,
+  dumpRedirectBody,
+  isRedirectResponse,
+  urlToString,
+  type BeforeRedirect,
+  type RedirectHopResult,
+} from '../adapters/redirect.adapter';
 
-let fallbackAgent: UndiciAgent | undefined;
+/** The type `request()` (from `undici`) resolves with. */
+type UndiciResponse = Dispatcher.ResponseData;
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
@@ -149,21 +153,6 @@ function activeAxiosInterceptors<T>(
 }
 
 /**
- * The global dispatcher, when it comes from this copy of undici. Another copy
- * (such as the undici bundled with Node.js 22, which installs itself as the
- * global dispatcher when anything reads the global `fetch` first) can't run
- * this copy's interceptors, so a shared Agent from this copy is used instead.
- */
-function compatibleGlobalDispatcher(): Dispatcher {
-  const globalDispatcher = getGlobalDispatcher();
-  if (globalDispatcher instanceof UndiciDispatcher) {
-    return globalDispatcher;
-  }
-  fallbackAgent ??= new UndiciAgent();
-  return fallbackAgent;
-}
-
-/**
  * The per-request abort signal passed to undici. undici only needs `aborted`,
  * `reason` and a single 'abort' listener, so this is cheaper than an
  * AbortController (no EventTarget) on every request.
@@ -197,10 +186,6 @@ export class HttpService {
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
   private cookieJar?: CookieJar;
-  private redirectDispatchers = new WeakMap<
-    Dispatcher,
-    Map<number, Dispatcher>
-  >();
   // Perf item 2: `createInterceptorHandler` builds a linked list of one
   // handler object per interceptor; that chain never changes shape between
   // requests unless `this.interceptors` itself is replaced or grown, so it's
@@ -493,16 +478,32 @@ export class HttpService {
    * the response to the axios-compatible format (the built-in axios response
    * adapter, applied inline to avoid an extra Observable/operator layer per
    * request).
+   *
+   * Redirects (plan.md phase 2, "follow redirects by default") are handled
+   * manually here, on the response, rather than by composing undici's own
+   * redirect interceptor/dispatcher onto every request: that interceptor
+   * costs 10-20% even on a response that never redirects (see
+   * `plan/reports/axios-compat.md`), and it also needs a dispatcher from
+   * *this* copy of undici to `.compose()` onto - which isn't always the
+   * active global dispatcher (Node.js 22 bundles its own undici, which can
+   * install itself as the global dispatcher first). Re-issuing `request()`
+   * per hop instead works with whatever dispatcher is active, on every
+   * supported Node.js/undici combination, and a non-redirect response pays
+   * only the `statusCode`/`Location` check in `onResponse` below.
    */
   private executeRequest(
     interceptorRequest: HttpInterceptorRequest,
   ): Observable<AxiosLikeResponse> {
     return new Observable<AxiosLikeResponse>(subscriber => {
       // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
-      const { maxRedirections, ...requestOptions } =
-        interceptorRequest.options as typeof interceptorRequest.options & {
-          maxRedirections?: number;
-        };
+      const {
+        maxRedirections,
+        beforeRedirect: requestBeforeRedirect,
+        ...requestOptions
+      } = interceptorRequest.options as typeof interceptorRequest.options & {
+        maxRedirections?: number;
+        beforeRedirect?: BeforeRedirect;
+      };
       const dispatcher =
         this.customDispatcher ||
         requestOptions.dispatcher ||
@@ -517,6 +518,8 @@ export class HttpService {
       // the response (or, for a `stream` response, the headers) has been handed
       // to the subscriber; after that neither the teardown nor the user signal
       // may abort, or a stream body the caller is still reading would break.
+      // It also gates redirect-hop teardown: unsubscribing mid-redirect must
+      // abort the *current* hop, not one already superseded.
       const userSignal = requestOptions.signal as AbortSignal | undefined;
       const abortSignal = new RequestAbortSignal();
       let settled = false;
@@ -534,8 +537,97 @@ export class HttpService {
 
       const options = {
         ...requestOptions,
-        ...this.resolveRedirectOptions(dispatcher, maxRedirections),
+        dispatcher,
         signal: abortSignal as any,
+      };
+
+      const fail = (error: unknown): void => {
+        settled = true;
+        subscriber.error(toAxiosError(error, interceptorRequest));
+      };
+
+      // `currentUrl`/`currentOptions` track the most recent hop, so a
+      // redirect can resolve a relative `Location` and rebuild the request
+      // without re-parsing anything from the original request. `maxRedirects`
+      // is resolved lazily (once) on the first hop that's actually a
+      // redirect - the common, non-redirecting request never touches it.
+      let currentUrl: string | URL | UrlObject = interceptorRequest.url;
+      let currentOptions: Record<string, any> = options;
+      let redirectCount = 0;
+      let maxRedirects: number | undefined;
+
+      const onResponse = (res: UndiciResponse): void => {
+        const location = res.headers.location as string | string[] | undefined;
+        let finalUrl: string | undefined;
+
+        if (isRedirectResponse(res.statusCode, location)) {
+          maxRedirects ??=
+            maxRedirections === undefined || maxRedirections === null
+              ? DEFAULT_MAX_REDIRECTS
+              : maxRedirections;
+
+          // `maxRedirects: 0` matches axios: the 3xx response is returned
+          // as-is and goes through `validateStatus` like any other status.
+          if (maxRedirects !== 0) {
+            redirectCount++;
+            if (redirectCount > maxRedirects) {
+              dumpRedirectBody(res.body).then(() =>
+                fail(createTooManyRedirectsError()),
+              );
+              return;
+            }
+
+            let hop: RedirectHopResult;
+            try {
+              hop = buildRedirectHop({
+                currentUrl: urlToString(currentUrl),
+                location: location!,
+                statusCode: res.statusCode,
+                method: currentOptions.method,
+                headers: currentOptions.headers,
+                body: currentOptions.body,
+                responseHeaders: res.headers as Record<string, any>,
+                beforeRedirect:
+                  requestBeforeRedirect ??
+                  (this.moduleOptions as any)?.beforeRedirect,
+              });
+            } catch (error) {
+              dumpRedirectBody(res.body).then(() => fail(error));
+              return;
+            }
+
+            dumpRedirectBody(res.body).then(() => {
+              currentUrl = hop.url;
+              currentOptions = {
+                ...currentOptions,
+                method: hop.method,
+                headers: hop.headers,
+                body: hop.body,
+              };
+              // A redirect hop runs inside this `.then()`, past the point
+              // rxjs' Observable constructor can catch a synchronous throw
+              // for us (see the comment on the first `request()` call
+              // below), so it's wrapped explicitly.
+              try {
+                request(hop.url, currentOptions as any).then(onResponse, fail);
+              } catch (error) {
+                fail(error);
+              }
+            });
+            return;
+          }
+        } else if (redirectCount > 0) {
+          finalUrl = urlToString(currentUrl);
+        }
+
+        toAxiosLikeResponse(interceptorRequest, res, finalUrl).then(
+          axiosRes => {
+            settled = true;
+            subscriber.next(axiosRes);
+            subscriber.complete();
+          },
+          fail,
+        );
       };
 
       // Perf item 4: one `.then(onFulfilled, onRejected)` registration
@@ -547,20 +639,7 @@ export class HttpService {
       // as `@nestjs/axios` leaves it un-wrapped for the same input - wrapping
       // it in a try/catch here (or an `await`) would route it through
       // `fail`/`toAxiosError` instead, an observable behaviour change.
-      const fail = (error: unknown): void => {
-        settled = true;
-        subscriber.error(toAxiosError(error, interceptorRequest));
-      };
-      request(interceptorRequest.url, options).then(async res => {
-        try {
-          const axiosRes = await toAxiosLikeResponse(interceptorRequest, res);
-          settled = true;
-          subscriber.next(axiosRes);
-          subscriber.complete();
-        } catch (error) {
-          fail(error);
-        }
-      }, fail);
+      request(interceptorRequest.url, options).then(onResponse, fail);
 
       return () => {
         if (!settled) abortSignal.abort();
@@ -568,47 +647,6 @@ export class HttpService {
         if (onUserAbort) userSignal!.removeEventListener('abort', onUserAbort);
       };
     });
-  }
-
-  /**
-   * Undici >= 7 rejects the `maxRedirections` request option and requires the
-   * redirect interceptor instead. Compose it onto the dispatcher when
-   * available (cached per dispatcher), otherwise fall back to the legacy
-   * request option supported by older undici versions.
-   */
-  private resolveRedirectOptions(
-    dispatcher: Dispatcher | undefined,
-    maxRedirections: number | undefined,
-  ): { dispatcher?: Dispatcher; maxRedirections?: number } {
-    if (maxRedirections === undefined || maxRedirections === null) {
-      return { dispatcher };
-    }
-
-    const base = dispatcher || compatibleGlobalDispatcher();
-    if (
-      typeof undiciInterceptors?.redirect !== 'function' ||
-      typeof base.compose !== 'function'
-    ) {
-      return { dispatcher, maxRedirections };
-    }
-
-    // Without redirect handling the 3xx response is returned as-is, which
-    // matches axios' `maxRedirects: 0` behaviour.
-    if (maxRedirections <= 0) {
-      return { dispatcher };
-    }
-
-    let byLimit = this.redirectDispatchers.get(base);
-    if (!byLimit) {
-      byLimit = new Map();
-      this.redirectDispatchers.set(base, byLimit);
-    }
-    let composed = byLimit.get(maxRedirections);
-    if (!composed) {
-      composed = base.compose(undiciInterceptors.redirect({ maxRedirections }));
-      byLimit.set(maxRedirections, composed);
-    }
-    return { dispatcher: composed };
   }
 
   private executeInterceptorChain<T = any>(

@@ -13,6 +13,16 @@ import { createSizeLimitInterceptor } from '../interceptors/size-limit.intercept
 export interface AxiosConfigOptions {
   timeout?: number;
   maxRedirects?: number;
+  /** Same as axios: called before each redirect hop. */
+  beforeRedirect?: (
+    options: Record<string, any>,
+    responseDetails: { headers: Record<string, any>; statusCode: number },
+    requestDetails: {
+      url: string;
+      method: string;
+      headers: Record<string, any>;
+    },
+  ) => void;
   maxBodyLength?: number;
   maxContentLength?: number;
   httpAgent?: Agent;

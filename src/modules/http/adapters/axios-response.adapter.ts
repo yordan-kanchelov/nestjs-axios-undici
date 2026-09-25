@@ -121,6 +121,11 @@ export const STATUS_TEXT_MAP: Record<number, string> = {
 export async function toAxiosLikeResponse(
   request: HttpInterceptorRequest,
   undiciResponse: Dispatcher.ResponseData,
+  // Set only once a redirect was actually followed (see `HttpService.executeRequest`).
+  // Mirrors axios' `response.request.res.responseUrl`, at no cost on a
+  // request that never redirects (the default, shared `request` placeholder
+  // is kept in that case).
+  responseUrl?: string,
 ): Promise<AxiosLikeResponse> {
   // Parse the body based on content type
   const contentType = (undiciResponse.headers['content-type'] as string) || '';
@@ -223,6 +228,9 @@ export async function toAxiosLikeResponse(
     undiciResponse.headers as Record<string, string | string[]>,
     request,
   );
+  if (responseUrl !== undefined) {
+    axiosLikeResponse.request = { res: { responseUrl } };
+  }
 
   // Axios throws errors for 4xx and 5xx status codes by default
   // Unless validateStatus says otherwise

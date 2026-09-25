@@ -33,6 +33,22 @@ export interface AxiosLikeRequestConfig {
   timeout?: number;
   responseType?: 'json' | 'text' | 'stream' | 'arraybuffer' | 'blob';
   maxRedirects?: number;
+  /**
+   * Same as axios: called before each redirect hop with a mutable
+   * `options` object (`protocol`, `hostname`, `port`, `path`, `method`,
+   * `headers`) plus `responseDetails` (the 3xx that triggered the hop) and
+   * `requestDetails` (the request that just ran). Mutations to `options`
+   * are applied to the next hop.
+   */
+  beforeRedirect?: (
+    options: Record<string, any>,
+    responseDetails: { headers: Record<string, any>; statusCode: number },
+    requestDetails: {
+      url: string;
+      method: string;
+      headers: Record<string, any>;
+    },
+  ) => void;
   validateStatus?: ((status: number) => boolean) | null;
   auth?: { username: string; password: string };
   decompress?: boolean;
@@ -107,6 +123,16 @@ export interface AxiosCompatibleRequestOptions extends Omit<
   responseType?: AxiosResponseType;
   validateStatus?: ((status: number) => boolean) | null;
   maxRedirects?: number;
+  /** Same as axios: called before each redirect hop. See `AxiosLikeRequestConfig.beforeRedirect`. */
+  beforeRedirect?: (
+    options: Record<string, any>,
+    responseDetails: { headers: Record<string, any>; statusCode: number },
+    requestDetails: {
+      url: string;
+      method: string;
+      headers: Record<string, any>;
+    },
+  ) => void;
   maxContentLength?: number;
   /** `false` disables response decompression (gzip/br/deflate). Default: decompress. */
   decompress?: boolean;
