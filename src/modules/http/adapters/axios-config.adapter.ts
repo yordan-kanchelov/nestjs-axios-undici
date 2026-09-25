@@ -200,7 +200,11 @@ export function mapAxiosConfigToUndici(
   // `HttpService.setupDispatcher`). Undici's `ProxyAgent` is created lazily
   // there too, so only the resolved `{ uri, token }` is stored here.
   if (axiosConfig.proxy) {
-    const protocol = axiosConfig.proxy.protocol || 'http:';
+    // axios accepts the protocol with or without the trailing colon.
+    const rawProtocol = axiosConfig.proxy.protocol || 'http:';
+    const protocol = rawProtocol.endsWith(':')
+      ? rawProtocol
+      : `${rawProtocol}:`;
     const proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
 
     const proxyOptions: any = {

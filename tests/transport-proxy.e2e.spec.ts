@@ -14,7 +14,9 @@
  * is saved before, and restored after, each test.
  */
 import { createServer, request as httpRequest, Server } from 'node:http';
-import { AddressInfo } from 'node:net';
+import { AddressInfo, connect as netConnect } from 'node:net';
+import { createServer as createHttpsServer } from 'node:https';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, unlinkSync } from 'node:fs';
@@ -42,6 +44,9 @@ describe('HttpService proxy support', () => {
   let proxyHost: string;
   let proxyPort: number;
   let proxied: Array<{ url: string; host?: string }>;
+  let tunnels: string[];
+  let tlsTarget: Server;
+  let tlsTargetUrl: string;
   const modules: TestingModule[] = [];
   const savedEnv: Record<string, string | undefined> = {};
 
@@ -73,7 +78,36 @@ describe('HttpService proxy support', () => {
       );
       req.pipe(upstreamReq);
     });
+    // CONNECT tunnels, as used for an https target.
+    proxy.on('connect', (req, clientSocket, head) => {
+      tunnels.push(req.url!);
+      const [host, port] = req.url!.split(':');
+      const upstream = netConnect(Number(port), host, () => {
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        upstream.write(head);
+        upstream.pipe(clientSocket);
+        clientSocket.pipe(upstream);
+      });
+      upstream.on('error', () => clientSocket.destroy());
+      clientSocket.on('error', () => upstream.destroy());
+    });
     await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve));
+
+    const fixtures = join(__dirname, 'fixtures', 'tls');
+    tlsTarget = createHttpsServer(
+      {
+        cert: readFileSync(join(fixtures, 'server-cert.pem')),
+        key: readFileSync(join(fixtures, 'server-key.pem')),
+      },
+      (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      },
+    ) as unknown as Server;
+    await new Promise<void>(resolve =>
+      tlsTarget.listen(0, '127.0.0.1', resolve),
+    );
+    tlsTargetUrl = `https://127.0.0.1:${(tlsTarget.address() as AddressInfo).port}`;
     const addr = proxy.address() as AddressInfo;
     proxyHost = '127.0.0.1';
     proxyPort = addr.port;
@@ -86,10 +120,13 @@ describe('HttpService proxy support', () => {
     proxy.closeAllConnections();
     await new Promise(resolve => target.close(resolve));
     await new Promise(resolve => proxy.close(resolve));
+    (tlsTarget as any).closeAllConnections?.();
+    await new Promise(resolve => tlsTarget.close(resolve));
   });
 
   beforeEach(() => {
     proxied = [];
+    tunnels = [];
     for (const key of PROXY_ENV_KEYS) {
       savedEnv[key] = process.env[key];
       delete process.env[key];
@@ -161,14 +198,31 @@ describe('HttpService proxy support', () => {
     expect(proxied).toHaveLength(0);
   });
 
-  it('an explicit httpsAgent/httpAgent does not also pick up HTTP_PROXY', async () => {
+  it('an explicit httpsAgent/httpAgent still picks up HTTP_PROXY, as in axios', async () => {
     process.env.HTTP_PROXY = proxyUrl;
     const service = await makeService({
       httpsAgent: new HttpsAgent({ rejectUnauthorized: false }),
     });
     const response = await firstValueFrom(service.get(targetUrl));
     expect(response.status).toBe(200);
-    expect(proxied).toHaveLength(0);
+    expect(proxied).toHaveLength(1);
+  });
+
+  it('httpsAgent TLS options apply to an https target reached through an explicit proxy', async () => {
+    const proxyConfig = { protocol: 'http', host: proxyHost, port: proxyPort };
+    const withTls = await makeService({
+      proxy: proxyConfig,
+      httpsAgent: new HttpsAgent({ rejectUnauthorized: false }),
+    });
+    const response = await firstValueFrom(withTls.get(tlsTargetUrl));
+    expect(response.status).toBe(200);
+    expect(tunnels).toHaveLength(1);
+
+    const withoutTls = await makeService({ proxy: proxyConfig });
+    const error = await firstValueFrom(withoutTls.get(tlsTargetUrl)).catch(
+      e => e,
+    );
+    expect(error.code).toBe('DEPTH_ZERO_SELF_SIGNED_CERT');
   });
 
   it('a module-level socketPath does not also pick up HTTP_PROXY', async () => {

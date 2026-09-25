@@ -107,7 +107,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `transformRequest` / `transformResponse` | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` receives the raw `data`, `transformResponse` receives the raw response body (not yet JSON-parsed). |
 | `httpAgent` / `httpsAgent` | ✅ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts (only when no module/request `timeout` is set). `httpsAgent`'s TLS options (`ca`, `cert`, `key`, `pfx`, `passphrase`, `rejectUnauthorized`, `servername`, `ciphers`, `minVersion`, `maxVersion`) map onto undici's `Agent({ connect: {...} })`. Module-level only - a per-request `httpAgent`/`httpsAgent` is ignored. |
 | `proxy` | ✅ | An explicit `proxy: { host, port, protocol?, auth? }` creates an undici `ProxyAgent`. `proxy: false` disables proxying entirely, including the environment variables below. |
-| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (and lower-case) | ✅ | Read once at module setup via undici's `EnvHttpProxyAgent`, matching axios' own default (`proxy-from-env`) - **only** when no `dispatcher`, `proxy`, `httpAgent`/`httpsAgent` or `socketPath` is configured. This is a behaviour change from earlier versions, which never read these variables: with `HTTP_PROXY` set in the environment, a request to `http://127.0.0.1:...` now goes through that proxy by default unless `NO_PROXY` covers it or `proxy: false` is passed. See the note below. |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (and lower-case) | ✅ | Read once at module setup via undici's `EnvHttpProxyAgent`, matching axios' own default (`proxy-from-env`) - **only** when no `dispatcher`, `proxy` or `socketPath` is configured. As in axios, a custom `httpAgent`/`httpsAgent` doesn't turn this off; its TLS options still apply, including to targets reached through the proxy. This is a behaviour change from earlier versions, which never read these variables: with `HTTP_PROXY` set in the environment, a request to `http://127.0.0.1:...` now goes through that proxy by default unless `NO_PROXY` covers it or `proxy: false` is passed. See the note below. |
 | `withCredentials` | ⚠️ | Enables a cookie jar (`http-cookie-agent` + `tough-cookie`) that stores and resends cookies, which axios does not do in Node.js. |
 | `socketPath` | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Works at module level and per request; the request URL's host is still used for the `Host` header, as in axios. |
 | `httpVersion` | ✅ | `httpVersion: 2` → `Agent({ allowH2: true })`. Module-level only; needs a target that speaks HTTP/2 over TLS (undici has no plaintext HTTP/2). `http2Options` is accepted but has no effect (undici has no per-session HTTP/2 tuning). |
@@ -117,6 +117,8 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 ### Precedence: an explicit `dispatcher` always wins
 
 A `dispatcher` passed directly in module options (`register({ dispatcher })`) is never overridden by `httpAgent`/`httpsAgent`, `socketPath`, `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY` environment variables - none of that mapping runs once a `dispatcher` is set. A per-request `dispatcher` wins over all of those too, including a per-request `socketPath`. Use this to configure undici directly when the axios-shaped options above aren't expressive enough (see [Performance Note](#performance-note)).
+
+A request-level `socketPath` gets its own cached `Agent` per path (at most 32 paths; the oldest is closed to make room), so use a small, fixed set of socket paths.
 
 Dispatchers this module creates (from `httpAgent`/`httpsAgent`/`socketPath`/`proxy`/env-proxy/`httpVersion`) are not yet closed on `app.close()` - see `OnModuleDestroy` in the migration guide's known gaps.
 
@@ -170,7 +172,7 @@ HttpModule.register({
 });
 ```
 
-With no `proxy` (and no `dispatcher`/`httpAgent`/`httpsAgent`/`socketPath`), `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` (case-insensitive) are read once at module setup, matching axios:
+With no `proxy` (and no `dispatcher`/`socketPath`), `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` (case-insensitive) are read once at module setup, matching axios:
 
 ```bash
 HTTP_PROXY=http://proxy.example.com:8080 NO_PROXY=localhost,127.0.0.1,.internal node app.js

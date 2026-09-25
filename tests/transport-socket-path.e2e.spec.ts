@@ -5,7 +5,7 @@
  * (matching axios); the socket itself is a real unix domain socket in the
  * OS temp dir.
  */
-import { createServer, Server } from 'node:http';
+import { Agent as HttpAgent, createServer, Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, unlinkSync } from 'node:fs';
@@ -97,5 +97,24 @@ describe('HttpService socketPath', () => {
     // Agent were built (and, e.g., leaked) per call this would still pass
     // functionally, so this also asserts on the cache directly:
     expect((service as any).socketPathDispatchers?.size).toBe(1);
+  });
+
+  it('a request-level socketPath wins over a module-built dispatcher', async () => {
+    const service = await makeService({
+      httpAgent: new HttpAgent({ keepAlive: true, maxSockets: 4 }),
+    });
+    const response = await firstValueFrom(
+      service.get('http://a.example/override', { socketPath: sockPath } as any),
+    );
+    expect(response.status).toBe(200);
+    expect(response.data.host).toBe('a.example');
+  });
+
+  it('caps the per-path Agent cache', async () => {
+    const service = await makeService({});
+    for (let i = 0; i < 40; i++) {
+      (service as any).getSocketPathDispatcher(socketPath());
+    }
+    expect((service as any).socketPathDispatchers.size).toBe(32);
   });
 });
