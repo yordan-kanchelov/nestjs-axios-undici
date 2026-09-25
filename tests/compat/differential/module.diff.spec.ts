@@ -89,7 +89,6 @@ differential('Differential: HttpModule.register() options', routes, [
         }
       );
     },
-    knownDifference: CONFIG,
   },
   {
     name: 'timeout module-level',

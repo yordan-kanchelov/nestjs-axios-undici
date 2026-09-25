@@ -271,7 +271,6 @@ differential('Differential: response decoding', routes, [
     name: 'server gzips when Accept-Encoding allows (typical CDN)',
     run: (s, ctx) => s.get(`${ctx.base}/negotiate-gzip`),
     normalize: async (o: any) => (await normData(o.result?.data)) ?? null,
-    knownDifference: 'plan.md phase 2: feat: axios default headers',
   },
   {
     name: 'decompress: false',
@@ -286,6 +285,5 @@ differential('Differential: response decoding', routes, [
     name: 'server content negotiation on Accept',
     run: (s, ctx) => s.get(`${ctx.base}/negotiate-accept`),
     normalize: async (o: any) => (await normData(o.result?.data)) ?? null,
-    knownDifference: 'plan.md phase 2: feat: axios default headers',
   },
 ]);

@@ -115,13 +115,17 @@ function interceptorRequestToAxiosConfig(
 ): AxiosLikeRequestConfig {
   const { url, options } = request;
 
-  // Convert headers to AxiosHeaders for better compatibility
-  const axiosHeaders = new AxiosHeaders();
-  if (options.headers && typeof options.headers === 'object') {
-    Object.entries(options.headers).forEach(([key, value]) => {
-      axiosHeaders.set(key, value as string | string[]);
-    });
-  }
+  // Convert headers to AxiosHeaders for better compatibility. Populating
+  // through the constructor (rather than `new AxiosHeaders()` then `.set()`
+  // in a loop) sets each entry before the instance is wrapped in its
+  // bracket-notation Proxy, so it costs one property access instead of one
+  // per header - the default Accept/User-Agent/Accept-Encoding headers mean
+  // every request now has at least 3.
+  const axiosHeaders = new AxiosHeaders(
+    options.headers && typeof options.headers === 'object'
+      ? (options.headers as Record<string, string | string[]>)
+      : undefined,
+  );
 
   return {
     url: typeof url === 'string' ? url : url.toString(),

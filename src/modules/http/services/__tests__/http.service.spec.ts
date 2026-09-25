@@ -73,10 +73,13 @@ describe('HttpService', () => {
         }),
       );
 
-      expect(requestMock).toHaveBeenCalledWith(baseURL, {
-        method: 'GET',
-        signal: expect.objectContaining({ aborted: false }),
-      });
+      expect(requestMock).toHaveBeenCalledWith(
+        baseURL,
+        expect.objectContaining({
+          method: 'GET',
+          signal: expect.objectContaining({ aborted: false }),
+        }),
+      );
     });
 
     it('should reject with an axios-like error on 404 status', async () => {
@@ -153,10 +156,13 @@ describe('HttpService', () => {
           }),
         );
 
-        expect(requestMock).toHaveBeenCalledWith(baseURL, {
-          dispatcher: dispatcherMock,
-          signal: expect.objectContaining({ aborted: false }),
-        });
+        expect(requestMock).toHaveBeenCalledWith(
+          baseURL,
+          expect.objectContaining({
+            dispatcher: dispatcherMock,
+            signal: expect.objectContaining({ aborted: false }),
+          }),
+        );
       });
 
       it('should merge module options with request options', async () => {
@@ -173,14 +179,20 @@ describe('HttpService', () => {
           }),
         );
 
-        expect(requestMock).toHaveBeenCalledWith(baseURL, {
-          dispatcher: dispatcherMock,
-          headers: {
-            authorization: 'Bearer module-token',
-          },
-          method: 'POST',
-          signal: expect.objectContaining({ aborted: false }),
-        });
+        expect(requestMock).toHaveBeenCalledWith(
+          baseURL,
+          expect.objectContaining({
+            dispatcher: dispatcherMock,
+            // The default Accept/User-Agent/Accept-Encoding headers are also
+            // present (see axios-ref.factory.spec.ts); this only asserts the
+            // module header survives the merge.
+            headers: expect.objectContaining({
+              authorization: 'Bearer module-token',
+            }),
+            method: 'POST',
+            signal: expect.objectContaining({ aborted: false }),
+          }),
+        );
       });
 
       it('should allow request options to override module options', async () => {
@@ -197,13 +209,16 @@ describe('HttpService', () => {
           }),
         );
 
-        expect(requestMock).toHaveBeenCalledWith(baseURL, {
-          headers: {
-            authorization: 'Bearer module-token',
-          },
-          method: 'PUT',
-          signal: expect.objectContaining({ aborted: false }),
-        });
+        expect(requestMock).toHaveBeenCalledWith(
+          baseURL,
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              authorization: 'Bearer module-token',
+            }),
+            method: 'PUT',
+            signal: expect.objectContaining({ aborted: false }),
+          }),
+        );
       });
     });
   });

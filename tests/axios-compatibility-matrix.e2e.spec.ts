@@ -638,6 +638,32 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
+    it('default Accept/User-Agent headers can be overridden at runtime, the axios way', async () => {
+      const [a, u] = await both(async s => {
+        const beforeHeaders = (await first(s.get(`${base}/echo`))).data.headers;
+        s.axiosRef.defaults.headers.common['User-Agent'] = 'my-test-agent/9.9';
+        s.axiosRef.defaults.headers.common['Accept'] = 'application/xml';
+        try {
+          const afterHeaders = (await first(s.get(`${base}/echo`))).data
+            .headers;
+          return {
+            hadDefaultsBefore: {
+              accept: !!beforeHeaders.accept,
+              userAgent: !!beforeHeaders['user-agent'],
+            },
+            userAgent: afterHeaders['user-agent'],
+            accept: afterHeaders.accept,
+          };
+        } finally {
+          delete s.axiosRef.defaults.headers.common['User-Agent'];
+          delete s.axiosRef.defaults.headers.common['Accept'];
+        }
+      });
+      expect(u).toEqual(a);
+      expect(u.userAgent).toBe('my-test-agent/9.9');
+      expect(u.accept).toBe('application/xml');
+    });
+
     it('promise methods: get/post/request', async () => {
       const [a, u] = await both(async s => [
         echo(await s.axiosRef.get(`${base}/echo`)),

@@ -66,9 +66,92 @@ describe('axios request adapter', () => {
       );
       expect(options.headers).toEqual({
         'x-module': 'overridden',
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': expect.stringMatching(/^nestjs-axios-undici\/\d/),
+        'Accept-Encoding': 'gzip, deflate, br',
         'X-Common': 'c',
         'X-Get': 'g',
         'X-Flat': 'f',
+      });
+    });
+
+    it('module headers override the axios-style default headers; request headers override module headers', () => {
+      const defaults = createAxiosRefDefaults();
+      const { options: withModuleOverride } = normalizeAxiosRequest(
+        'http://api/x',
+        { method: 'GET' },
+        {
+          defaults,
+          instanceOptions: { headers: { 'User-Agent': 'my-app/1.0' } },
+        },
+      );
+      expect(withModuleOverride.headers).toMatchObject({
+        'User-Agent': 'my-app/1.0',
+      });
+
+      const { options: withRequestOverride } = normalizeAxiosRequest(
+        'http://api/x',
+        { method: 'GET', headers: { 'User-Agent': 'per-request/1.0' } },
+        {
+          defaults,
+          instanceOptions: { headers: { 'User-Agent': 'my-app/1.0' } },
+        },
+      );
+      expect(withRequestOverride.headers).toMatchObject({
+        'User-Agent': 'per-request/1.0',
+      });
+    });
+
+    it('a request header set to null/undefined removes a default, as in axios', () => {
+      const defaults = createAxiosRefDefaults();
+      const { options } = normalizeAxiosRequest(
+        'http://api/x',
+        {
+          method: 'GET',
+          headers: { Accept: null, 'User-Agent': undefined } as any,
+        },
+        { defaults },
+      );
+      expect(options.headers).not.toHaveProperty('Accept');
+      expect(options.headers).not.toHaveProperty('User-Agent');
+    });
+
+    it('flattens axios-style method keys (common/post/...) in module headers, per method', () => {
+      const { options: getOptions } = normalizeAxiosRequest(
+        'http://api/x',
+        { method: 'GET' },
+        {
+          instanceOptions: {
+            headers: {
+              common: { 'X-C': 'c' },
+              post: { 'X-P': 'p' },
+              'X-Flat': 'f',
+            },
+          },
+        },
+      );
+      expect(getOptions.headers).toEqual({ 'X-C': 'c', 'X-Flat': 'f' });
+      expect(getOptions.headers).not.toHaveProperty('common');
+      expect(getOptions.headers).not.toHaveProperty('post');
+
+      const { options: postOptions } = normalizeAxiosRequest(
+        'http://api/x',
+        { method: 'POST' },
+        {
+          instanceOptions: {
+            headers: {
+              common: { 'X-C': 'c' },
+              post: { 'X-P': 'p' },
+              'X-Flat': 'f',
+            },
+          },
+        },
+      );
+      expect(postOptions.headers).toEqual({
+        'X-C': 'c',
+        'X-P': 'p',
+        'X-Flat': 'f',
+        'Content-Type': 'application/x-www-form-urlencoded',
       });
     });
 
