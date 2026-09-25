@@ -281,11 +281,18 @@ export class HttpModule {
     if (options.useExisting || options.useFactory) {
       return [this.createAsyncOptionsProvider(options)];
     }
+    // `createAsyncOptionsProvider` below throws when none of
+    // useFactory/useClass/useExisting is set; this check just narrows
+    // `useClass` for the compiler, since it runs first either way.
+    const useClass = options.useClass;
+    if (!useClass) {
+      return [this.createAsyncOptionsProvider(options)];
+    }
     return [
       this.createAsyncOptionsProvider(options),
       {
-        provide: options.useClass,
-        useClass: options.useClass,
+        provide: useClass,
+        useClass,
       },
     ];
   }

@@ -75,7 +75,7 @@ export interface AxiosConfigOptions {
       }
     | false;
   decompress?: boolean;
-  validateStatus?: (status: number) => boolean;
+  validateStatus?: ((status: number) => boolean) | null;
   baseURL?: string;
   transformRequest?:
     | ((data: any, headers?: any) => any)
@@ -84,7 +84,7 @@ export interface AxiosConfigOptions {
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
   paramsSerializer?: AxiosParamsSerializer;
-  socketPath?: string;
+  socketPath?: string | null;
   responseType?: AxiosResponseType;
   responseEncoding?: string;
   xsrfCookieName?: string;
