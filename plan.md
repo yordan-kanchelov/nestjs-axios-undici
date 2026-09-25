@@ -135,7 +135,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
 - [x] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19, merged.
-- [~] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in. PR #20 open (`claude/fix-transport-options`).
+- [x] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in. PR #20, merged.
 - [ ] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.)
 - [ ] ★ **types: axios interop.**
   - `AxiosRequestConfig` / `AxiosResponse` / `AxiosInstance` assignability and `post<T, D>`.
@@ -252,3 +252,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - The per-path `socketPath` Agent cache is capped at 32, and the oldest is closed.
   - `proxy.protocol` without the trailing colon (`'http'`) works, as in axios.
   - A Jest setup file clears the proxy env vars, so the suite no longer depends on the machine's proxy settings.
+- 2026-09-25: PR #20 merged: transport options (`httpsAgent` TLS, `socketPath`, explicit and env proxies, `httpVersion: 2`), 26 known differences left. CI initially failed on the HTTP/2 test: undici 8 negotiates h2 by default (built dispatchers now set `allowH2` explicitly), and on Node 22 open h2 sessions hung `server.close()` in the test. Note: CodeRabbit skips PRs into `claude/v1.0.0` ("reviews are disabled for this base branch"); the Phase 6 review has to run on master PR #8 into main. Next: withCredentials no-op + cookieJar.
