@@ -415,9 +415,11 @@ function latencyChart(run) {
     // Scroll inside its own box on narrow screens rather than shrinking the text.
     '<div style="overflow-x:auto">',
     `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:560px" role="img" aria-label="Average response time in milliseconds on Node.js ${run.version}, lower is better">`,
+    // The docsify site uses a light theme only, so the chart uses the light palette
+    // regardless of the OS colour scheme (a dark-mode override made the text white
+    // on the white page).
     '<style>',
     '.bench-chart{--ink:#0b0b0b;--ink-2:#52514e;--grid:#e4e3df;--undici:#2a78d6;--axios:#eb6834;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
-    '@media (prefers-color-scheme:dark){.bench-chart{--ink:#fff;--ink-2:#c3c2b7;--grid:#3a3a37;--undici:#3987e5;--axios:#d95926}}',
     '.bench-chart .label{fill:var(--ink)}.bench-chart .value,.bench-chart .tick{fill:var(--ink-2);font-variant-numeric:tabular-nums}',
     '.bench-chart .grid{stroke:var(--grid);stroke-width:1}.bench-chart .undici{fill:var(--undici)}.bench-chart .axios{fill:var(--axios)}',
     '.bench-chart .bar:hover path{opacity:.85}',

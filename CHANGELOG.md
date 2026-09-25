@@ -2,7 +2,7 @@
 
 ## 0.6.0
 
-First release as `nestjs-axios-undici` (previously published as `nestjs-undici-interceptors`). The API is the same; change the import path. See the [migration guide](docs/migration-guide.md#coming-from-nestjs-undici-interceptors).
+First release as `nestjs-axios-undici` (previously published as `nestjs-undici-interceptors`). The API is the same; change the import path. See the [migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide?id=coming-from-nestjs-undici-interceptors).
 
 ### Features
 
@@ -28,5 +28,5 @@ First release as `nestjs-axios-undici` (previously published as `nestjs-undici-i
 
 ### Project
 
-- Benchmarks (k6 + Docker across Node.js 22, 24 and 26, and a pull-request regression check) live in `benchmarks/` and run against the library code of each commit. Results: [benchmarks](docs/benchmarks.md).
+- Benchmarks (k6 + Docker across Node.js 22, 24 and 26, and a pull-request regression check) live in `benchmarks/` and run against the library code of each commit. Results: [benchmarks](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
 - Merged upstream `nestjs-undici` v0.2.60.

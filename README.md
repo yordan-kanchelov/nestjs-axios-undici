@@ -7,13 +7,13 @@
 [![Tests](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/coverage.yml/badge.svg)](https://github.com/yordan-kanchelov/nestjs-axios-undici/actions/workflows/coverage.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-axios-undici/)** · 📊 **[Benchmarks](docs/benchmarks.md)** · 🔁 **[Migration guide](docs/migration-guide.md)** · ✨ **[Features](docs/features.md)**
+📖 **[Documentation](https://yordan-kanchelov.github.io/nestjs-axios-undici/)** · 📊 **[Benchmarks](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks)** · 🔁 **[Migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide)** · ✨ **[Features](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/features)**
 
 ## Why nestjs-axios-undici?
 
 `@nestjs/axios` is the default way to make HTTP calls in NestJS, and axios is not built for throughput. Undici is Node.js's own HTTP client: it keeps connections alive and pools them by default, and it does less work per request. This package gives you Undici without rewriting your services.
 
-- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The benchmarks run in CI on every change; see the [results](docs/benchmarks.md).
+- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The benchmarks run in CI on every change; see the [results](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks).
 - 🔁 **Drop-in replacement.** Same `HttpModule` / `HttpService`, same `register` / `registerAsync` options, same `get` / `post` / `put` / `patch` / `delete` methods and `request(config)`, the same response shape (`data`, `status`, `headers`) and the same errors (`isAxiosError`, `error.response`, `error.code`). A 65-test compatibility matrix runs every case against real `@nestjs/axios`.
 - 🧩 **Interceptors, two ways.** Keep your `httpService.axiosRef.interceptors.request.use(...)` code, or use native interceptors: functions or injectable classes that wrap every request.
 - 🪶 **No axios dependency.** Requests go straight through Undici.
@@ -35,7 +35,7 @@ import { HttpModule, HttpService } from '@nestjs/axios';
 import { HttpModule, HttpService } from 'nestjs-axios-undici';
 ```
 
-Existing calls, axios options and `axiosRef` interceptors keep working. The [migration guide](docs/migration-guide.md) covers the remaining differences.
+Existing calls, axios options and `axiosRef` interceptors keep working. The [migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide) covers the remaining differences.
 
 ## Quick Start
 
@@ -95,7 +95,7 @@ HttpModule.registerAsync({
 });
 ```
 
-See [Configuration](docs/guides/configuration.md) and [Supported Axios Options](docs/axios-supported-options.md).
+See [Configuration](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/configuration) and [Supported Axios Options](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/axios-supported-options).
 
 ## Interceptors
 
@@ -120,15 +120,15 @@ export class LoggingInterceptor implements HttpInterceptor {
 HttpModule.register({ interceptors: [LoggingInterceptor] });
 ```
 
-More in [Interceptors](docs/guides/interceptors.md) and [Interceptor Patterns](docs/interceptor-patterns.md).
+More in [Interceptors](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/interceptors) and [Interceptor Patterns](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/interceptor-patterns).
 
 ## Documentation
 
-- [Features](docs/features.md)
-- [Migration from @nestjs/axios](docs/migration-guide.md)
-- Guides: [Configuration](docs/guides/configuration.md) · [Making Requests](docs/guides/making-requests.md) · [Interceptors](docs/guides/interceptors.md) · [Error Handling](docs/guides/error-handling.md) · [Testing](docs/guides/testing.md)
-- API: [HttpModule](docs/http/http.module.md) · [HttpService](docs/http/http.service.md)
-- [Benchmarks](docs/benchmarks.md) and how to run them: [`benchmarks/`](benchmarks/README.md)
+- [Features](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/features)
+- [Migration from @nestjs/axios](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide)
+- Guides: [Configuration](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/configuration) · [Making Requests](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/making-requests) · [Interceptors](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/interceptors) · [Error Handling](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/error-handling) · [Testing](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/testing)
+- API: [HttpModule](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/http/http.module) · [HttpService](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/http/http.service)
+- [Benchmarks](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks) and how to run them: [`benchmarks/`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks)
 
 ## Contributing
 
