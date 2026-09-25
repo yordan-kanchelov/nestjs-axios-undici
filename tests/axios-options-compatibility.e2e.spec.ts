@@ -12,10 +12,10 @@ describe('Axios Options Compatibility - Fixed', () => {
   let serverPort: number;
 
   // Create a test server that handles all our test cases
-  beforeAll((done) => {
+  beforeAll(async () => {
     server = http.createServer((req, res) => {
       const url = req.url || '';
-      
+
       // Handle different test endpoints
       if (url === '/test') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -28,7 +28,7 @@ describe('Axios Options Compatibility - Fixed', () => {
         res.end('x'.repeat(50)); // 50 bytes
       } else if (url === '/upload' && req.method === 'POST') {
         let body = '';
-        req.on('data', chunk => body += chunk);
+        req.on('data', chunk => (body += chunk));
         req.on('end', () => {
           if (body.length > 100) {
             res.writeHead(413, { 'Content-Type': 'text/plain' });
@@ -39,32 +39,38 @@ describe('Axios Options Compatibility - Fixed', () => {
           }
         });
       } else if (url === '/login') {
-        res.writeHead(200, { 
+        res.writeHead(200, {
           'Content-Type': 'application/json',
-          'Set-Cookie': 'sessionid=abc123; Path=/; Domain=localhost; HttpOnly'
+          'Set-Cookie': 'sessionid=abc123; Path=/; Domain=localhost; HttpOnly',
         });
         res.end(JSON.stringify({ success: true }));
       } else if (url === '/profile') {
         const cookies = req.headers.cookie || '';
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          name: 'John',
-          authenticated: cookies.includes('sessionid=abc123')
-        }));
+        res.end(
+          JSON.stringify({
+            name: 'John',
+            authenticated: cookies.includes('sessionid=abc123'),
+          }),
+        );
       } else {
         res.writeHead(404);
         res.end('Not found');
       }
     });
 
-    server.listen(0, () => {
-      serverPort = (server.address() as any).port;
-      done();
+    await new Promise<void>(resolve => {
+      server.listen(0, () => {
+        serverPort = (server.address() as any).port;
+        resolve();
+      });
     });
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close(err => (err ? reject(err) : resolve()));
+    });
   });
 
   afterEach(async () => {
@@ -95,10 +101,12 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       // Make multiple requests to test connection pooling
-      const promises = Array(3).fill(null).map(() => 
-        lastValueFrom(httpService.get(`http://localhost:${serverPort}/test`))
-      );
-      
+      const promises = Array(3)
+        .fill(null)
+        .map(() =>
+          lastValueFrom(httpService.get(`http://localhost:${serverPort}/test`)),
+        );
+
       const responses = await Promise.all(promises);
 
       // All should succeed
@@ -131,21 +139,23 @@ describe('Axios Options Compatibility - Fixed', () => {
 
     it('should reject responses exceeding maxContentLength', async () => {
       await expect(
-        lastValueFrom(httpService.get(`http://localhost:${serverPort}/large`))
+        lastValueFrom(httpService.get(`http://localhost:${serverPort}/large`)),
       ).rejects.toThrow(/maxContentLength/);
     });
 
     it('should reject requests with body exceeding maxBodyLength', async () => {
       const largeBody = 'x'.repeat(200); // 200 bytes
-      
+
       await expect(
-        lastValueFrom(httpService.post(`http://localhost:${serverPort}/upload`, largeBody))
+        lastValueFrom(
+          httpService.post(`http://localhost:${serverPort}/upload`, largeBody),
+        ),
       ).rejects.toThrow(/maxBodyLength/);
     });
 
     it('should accept responses within limits', async () => {
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/small`)
+        httpService.get(`http://localhost:${serverPort}/small`),
       );
 
       expect(response.data).toBe('x'.repeat(50));
@@ -171,15 +181,15 @@ describe('Axios Options Compatibility - Fixed', () => {
     it('should store and send cookies across requests', async () => {
       // First request sets a cookie
       const loginResponse = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/login`)
+        httpService.get(`http://localhost:${serverPort}/login`),
       );
       expect(loginResponse.data.success).toBe(true);
 
       // Second request should include the cookie
       const profileResponse = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/profile`)
+        httpService.get(`http://localhost:${serverPort}/profile`),
       );
-      
+
       expect(profileResponse.data.name).toBe('John');
       expect(profileResponse.data.authenticated).toBe(true);
     });
@@ -192,7 +202,7 @@ describe('Axios Options Compatibility - Fixed', () => {
           HttpModule.register({
             timeout: 5000,
             maxContentLength: 1000,
-            validateStatus: (status) => status < 400,
+            validateStatus: status => status < 400,
             // Note: Combining httpAgent with withCredentials can cause issues
             // due to how CookieAgent wraps dispatchers
           }),
@@ -204,7 +214,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`)
+        httpService.get(`http://localhost:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });
@@ -227,7 +237,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`)
+        httpService.get(`http://localhost:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });
@@ -250,7 +260,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`)
+        httpService.get(`http://localhost:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });

@@ -37,7 +37,7 @@ export class AxiosError<T = any> extends Error {
   public request?: any;
   public response?: AxiosLikeResponse<T>;
   public status?: number;
-  public cause?: unknown;
+  public override cause?: unknown;
 
   constructor(
     message?: string,
@@ -107,8 +107,17 @@ export class AxiosError<T = any> extends Error {
 export class CanceledError<T = any> extends AxiosError<T> {
   public readonly __CANCEL__ = true;
 
-  constructor(message?: string | null, config?: AxiosLikeRequestConfig, request?: any) {
-    super(message == null ? 'canceled' : message, AxiosError.ERR_CANCELED, config, request);
+  constructor(
+    message?: string | null,
+    config?: AxiosLikeRequestConfig,
+    request?: any,
+  ) {
+    super(
+      message == null ? 'canceled' : message,
+      AxiosError.ERR_CANCELED,
+      config,
+      request,
+    );
     this.name = 'CanceledError';
   }
 }
@@ -116,7 +125,9 @@ export class CanceledError<T = any> extends AxiosError<T> {
 /**
  * Same contract as `axios.isAxiosError()`.
  */
-export function isAxiosError<T = any>(payload: unknown): payload is AxiosError<T> {
+export function isAxiosError<T = any>(
+  payload: unknown,
+): payload is AxiosError<T> {
   return (
     payload !== null &&
     typeof payload === 'object' &&
@@ -176,10 +187,7 @@ export function createStatusError<T = any>(
  * into an axios-compatible error with the same `code` axios would use.
  * Errors that are already axios errors are returned unchanged.
  */
-export function toAxiosError(
-  error: any,
-  request: HttpInterceptorRequest,
-): any {
+export function toAxiosError(error: any, request: HttpInterceptorRequest): any {
   if (isAxiosError(error)) {
     return error;
   }
@@ -206,7 +214,11 @@ export function toAxiosError(
   }
 
   if (error && TIMEOUT_CODES.has(error.code)) {
-    const timeoutError = AxiosError.from(error, AxiosError.ECONNABORTED, config);
+    const timeoutError = AxiosError.from(
+      error,
+      AxiosError.ECONNABORTED,
+      config,
+    );
     timeoutError.name = 'AxiosError';
     timeoutError.message = config.timeout
       ? `timeout of ${config.timeout}ms exceeded`

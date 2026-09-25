@@ -2,45 +2,50 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
+const http = require('http');
 
 const examples = [
-  // Root level examples
   {
     name: 'OpenTelemetry Integration',
     file: 'examples/opentelemetry-integration.ts',
-    type: 'module',
   },
   {
     name: 'Axios Compatibility Features',
     file: 'examples/axios-compatibility-features.ts',
-    type: 'module',
   },
-  {
-    name: 'Axios Headers Example',
-    file: 'examples/axios-headers-example.ts',
-    type: 'module',
-  },
-  // Interceptor demo examples
-  {
-    name: 'Axios Example',
-    file: 'examples/interceptor-demo/src/axios-example.ts',
-    type: 'script',
-    cwd: 'examples/interceptor-demo',
-  },
+  { name: 'Axios Headers Example', file: 'examples/axios-headers-example.ts' },
+  { name: 'Interceptors', file: 'examples/interceptors.ts' },
   {
     name: 'Axios to Undici Migration',
-    file: 'examples/interceptor-demo/src/axios-to-undici-migration.ts',
-    type: 'script',
-    cwd: 'examples/interceptor-demo',
-  },
-  {
-    name: 'Interceptors Example',
-    file: 'examples/interceptor-demo/src/interceptors-example.ts',
-    type: 'script',
-    cwd: 'examples/interceptor-demo',
+    file: 'examples/axios-to-undici-migration.ts',
   },
 ];
+
+// Local stand-in for the example APIs, so the run doesn't depend on external hosts.
+// Echoes the request back as JSON, like jsonplaceholder/httpbin.
+function startEchoServer() {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => (body += chunk));
+    req.on('end', () => {
+      const id = Number((req.url.match(/\/posts\/(\d+)/) || [])[1]) || 101;
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(
+        JSON.stringify({
+          id,
+          title: 'example post',
+          method: req.method,
+          url: req.url,
+          headers: req.headers,
+          body,
+        }),
+      );
+    });
+  });
+  return new Promise(resolve => {
+    server.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}
 
 let passed = 0;
 let failed = 0;
@@ -48,7 +53,7 @@ const results = [];
 
 console.log('🧪 Running examples as tests...\n');
 
-async function runExample(example) {
+async function runExample(example, baseUrl) {
   return new Promise(resolve => {
     console.log(`📋 Running: ${example.name}`);
 
@@ -56,24 +61,18 @@ async function runExample(example) {
     let output = '';
     let errorOutput = '';
 
-    // Determine the command based on example type
-    let command, args, options;
-
-    if (example.type === 'module') {
-      // For module examples, we need to compile and run
-      command = 'npx';
-      args = ['ts-node', '--project', 'examples/tsconfig.json', example.file];
-      options = { cwd: path.resolve(__dirname, '..') };
-    } else {
-      // For script examples in interceptor-demo
-      command = 'npx';
-      args = ['ts-node', path.basename(example.file)];
-      options = { cwd: path.resolve(__dirname, '..', example.cwd, 'src') };
-    }
+    const command = 'npx';
+    const args = [
+      'ts-node',
+      '--project',
+      'examples/tsconfig.json',
+      example.file,
+    ];
+    const options = { cwd: path.resolve(__dirname, '..') };
 
     const child = spawn(command, args, {
       ...options,
-      env: { ...process.env, NODE_ENV: 'test' },
+      env: { ...process.env, NODE_ENV: 'test', EXAMPLES_BASE_URL: baseUrl },
       // Own process group, so a timeout can stop npx and the example it runs
       detached: true,
     });
@@ -144,25 +143,14 @@ async function runExample(example) {
 }
 
 async function runAllExamples() {
-  // Check if examples are set up
-  const interceptorDemoNodeModules = path.join(
-    __dirname,
-    '..',
-    'examples',
-    'interceptor-demo',
-    'node_modules',
-  );
-  if (!fs.existsSync(interceptorDemoNodeModules)) {
-    console.error(
-      '❌ Examples not set up. Please run: npm run setup:examples\n',
-    );
-    process.exit(1);
-  }
+  const server = await startEchoServer();
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   // Run examples sequentially
   for (const example of examples) {
-    await runExample(example);
+    await runExample(example, baseUrl);
   }
+  server.close();
 
   // Print summary
   console.log('📊 Test Summary');

@@ -15,7 +15,12 @@ import {
 } from '@nestjs/axios';
 import axios from 'axios';
 import NodeFormData from 'form-data';
-import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import {
+  createServer,
+  IncomingMessage,
+  Server,
+  ServerResponse,
+} from 'node:http';
 import { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { firstValueFrom, lastValueFrom } from 'rxjs';
@@ -38,13 +43,28 @@ type Echo = {
   body: string;
 };
 
-const routes: Record<string, (req: IncomingMessage, res: ServerResponse, body: string) => void> = {
+const routes: Record<
+  string,
+  (req: IncomingMessage, res: ServerResponse, body: string) => void
+> = {
   '/echo': (req, res, body) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'X-Custom-Header': 'Abc' });
-    res.end(JSON.stringify({ url: req.url, method: req.method, headers: req.headers, body }));
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'X-Custom-Header': 'Abc',
+    });
+    res.end(
+      JSON.stringify({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body,
+      }),
+    );
   },
   '/status': (req, res) => {
-    const status = Number(new URL(req.url!, 'http://x').searchParams.get('code'));
+    const status = Number(
+      new URL(req.url!, 'http://x').searchParams.get('code'),
+    );
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(status === 204 ? undefined : JSON.stringify({ status }));
   },
@@ -65,7 +85,10 @@ const routes: Record<string, (req: IncomingMessage, res: ServerResponse, body: s
     res.end('hello');
   },
   '/gzip': (_req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Encoding': 'gzip',
+    });
     res.end(gzipSync(JSON.stringify({ zipped: true })));
   },
   '/redirect': (_req, res) => {
@@ -89,7 +112,10 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
   let undiciService: UndiciHttpService;
 
   const compile = async (imports: any[], providers: any[] = []) => {
-    const module = await Test.createTestingModule({ imports, providers }).compile();
+    const module = await Test.createTestingModule({
+      imports,
+      providers,
+    }).compile();
     modules.push(module);
     return module;
   };
@@ -148,8 +174,12 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-    axiosService = (await compile([AxiosHttpModule.register({})])).get(AxiosHttpService);
-    undiciService = (await compile([UndiciHttpModule.register({})])).get(UndiciHttpService);
+    axiosService = (await compile([AxiosHttpModule.register({})])).get(
+      AxiosHttpService,
+    );
+    undiciService = (await compile([UndiciHttpModule.register({})])).get(
+      UndiciHttpService,
+    );
   });
 
   afterAll(async () => {
@@ -163,32 +193,53 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       const [a, u] = await both(async s =>
         echo(
           await first(
-            s.request({ url: `${base}/echo`, method: 'post', params: { q: 1 }, data: { a: 1 } }),
+            s.request({
+              url: `${base}/echo`,
+              method: 'post',
+              params: { q: 1 },
+              data: { a: 1 },
+            }),
           ),
         ),
       );
       expect(u).toEqual(a);
-      expect(u).toMatchObject({ url: '/echo?q=1', method: 'POST', body: '{"a":1}' });
+      expect(u).toMatchObject({
+        url: '/echo?q=1',
+        method: 'POST',
+        body: '{"a":1}',
+      });
     });
 
     it('request(url, options) keeps working (undici-style call)', async () => {
       const response = await first(
-        undiciService.request<Echo>(`${base}/echo`, { method: 'PUT', body: 'raw' }),
+        undiciService.request<Echo>(`${base}/echo`, {
+          method: 'PUT',
+          body: 'raw',
+        }),
       );
       expect(response.data).toMatchObject({ method: 'PUT', body: 'raw' });
     });
 
     it.each(['get', 'delete', 'head'])('%s(url, config)', async method => {
       const [a, u] = await both(async s => {
-        const response = await first(s[method](`${base}/echo`, { headers: { 'X-A': '1' } }));
-        return { status: response.status, method: method === 'head' ? 'HEAD' : response.data.method };
+        const response = await first(
+          s[method](`${base}/echo`, { headers: { 'X-A': '1' } }),
+        );
+        return {
+          status: response.status,
+          method: method === 'head' ? 'HEAD' : response.data.method,
+        };
       });
       expect(u).toEqual(a);
     });
 
     it.each(['post', 'put', 'patch'])('%s(url, data, config)', async method => {
       const [a, u] = await both(async s =>
-        echo(await first(s[method](`${base}/echo`, { a: 1 }, { headers: { 'X-A': '1' } }))),
+        echo(
+          await first(
+            s[method](`${base}/echo`, { a: 1 }, { headers: { 'X-A': '1' } }),
+          ),
+        ),
       );
       expect(u).toEqual(a);
     });
@@ -214,7 +265,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('documented difference: postForm(url, object) is url-encoded (axios: multipart)', async () => {
-      const response = await firstValueFrom(undiciService.postForm(`${base}/echo`, { a: 1, b: 'x y' }));
+      const response = await firstValueFrom(
+        undiciService.postForm(`${base}/echo`, { a: 1, b: 'x y' }),
+      );
       expect(echo(response)).toMatchObject({
         contentType: 'application/x-www-form-urlencoded',
         body: 'a=1&b=x%20y',
@@ -225,7 +278,16 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
   describe('Request config', () => {
     it.each([
       ['simple', { a: 1, b: 'x y', skipped: undefined, empty: null }],
-      ['arrays, nested objects and dates', { arr: [1, 2], obj: { k: 'v', n: { m: 1 } }, dt: new Date(0), s: 'a:b,c$[]', list: [{ x: 1 }] }],
+      [
+        'arrays, nested objects and dates',
+        {
+          arr: [1, 2],
+          obj: { k: 'v', n: { m: 1 } },
+          dt: new Date(0),
+          s: 'a:b,c$[]',
+          list: [{ x: 1 }],
+        },
+      ],
       ['URLSearchParams', new URLSearchParams({ q: 'x' })],
     ])('params: %s', async (_label, params) => {
       const [a, u] = await both(async s =>
@@ -240,7 +302,11 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ['{ indexes: null }', { indexes: null }],
     ])('paramsSerializer: %s', async (_label, paramsSerializer) => {
       const [a, u] = await both(async s =>
-        echo(await first(s.get(`${base}/echo`, { params: { a: [1, 2] }, paramsSerializer }))),
+        echo(
+          await first(
+            s.get(`${base}/echo`, { params: { a: [1, 2] }, paramsSerializer }),
+          ),
+        ),
       );
       expect(u.url).toBe(a.url);
     });
@@ -258,7 +324,10 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         echo(
           await first(
             s.get(`${base}/echo`, {
-              headers: s === axiosService ? { 'X-A': '1', 'X-B': '2' } : new AxiosHeaders({ 'X-A': '1', 'X-B': '2' }),
+              headers:
+                s === axiosService
+                  ? { 'X-A': '1', 'X-B': '2' }
+                  : new AxiosHeaders({ 'X-A': '1', 'X-B': '2' }),
             }),
           ),
         ),
@@ -268,7 +337,11 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
 
     it('auth becomes a Basic Authorization header', async () => {
       const [a, u] = await both(async s =>
-        echo(await first(s.get(`${base}/echo`, { auth: { username: 'u', password: 'p' } }))),
+        echo(
+          await first(
+            s.get(`${base}/echo`, { auth: { username: 'u', password: 'p' } }),
+          ),
+        ),
       );
       expect(u).toEqual(a);
     });
@@ -278,7 +351,11 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ['string', 'raw=string', undefined],
       ['URLSearchParams', new URLSearchParams({ a: '1', b: '2' }), undefined],
       ['Buffer', Buffer.from('buffer body'), undefined],
-      ['object with urlencoded Content-Type', { a: 1, b: 'x' }, { 'Content-Type': 'application/x-www-form-urlencoded' }],
+      [
+        'object with urlencoded Content-Type',
+        { a: 1, b: 'x' },
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+      ],
     ])('data serialization: %s', async (_label, data, headers) => {
       const [a, u] = await both(async s =>
         echo(await first(s.post(`${base}/echo`, data, { headers }))),
@@ -291,7 +368,10 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         const form = new FormData();
         form.append('k', 'v');
         const result = echo(await first(s.post(`${base}/echo`, form)));
-        return { contentType: result.contentType.split(';')[0], hasField: result.body.includes('name="k"') };
+        return {
+          contentType: result.contentType.split(';')[0],
+          hasField: result.body.includes('name="k"'),
+        };
       });
       expect(u).toEqual(a);
     });
@@ -302,7 +382,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         form.append('k', 'v');
         const result = echo(await first(s.post(`${base}/echo`, form)));
         return {
-          contentType: result.contentType === `multipart/form-data; boundary=${form.getBoundary()}`,
+          contentType:
+            result.contentType ===
+            `multipart/form-data; boundary=${form.getBoundary()}`,
           hasField: result.body.includes('name="k"'),
         };
       });
@@ -311,15 +393,22 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('validateStatus per request', async () => {
-      const [a, u] = await both(async s =>
-        (await first(s.get(`${base}/status?code=404`, { validateStatus: () => true }))).status,
+      const [a, u] = await both(
+        async s =>
+          (
+            await first(
+              s.get(`${base}/status?code=404`, { validateStatus: () => true }),
+            )
+          ).status,
       );
       expect(u).toBe(a);
     });
 
     it('maxRedirects: 0 surfaces the 3xx response', async () => {
       const [a, u] = await both(async s =>
-        describeError(await errorOf(first(s.get(`${base}/redirect`, { maxRedirects: 0 })))),
+        describeError(
+          await errorOf(first(s.get(`${base}/redirect`, { maxRedirects: 0 }))),
+        ),
       );
       expect(u).toEqual(a);
     });
@@ -332,21 +421,33 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('documented difference: redirects are not followed unless maxRedirects is set (axios default: 21)', async () => {
-      const error = await errorOf(firstValueFrom(undiciService.get(`${base}/redirect`)));
+      const error = await errorOf(
+        firstValueFrom(undiciService.get(`${base}/redirect`)),
+      );
       expect(error.response.status).toBe(302);
     });
 
-    it.each(['text', 'arraybuffer', 'json'] as const)('responseType: %s', async responseType => {
-      const [a, u] = await both(async s => {
-        const { data } = await first(s.get(`${base}/text-json`, { responseType }));
-        return { isBuffer: Buffer.isBuffer(data), value: Buffer.isBuffer(data) ? data.toString() : data };
-      });
-      expect(u).toEqual(a);
-    });
+    it.each(['text', 'arraybuffer', 'json'] as const)(
+      'responseType: %s',
+      async responseType => {
+        const [a, u] = await both(async s => {
+          const { data } = await first(
+            s.get(`${base}/text-json`, { responseType }),
+          );
+          return {
+            isBuffer: Buffer.isBuffer(data),
+            value: Buffer.isBuffer(data) ? data.toString() : data,
+          };
+        });
+        expect(u).toEqual(a);
+      },
+    );
 
     it('responseType: stream returns a readable stream', async () => {
       const [a, u] = await both(async s => {
-        const { data } = await first(s.get(`${base}/echo`, { responseType: 'stream' }));
+        const { data } = await first(
+          s.get(`${base}/echo`, { responseType: 'stream' }),
+        );
         let text = '';
         for await (const chunk of data) text += chunk;
         return JSON.parse(text).method;
@@ -358,25 +459,43 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       const [a, u] = await both(async s => {
         const controller = new AbortController();
         setTimeout(() => controller.abort(), 50);
-        return describeError(await errorOf(first(s.get(`${base}/slow`, { signal: controller.signal }))));
+        return describeError(
+          await errorOf(
+            first(s.get(`${base}/slow`, { signal: controller.signal })),
+          ),
+        );
       });
       expect(u).toEqual(a);
-      expect(u).toMatchObject({ code: 'ERR_CANCELED', message: 'canceled', isCancel: true });
+      expect(u).toMatchObject({
+        code: 'ERR_CANCELED',
+        message: 'canceled',
+        isCancel: true,
+      });
     });
 
     it('cancelToken cancels with the cancel message', async () => {
       const [a, u] = await both(async s => {
         const source = axios.CancelToken.source();
         setTimeout(() => source.cancel('stop'), 50);
-        const error = await errorOf(first(s.get(`${base}/slow`, { cancelToken: source.token })));
-        return { code: error.code, message: error.message, isCancel: axios.isCancel(error) };
+        const error = await errorOf(
+          first(s.get(`${base}/slow`, { cancelToken: source.token })),
+        );
+        return {
+          code: error.code,
+          message: error.message,
+          isCancel: axios.isCancel(error),
+        };
       });
       expect(u).toEqual(a);
     });
 
     it('timeout rejects with ECONNABORTED and the axios message', async () => {
-      const error = await errorOf(firstValueFrom(undiciService.get(`${base}/slow`, { timeout: 200 })));
-      const axiosError = await errorOf(firstValueFrom(axiosService.get(`${base}/slow`, { timeout: 200 })));
+      const error = await errorOf(
+        firstValueFrom(undiciService.get(`${base}/slow`, { timeout: 200 })),
+      );
+      const axiosError = await errorOf(
+        firstValueFrom(axiosService.get(`${base}/slow`, { timeout: 200 })),
+      );
       expect(describeError(error)).toEqual(describeError(axiosError));
       expect(error.code).toBe('ECONNABORTED');
       expect(error.message).toBe('timeout of 200ms exceeded');
@@ -402,12 +521,16 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ['empty JSON body => ""', '/empty-json'],
       ['204 => ""', '/status?code=204'],
     ])('data parsing: %s', async (_label, path) => {
-      const [a, u] = await both(async s => (await first(s.get(`${base}${path}`))).data);
+      const [a, u] = await both(
+        async s => (await first(s.get(`${base}${path}`))).data,
+      );
       expect(u).toEqual(a);
     });
 
     it('documented difference: JSON is only parsed for JSON content types (axios parses any string)', async () => {
-      const { data } = await firstValueFrom(undiciService.get(`${base}/text-json`));
+      const { data } = await firstValueFrom(
+        undiciService.get(`${base}/text-json`),
+      );
       expect(data).toBe('{"a":1}');
     });
 
@@ -417,7 +540,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('documented difference: gzip responses are not decompressed', async () => {
-      const [{ data: axiosData }, { data: undiciData }] = await both(s => first(s.get(`${base}/gzip`)));
+      const [{ data: axiosData }, { data: undiciData }] = await both(s =>
+        first(s.get(`${base}/gzip`)),
+      );
       expect(axiosData).toEqual({ zipped: true });
       expect(undiciData).not.toEqual({ zipped: true });
     });
@@ -428,7 +553,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('config exposes url, method and headers', async () => {
-      const response = await firstValueFrom(undiciService.get(`${base}/echo`, { headers: { 'X-A': '1' } }));
+      const response = await firstValueFrom(
+        undiciService.get(`${base}/echo`, { headers: { 'X-A': '1' } }),
+      );
       expect(response.config.url).toBe(`${base}/echo`);
       expect(response.config.method).toBe('GET');
       expect(response.config.headers).toMatchObject({ 'X-A': '1' });
@@ -440,7 +567,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ['4xx => ERR_BAD_REQUEST', '/status?code=404'],
       ['5xx => ERR_BAD_RESPONSE', '/status?code=503'],
     ])('%s', async (_label, path) => {
-      const [a, u] = await both(async s => describeError(await errorOf(first(s.get(`${base}${path}`)))));
+      const [a, u] = await both(async s =>
+        describeError(await errorOf(first(s.get(`${base}${path}`)))),
+      );
       expect(u).toEqual(a);
     });
 
@@ -453,7 +582,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('errors are instances of the exported AxiosError / CanceledError', async () => {
-      const statusError = await errorOf(firstValueFrom(undiciService.get(`${base}/status?code=400`)));
+      const statusError = await errorOf(
+        firstValueFrom(undiciService.get(`${base}/status?code=400`)),
+      );
       expect(statusError).toBeInstanceOf(AxiosError);
       expect(statusError).toBeInstanceOf(Error);
       expect(statusError.name).toBe('AxiosError');
@@ -467,13 +598,19 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
 
       const controller = new AbortController();
       controller.abort();
-      const canceled = await errorOf(firstValueFrom(undiciService.get(`${base}/slow`, { signal: controller.signal })));
+      const canceled = await errorOf(
+        firstValueFrom(
+          undiciService.get(`${base}/slow`, { signal: controller.signal }),
+        ),
+      );
       expect(canceled).toBeInstanceOf(CanceledError);
       expect(isCancel(canceled)).toBe(true);
     });
 
     it('documented difference: not an instance of the axios package AxiosError class', async () => {
-      const error = await errorOf(firstValueFrom(undiciService.get(`${base}/status?code=400`)));
+      const error = await errorOf(
+        firstValueFrom(undiciService.get(`${base}/status?code=400`)),
+      );
       expect(error instanceof axios.AxiosError).toBe(false);
       expect(axios.isAxiosError(error)).toBe(true);
     });
@@ -501,7 +638,13 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       const [a, u] = await both(async s => [
         echo(await s.axiosRef.get(`${base}/echo`)),
         echo(await s.axiosRef.post(`${base}/echo`, { a: 1 })),
-        echo(await s.axiosRef.request({ url: `${base}/echo`, method: 'put', data: 'x' })),
+        echo(
+          await s.axiosRef.request({
+            url: `${base}/echo`,
+            method: 'put',
+            data: 'x',
+          }),
+        ),
       ]);
       expect(u).toEqual(a);
     });
@@ -529,22 +672,37 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('request interceptors keep per-request options (validateStatus, responseType)', async () => {
-      const service = (await compile([UndiciHttpModule.register({})])).get(UndiciHttpService);
+      const service = (await compile([UndiciHttpModule.register({})])).get(
+        UndiciHttpService,
+      );
       service.axiosRef.interceptors.request.use(config => config);
       const response = await first(
-        service.get(`${base}/status?code=404`, { validateStatus: () => true, responseType: 'text' }),
+        service.get(`${base}/status?code=404`, {
+          validateStatus: () => true,
+          responseType: 'text',
+        }),
       );
       expect(response.status).toBe(404);
       expect(response.data).toBe('{"status":404}');
     });
 
     it('documented difference: request interceptors run FIFO (axios: LIFO) and response interceptors LIFO (axios: FIFO)', async () => {
-      const service = (await compile([UndiciHttpModule.register({})])).get(UndiciHttpService);
+      const service = (await compile([UndiciHttpModule.register({})])).get(
+        UndiciHttpService,
+      );
       const order: string[] = [];
-      service.axiosRef.interceptors.request.use(config => (order.push('req1'), config));
-      service.axiosRef.interceptors.request.use(config => (order.push('req2'), config));
-      service.axiosRef.interceptors.response.use(response => (order.push('res1'), response));
-      service.axiosRef.interceptors.response.use(response => (order.push('res2'), response));
+      service.axiosRef.interceptors.request.use(
+        config => (order.push('req1'), config),
+      );
+      service.axiosRef.interceptors.request.use(
+        config => (order.push('req2'), config),
+      );
+      service.axiosRef.interceptors.response.use(
+        response => (order.push('res1'), response),
+      );
+      service.axiosRef.interceptors.response.use(
+        response => (order.push('res2'), response),
+      );
       await firstValueFrom(service.get(`${base}/echo`));
       expect(order).toEqual(['req1', 'req2', 'res2', 'res1']);
     });
@@ -555,9 +713,13 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         res.on('close', () => (finished = res.writableFinished));
         setTimeout(() => res.end('done'), 300);
       });
-      await new Promise<void>(resolve => slowServer.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>(resolve =>
+        slowServer.listen(0, '127.0.0.1', resolve),
+      );
       const url = `http://127.0.0.1:${(slowServer.address() as AddressInfo).port}/`;
-      const subscription = undiciService.get(url).subscribe({ error: () => undefined });
+      const subscription = undiciService
+        .get(url)
+        .subscribe({ error: () => undefined });
       await new Promise(resolve => setTimeout(resolve, 50));
       subscription.unsubscribe();
       await new Promise(resolve => setTimeout(resolve, 400));
@@ -576,13 +738,19 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('register(): baseURL with path, headers merged with per-request headers, auth, params', async () => {
-      const axiosModuleService = (await compile([AxiosHttpModule.register(moduleOptions())])).get(AxiosHttpService);
-      const undiciModuleService = (await compile([UndiciHttpModule.register(moduleOptions())])).get(UndiciHttpService);
+      const axiosModuleService = (
+        await compile([AxiosHttpModule.register(moduleOptions())])
+      ).get(AxiosHttpService);
+      const undiciModuleService = (
+        await compile([UndiciHttpModule.register(moduleOptions())])
+      ).get(UndiciHttpService);
       const call = async (s: any) => [
         echo(await first(s.get('/users', { headers: { 'X-B': 'request' } }))),
         echo(await first(s.post('users', { a: 1 }))),
       ];
-      expect(await call(undiciModuleService)).toEqual(await call(axiosModuleService));
+      expect(await call(undiciModuleService)).toEqual(
+        await call(axiosModuleService),
+      );
     });
 
     it('registerAsync(useFactory) applies axios options (baseURL, headers, timeout)', async () => {
@@ -597,7 +765,9 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         echo(await first(s.get('/users'))),
         (await errorOf(first(s.get(`${base}/slow`)))).code,
       ];
-      expect(await call(undiciModuleService)).toEqual(await call(axiosModuleService));
+      expect(await call(undiciModuleService)).toEqual(
+        await call(axiosModuleService),
+      );
     });
 
     it('registerAsync(useClass / useExisting + extraProviders + global)', async () => {
@@ -619,26 +789,48 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
           }),
         ])
       ).get(UndiciHttpService);
-      expect(echo(await firstValueFrom(withClass.get('/x'))).url).toBe('/echo/from-class/x');
+      expect(echo(await firstValueFrom(withClass.get('/x'))).url).toBe(
+        '/echo/from-class/x',
+      );
 
       const withExisting = (
         await compile([
-          UndiciHttpModule.registerAsync({ imports: [OptionsModule], useExisting: OptionsFactory, global: true }),
+          UndiciHttpModule.registerAsync({
+            imports: [OptionsModule],
+            useExisting: OptionsFactory,
+            global: true,
+          }),
         ])
       ).get(UndiciHttpService);
-      expect(echo(await firstValueFrom(withExisting.get('/y'))).url).toBe('/echo/from-class/y');
-      expect(UndiciHttpModule.registerAsync({ useClass: OptionsFactory, global: true }).global).toBe(true);
+      expect(echo(await firstValueFrom(withExisting.get('/y'))).url).toBe(
+        '/echo/from-class/y',
+      );
+      expect(
+        UndiciHttpModule.registerAsync({
+          useClass: OptionsFactory,
+          global: true,
+        }).global,
+      ).toBe(true);
       expect(UndiciHttpModule.register({ global: true }).global).toBe(true);
     });
 
     it('documented difference: transformRequest/transformResponse see serialized/parsed data (axios: raw data/raw string)', async () => {
       const seen: Record<string, unknown[]> = { axios: [], undici: [] };
       const options = (key: string) => ({
-        transformRequest: [(data: unknown) => (seen[key].push(data), typeof data === 'string' ? data : JSON.stringify(data))],
+        transformRequest: [
+          (data: unknown) => (
+            seen[key].push(data),
+            typeof data === 'string' ? data : JSON.stringify(data)
+          ),
+        ],
         transformResponse: [(data: unknown) => (seen[key].push(data), data)],
       });
-      const axiosModuleService = (await compile([AxiosHttpModule.register(options('axios'))])).get(AxiosHttpService);
-      const undiciModuleService = (await compile([UndiciHttpModule.register(options('undici'))])).get(UndiciHttpService);
+      const axiosModuleService = (
+        await compile([AxiosHttpModule.register(options('axios'))])
+      ).get(AxiosHttpService);
+      const undiciModuleService = (
+        await compile([UndiciHttpModule.register(options('undici'))])
+      ).get(UndiciHttpService);
       await firstValueFrom(axiosModuleService.post(`${base}/echo`, { a: 1 }));
       await firstValueFrom(undiciModuleService.post(`${base}/echo`, { a: 1 }));
       expect(seen.axios[0]).toEqual({ a: 1 });
@@ -648,19 +840,29 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
     });
 
     it('options(url, config) (not available in @nestjs/axios)', async () => {
-      const response = await firstValueFrom(undiciService.options<Echo>(`${base}/echo`));
+      const response = await firstValueFrom(
+        undiciService.options<Echo>(`${base}/echo`),
+      );
       expect(response.data.method).toBe('OPTIONS');
     });
 
     it('HttpModule imported without register()', async () => {
-      const service = (await compile([UndiciHttpModule])).get(UndiciHttpService);
+      const service = (await compile([UndiciHttpModule])).get(
+        UndiciHttpService,
+      );
       const response = await firstValueFrom(service.get<Echo>(`${base}/echo`));
       expect(response.status).toBe(200);
     });
 
     it('maxContentLength keeps the emitted value a response (rxjs map works)', async () => {
-      const service = (await compile([UndiciHttpModule.register({ maxContentLength: 10_000 })])).get(UndiciHttpService);
-      const method = await lastValueFrom(service.get<Echo>(`${base}/echo`).pipe(map(response => response.data.method)));
+      const service = (
+        await compile([UndiciHttpModule.register({ maxContentLength: 10_000 })])
+      ).get(UndiciHttpService);
+      const method = await lastValueFrom(
+        service
+          .get<Echo>(`${base}/echo`)
+          .pipe(map(response => response.data.method)),
+      );
       expect(method).toBe('GET');
     });
   });

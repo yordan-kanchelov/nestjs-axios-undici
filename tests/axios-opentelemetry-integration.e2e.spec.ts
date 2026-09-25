@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpModule, HttpService } from '../src';
+import { AxiosHeaders, HttpModule, HttpService } from '../src';
 import { DynamicModule, Global, Module, OnModuleInit } from '@nestjs/common';
 import { context, propagation } from '@opentelemetry/api';
 import * as http from 'http';
 import * as https from 'https';
+import { firstValueFrom } from 'rxjs';
 
 // Mock OpenTelemetry APIs
 jest.mock('@opentelemetry/api', () => ({
@@ -15,7 +16,7 @@ jest.mock('@opentelemetry/api', () => ({
   },
 }));
 
-export type HttpConfig = {
+type HttpConfig = {
   timeout?: number;
   maxRedirects?: number;
   keepAlive?: boolean;
@@ -26,7 +27,7 @@ export type HttpConfig = {
 
 @Global()
 @Module({})
-export class HttpConfigModule implements OnModuleInit {
+class HttpConfigModule implements OnModuleInit {
   private static httpAgent: http.Agent;
   private static httpsAgent: https.Agent;
 
@@ -160,7 +161,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
   });
 
   describe('OpenTelemetry header injection via axiosRef', () => {
-    it('should inject trace headers using AxiosHeaders.set() method', done => {
+    it('should inject trace headers using AxiosHeaders.set() method', async () => {
       // Setup OpenTelemetry mocks
       const mockContext = { span: 'test-span' };
       (context.active as jest.Mock).mockReturnValue(mockContext);
@@ -173,69 +174,59 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       // Make request with existing headers
-      httpService
-        .get(`http://localhost:${serverPort}/test`, {
+      const response = await firstValueFrom(
+        httpService.get(`http://localhost:${serverPort}/test`, {
           headers: {
             Authorization: 'Bearer my-token',
             'X-Custom-Header': 'custom-value',
           },
-        })
-        .subscribe({
-          next: response => {
-            const receivedHeaders = response.data.headers;
+        }),
+      );
+      const receivedHeaders = response.data.headers;
 
-            // Verify OpenTelemetry headers were injected
-            expect(receivedHeaders['traceparent']).toBe(
-              '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-            );
-            expect(receivedHeaders['tracestate']).toBe(
-              'vendor1=value1,vendor2=value2',
-            );
-            expect(receivedHeaders['baggage']).toBe('key1=value1,key2=value2');
+      // Verify OpenTelemetry headers were injected
+      expect(receivedHeaders['traceparent']).toBe(
+        '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+      );
+      expect(receivedHeaders['tracestate']).toBe(
+        'vendor1=value1,vendor2=value2',
+      );
+      expect(receivedHeaders['baggage']).toBe('key1=value1,key2=value2');
 
-            // Verify original headers are preserved
-            expect(receivedHeaders['authorization']).toBe('Bearer my-token');
-            expect(receivedHeaders['x-custom-header']).toBe('custom-value');
+      // Verify original headers are preserved
+      expect(receivedHeaders['authorization']).toBe('Bearer my-token');
+      expect(receivedHeaders['x-custom-header']).toBe('custom-value');
 
-            // Verify OpenTelemetry APIs were called
-            expect(context.active).toHaveBeenCalled();
-            expect(propagation.inject).toHaveBeenCalledWith(
-              mockContext,
-              expect.any(Object),
-            );
-
-            done();
-          },
-          error: done,
-        });
+      // Verify OpenTelemetry APIs were called
+      expect(context.active).toHaveBeenCalled();
+      expect(propagation.inject).toHaveBeenCalledWith(
+        mockContext,
+        expect.any(Object),
+      );
     });
 
-    it('should handle headers when no existing headers are present', done => {
+    it('should handle headers when no existing headers are present', async () => {
       // Setup OpenTelemetry mocks
       (context.active as jest.Mock).mockReturnValue({});
       (propagation.inject as jest.Mock).mockImplementation((ctx, carrier) => {
         carrier['traceparent'] = '00-trace-span-01';
       });
 
-      httpService
-        .post(`http://localhost:${serverPort}/api/data`, { data: 'test' })
-        .subscribe({
-          next: response => {
-            const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.post(`http://localhost:${serverPort}/api/data`, {
+          data: 'test',
+        }),
+      );
+      const receivedHeaders = response.data.headers;
 
-            // Verify trace header was added
-            expect(receivedHeaders['traceparent']).toBe('00-trace-span-01');
+      // Verify trace header was added
+      expect(receivedHeaders['traceparent']).toBe('00-trace-span-01');
 
-            // Verify content-type header is present (added by post method)
-            expect(receivedHeaders['content-type']).toBe('application/json');
-
-            done();
-          },
-          error: done,
-        });
+      // Verify content-type header is present (added by post method)
+      expect(receivedHeaders['content-type']).toBe('application/json');
     });
 
-    it('should handle multiple interceptor registrations', done => {
+    it('should handle multiple interceptor registrations', async () => {
       let interceptorCallCount = 0;
 
       // Add another interceptor
@@ -256,27 +247,21 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
         carrier['traceparent'] = '00-multi-interceptor-01';
       });
 
-      httpService.get(`http://localhost:${serverPort}/multi`).subscribe({
-        next: response => {
-          const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.get(`http://localhost:${serverPort}/multi`),
+      );
+      const receivedHeaders = response.data.headers;
 
-          // Both interceptors should have run
-          expect(receivedHeaders['traceparent']).toBe(
-            '00-multi-interceptor-01',
-          );
-          expect(receivedHeaders['x-interceptor-count']).toBe('1');
-          expect(interceptorCallCount).toBe(1);
-
-          done();
-        },
-        error: done,
-      });
+      // Both interceptors should have run
+      expect(receivedHeaders['traceparent']).toBe('00-multi-interceptor-01');
+      expect(receivedHeaders['x-interceptor-count']).toBe('1');
+      expect(interceptorCallCount).toBe(1);
     });
 
-    it('should properly handle error scenarios in interceptors', done => {
+    it('should properly handle error scenarios in interceptors', async () => {
       // Add an interceptor that throws an error
       httpService.axiosRef.interceptors.request.use(
-        config => {
+        () => {
           throw new Error('Interceptor error');
         },
         error => {
@@ -285,18 +270,14 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
         },
       );
 
-      httpService.get(`http://localhost:${serverPort}/error-test`).subscribe({
-        next: () => {
-          done(new Error('Should not succeed'));
-        },
-        error: error => {
-          expect(error.message).toContain('Interceptor error');
-          done();
-        },
-      });
+      await expect(
+        firstValueFrom(
+          httpService.get(`http://localhost:${serverPort}/error-test`),
+        ),
+      ).rejects.toThrow('Interceptor error');
     });
 
-    it('should support async interceptors', done => {
+    it('should support async interceptors', async () => {
       // Add async interceptor
       httpService.axiosRef.interceptors.request.use(async config => {
         // Simulate async operation with a small delay
@@ -314,66 +295,47 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
         carrier['traceparent'] = '00-async-test-01';
       });
 
-      httpService.get(`http://localhost:${serverPort}/async`).subscribe({
-        next: response => {
-          const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.get(`http://localhost:${serverPort}/async`),
+      );
+      const receivedHeaders = response.data.headers;
 
-          // Both headers should be present
-          expect(receivedHeaders['traceparent']).toBe('00-async-test-01');
-          expect(receivedHeaders['x-async-header']).toBe('async-value');
-
-          done();
-        },
-        error: done,
-      });
+      // Both headers should be present
+      expect(receivedHeaders['traceparent']).toBe('00-async-test-01');
+      expect(receivedHeaders['x-async-header']).toBe('async-value');
     });
 
-    it('should handle AxiosHeaders instance in config', done => {
-      // Import AxiosHeaders from the source
-      import('../src/modules/http/interfaces/axios-headers')
-        .then(({ AxiosHeaders }) => {
-          // Create AxiosHeaders instance
-          const headers = new AxiosHeaders();
-          headers.set('X-Test', 'test-value');
-          headers.set('Authorization', 'Bearer token');
+    it('should handle AxiosHeaders instance in config', async () => {
+      // Create AxiosHeaders instance
+      const headers = new AxiosHeaders();
+      headers.set('X-Test', 'test-value');
+      headers.set('Authorization', 'Bearer token');
 
-          // Setup OpenTelemetry mocks
-          (context.active as jest.Mock).mockReturnValue({});
-          (propagation.inject as jest.Mock).mockImplementation(
-            (ctx, carrier) => {
-              carrier['traceparent'] = '00-axios-headers-test-01';
-            },
-          );
+      // Setup OpenTelemetry mocks
+      (context.active as jest.Mock).mockReturnValue({});
+      (propagation.inject as jest.Mock).mockImplementation((ctx, carrier) => {
+        carrier['traceparent'] = '00-axios-headers-test-01';
+      });
 
-          // Convert AxiosHeaders to plain object for the request
-          const plainHeaders: Record<string, string> = {};
-          headers.forEach((value, key) => {
-            if (value !== null && value !== undefined) {
-              plainHeaders[key] = String(value);
-            }
-          });
+      // Convert AxiosHeaders to plain object for the request
+      const plainHeaders: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        if (value !== null && value !== undefined) {
+          plainHeaders[key] = String(value);
+        }
+      });
 
-          httpService
-            .get(`http://localhost:${serverPort}/axios-headers`, {
-              headers: plainHeaders,
-            })
-            .subscribe({
-              next: response => {
-                const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.get(`http://localhost:${serverPort}/axios-headers`, {
+          headers: plainHeaders,
+        }),
+      );
+      const receivedHeaders = response.data.headers;
 
-                // All headers should be present
-                expect(receivedHeaders['x-test']).toBe('test-value');
-                expect(receivedHeaders['authorization']).toBe('Bearer token');
-                expect(receivedHeaders['traceparent']).toBe(
-                  '00-axios-headers-test-01',
-                );
-
-                done();
-              },
-              error: done,
-            });
-        })
-        .catch(done);
+      // All headers should be present
+      expect(receivedHeaders['x-test']).toBe('test-value');
+      expect(receivedHeaders['authorization']).toBe('Bearer token');
+      expect(receivedHeaders['traceparent']).toBe('00-axios-headers-test-01');
     });
 
     it('should verify interceptor count includes all interceptors', () => {
@@ -383,7 +345,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       expect(httpService.interceptorCount).toBeGreaterThanOrEqual(2);
     });
 
-    it('should add a custom header via interceptor and verify it', done => {
+    it('should add a custom header via interceptor and verify it', async () => {
       // Add a custom interceptor to prove it's working
       httpService.axiosRef.interceptors.request.use(config => {
         if (config.headers) {
@@ -393,26 +355,22 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       // Make a request
-      httpService
-        .get(`http://localhost:${serverPort}/interceptor-verification`)
-        .subscribe({
-          next: response => {
-            const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.get(
+          `http://localhost:${serverPort}/interceptor-verification`,
+        ),
+      );
+      const receivedHeaders = response.data.headers;
 
-            // Assert that the server received the header from our interceptor
-            expect(receivedHeaders['x-custom-test-header']).toBe(
-              'interceptor-is-active',
-            );
-
-            done();
-          },
-          error: done,
-        });
+      // Assert that the server received the header from our interceptor
+      expect(receivedHeaders['x-custom-test-header']).toBe(
+        'interceptor-is-active',
+      );
     });
   });
 
   describe('Real-world usage patterns', () => {
-    it('should work with complex OpenTelemetry propagation scenarios', done => {
+    it('should work with complex OpenTelemetry propagation scenarios', async () => {
       // Simulate complex trace context
       const mockContext = {
         span: 'complex-span',
@@ -428,8 +386,8 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
         carrier['baggage'] = 'userId=12345,sessionId=abc-def';
       });
 
-      httpService
-        .post(
+      const response = await firstValueFrom(
+        httpService.post(
           `http://localhost:${serverPort}/api/trace`,
           { action: 'test', timestamp: Date.now() },
           {
@@ -439,53 +397,41 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
               'X-Request-ID': 'req-123',
             },
           },
-        )
-        .subscribe({
-          next: response => {
-            const receivedHeaders = response.data.headers;
+        ),
+      );
+      const receivedHeaders = response.data.headers;
 
-            // Verify all headers are properly set
-            expect(receivedHeaders['traceparent']).toBe(
-              '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
-            );
-            expect(receivedHeaders['tracestate']).toBe(
-              'rojo=00f067aa0ba902b7,congo=t61rcWkgMzE',
-            );
-            expect(receivedHeaders['baggage']).toBe(
-              'userId=12345,sessionId=abc-def',
-            );
-            expect(receivedHeaders['x-request-id']).toBe('req-123');
-            expect(receivedHeaders['content-type']).toBe('application/json');
-            expect(receivedHeaders['accept']).toBe('application/json');
-
-            done();
-          },
-          error: done,
-        });
+      // Verify all headers are properly set
+      expect(receivedHeaders['traceparent']).toBe(
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+      );
+      expect(receivedHeaders['tracestate']).toBe(
+        'rojo=00f067aa0ba902b7,congo=t61rcWkgMzE',
+      );
+      expect(receivedHeaders['baggage']).toBe('userId=12345,sessionId=abc-def');
+      expect(receivedHeaders['x-request-id']).toBe('req-123');
+      expect(receivedHeaders['content-type']).toBe('application/json');
+      expect(receivedHeaders['accept']).toBe('application/json');
     });
 
-    it('should handle no active trace context gracefully', done => {
+    it('should handle no active trace context gracefully', async () => {
       // No active context
       (context.active as jest.Mock).mockReturnValue(null);
       (propagation.inject as jest.Mock).mockImplementation(() => {
         // No-op - no active trace
       });
 
-      httpService.get(`http://localhost:${serverPort}/no-trace`).subscribe({
-        next: response => {
-          const receivedHeaders = response.data.headers;
+      const response = await firstValueFrom(
+        httpService.get(`http://localhost:${serverPort}/no-trace`),
+      );
+      const receivedHeaders = response.data.headers;
 
-          // Should not have trace headers
-          expect(receivedHeaders['traceparent']).toBeUndefined();
-          expect(receivedHeaders['tracestate']).toBeUndefined();
+      // Should not have trace headers
+      expect(receivedHeaders['traceparent']).toBeUndefined();
+      expect(receivedHeaders['tracestate']).toBeUndefined();
 
-          // But request should still work
-          expect(response.data.success).toBe(true);
-
-          done();
-        },
-        error: done,
-      });
+      // But request should still work
+      expect(response.data.success).toBe(true);
     });
   });
 });

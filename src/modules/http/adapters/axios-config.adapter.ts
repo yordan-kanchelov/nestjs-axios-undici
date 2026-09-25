@@ -47,7 +47,9 @@ export interface AxiosConfigOptions {
 /**
  * Maps axios configuration to undici configuration
  */
-export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpModuleOptions {
+export function mapAxiosConfigToUndici(
+  axiosConfig: AxiosConfigOptions,
+): HttpModuleOptions {
   const undiciConfig: HttpModuleOptions = {};
   const interceptors: HttpInterceptorFunction[] = [];
 
@@ -62,13 +64,18 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
   }
 
   // Handle size limits with interceptor
-  if (axiosConfig.maxBodyLength !== undefined || axiosConfig.maxContentLength !== undefined) {
+  if (
+    axiosConfig.maxBodyLength !== undefined ||
+    axiosConfig.maxContentLength !== undefined
+  ) {
     // Create size limit interceptor
-    interceptors.push(createSizeLimitInterceptor({
-      maxBodyLength: axiosConfig.maxBodyLength,
-      maxContentLength: axiosConfig.maxContentLength,
-    }));
-    
+    interceptors.push(
+      createSizeLimitInterceptor({
+        maxBodyLength: axiosConfig.maxBodyLength,
+        maxContentLength: axiosConfig.maxContentLength,
+      }),
+    );
+
     // Also store in options for the response adapter
     (undiciConfig as any).maxBodyLength = axiosConfig.maxBodyLength;
     (undiciConfig as any).maxContentLength = axiosConfig.maxContentLength;
@@ -77,22 +84,22 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
   // Handle httpAgent/httpsAgent - map to Undici Agent options
   if (axiosConfig.httpAgent || axiosConfig.httpsAgent) {
     const agent = axiosConfig.httpAgent || axiosConfig.httpsAgent;
-    
+
     // Extract relevant options from Node.js Agent
     if (agent && typeof agent === 'object') {
       const agentOptions = agent as any;
-      
+
       // Map keepAlive settings
       if ('keepAlive' in agentOptions) {
         undiciConfig.pipelining = agentOptions.keepAlive ? 1 : 0;
       }
-      
+
       // Map timeout settings
       if ('timeout' in agentOptions && !axiosConfig.timeout) {
         undiciConfig.headersTimeout = agentOptions.timeout;
         undiciConfig.bodyTimeout = agentOptions.timeout;
       }
-      
+
       // Map maxSockets to connection limits
       if ('maxSockets' in agentOptions) {
         // Store for later use when creating dispatcher
@@ -111,19 +118,19 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
       const protocol = axiosConfig.proxy.protocol || 'http:';
       proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
     }
-    
+
     const proxyOptions: any = {
       uri: proxyUrl,
     };
-    
+
     // Add authentication if provided
     if (axiosConfig.proxy.auth) {
       const proxyAuth = Buffer.from(
-        `${axiosConfig.proxy.auth.username}:${axiosConfig.proxy.auth.password}`
+        `${axiosConfig.proxy.auth.username}:${axiosConfig.proxy.auth.password}`,
       ).toString('base64');
       proxyOptions.token = `Basic ${proxyAuth}`;
     }
-    
+
     // Store proxy configuration for later dispatcher creation
     (undiciConfig as any).__proxyAgent = proxyOptions;
   }
@@ -157,36 +164,38 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
   // Auth
   if (axiosConfig.auth) {
     // Convert to basic auth header
-    const basicAuth = Buffer.from(`${axiosConfig.auth.username}:${axiosConfig.auth.password}`).toString('base64');
+    const basicAuth = Buffer.from(
+      `${axiosConfig.auth.username}:${axiosConfig.auth.password}`,
+    ).toString('base64');
     undiciConfig.headers = {
       ...undiciConfig.headers,
-      'Authorization': `Basic ${basicAuth}`,
+      Authorization: `Basic ${basicAuth}`,
     };
   }
 
   // Store axios-specific options for later processing
   const axiosSpecificOptions: any = {};
-  
+
   if (axiosConfig.baseURL) {
     axiosSpecificOptions.baseURL = axiosConfig.baseURL;
   }
-  
+
   if (axiosConfig.transformRequest) {
     axiosSpecificOptions.transformRequest = axiosConfig.transformRequest;
   }
-  
+
   if (axiosConfig.transformResponse) {
     axiosSpecificOptions.transformResponse = axiosConfig.transformResponse;
   }
-  
+
   if (axiosConfig.paramsSerializer) {
     axiosSpecificOptions.paramsSerializer = axiosConfig.paramsSerializer;
   }
-  
+
   if (axiosConfig.responseType) {
     axiosSpecificOptions.responseType = axiosConfig.responseType;
   }
-  
+
   if (axiosConfig.responseEncoding) {
     axiosSpecificOptions.responseEncoding = axiosConfig.responseEncoding;
   }
@@ -207,18 +216,24 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
 /**
  * Creates a warning message for unsupported axios features
  */
-export function getAxiosCompatibilityWarnings(axiosConfig: AxiosConfigOptions): string[] {
+export function getAxiosCompatibilityWarnings(
+  axiosConfig: AxiosConfigOptions,
+): string[] {
   const warnings: string[] = [];
 
   // These are now supported but with different implementation
   // Keeping warnings for features that still need manual handling
-  
+
   if (axiosConfig.socketPath) {
-    warnings.push('socketPath: Unix sockets require using unix:// protocol in URL');
+    warnings.push(
+      'socketPath: Unix sockets require using unix:// protocol in URL',
+    );
   }
 
   if (axiosConfig.xsrfCookieName || axiosConfig.xsrfHeaderName) {
-    warnings.push('XSRF protection: Must be implemented manually with interceptors');
+    warnings.push(
+      'XSRF protection: Must be implemented manually with interceptors',
+    );
   }
 
   return warnings;

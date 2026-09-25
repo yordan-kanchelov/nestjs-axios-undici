@@ -15,4 +15,4 @@ ENV NODE_ENV=production
 
 EXPOSE 3007
 
-CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-fastify-undici-interceptor/tsconfig.app.json", "-r", "tsconfig-paths/register", "apps/nestjs-fastify-undici-interceptor/src/main.ts"]
+CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-fastify-undici-interceptor/tsconfig.app.json", "apps/nestjs-fastify-undici-interceptor/src/main.ts"]

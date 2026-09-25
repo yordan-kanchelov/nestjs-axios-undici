@@ -35,16 +35,58 @@ async create(cat: CreateCatDto) {
 }
 ```
 
-## Low-level `request`
+## Request Options
 
-`request(url, options)` accepts [undici request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) (`method`, `headers`, `body`, `query`, `dispatcher`, ...) plus `timeout` and `maxRedirections`:
+The methods take the same per-request options as axios:
+
+```typescript
+const { data } = await firstValueFrom(
+  this.httpService.get<Cat[]>('https://api.example.com/cats', {
+    headers: { Authorization: 'Bearer token' },
+    params: { page: 1, limit: 10 },
+    timeout: 5000,
+  }),
+);
+```
+
+`request(config)` accepts the axios config object:
+
+```typescript
+this.httpService.request({
+  url: 'https://api.example.com/cats',
+  method: 'POST',
+  data: { name: 'Tom' },
+});
+```
+
+See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for every option and its differences from axios.
+
+## Undici-style `request`
+
+`request(url, options)` also accepts [undici request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) (`method`, `headers`, `body`, `query`, `dispatcher`, ...):
 
 ```typescript
 this.httpService.request('https://api.example.com/search', {
   query: { q: 'nestjs', page: 1 },
   timeout: 5000,
-  maxRedirections: 3,
 });
+```
+
+## Working with Observables
+
+The methods return cold Observables: the request is sent when you subscribe (or call `firstValueFrom` / `lastValueFrom`), so RxJS operators such as `retry` send it again:
+
+```typescript
+import { of } from 'rxjs';
+import { catchError, map, retry } from 'rxjs/operators';
+
+getCatName(id: string) {
+  return this.httpService.get<Cat>(`https://api.example.com/cats/${id}`).pipe(
+    map(response => response.data.name),
+    retry(3),
+    catchError(() => of('Unknown cat')),
+  );
+}
 ```
 
 ## Response Handling

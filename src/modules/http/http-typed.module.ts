@@ -25,13 +25,14 @@ export class TypedHttpModule {
       __serviceType: {} as HttpService,
     };
   }
-
 }
 
 /**
  * Type helper to extract the service type from a module
  */
-export type ExtractHttpServiceType<T> = T extends { __serviceType: infer S } ? S : HttpService;
+export type ExtractHttpServiceType<T> = T extends { __serviceType: infer S }
+  ? S
+  : HttpService;
 
 /**
  * Decorator to inject the correctly typed HttpService
@@ -39,10 +40,15 @@ export type ExtractHttpServiceType<T> = T extends { __serviceType: infer S } ? S
 export function InjectTypedHttpService<T extends DynamicModule>(): (
   target: any,
   propertyKey: string | symbol,
-  parameterIndex: number
+  parameterIndex: number,
 ) => void {
-  return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
-    const existingTokens = Reflect.getMetadata('design:paramtypes', target) || [];
+  return (
+    target: any,
+    propertyKey: string | symbol | undefined,
+    parameterIndex: number,
+  ) => {
+    const existingTokens =
+      Reflect.getMetadata('design:paramtypes', target) || [];
     existingTokens[parameterIndex] = HttpService;
     Reflect.defineMetadata('design:paramtypes', existingTokens, target);
     Reflect.defineMetadata('self:paramtypes', existingTokens, target);

@@ -70,3 +70,61 @@ describe('CatsService (Integration)', () => {
   });
 });
 ```
+
+## Testing Interceptors
+
+An interceptor is a function (or an `intercept()` method) that takes a request and a handler, so it can be tested without a module or a server. Stub `next.handle()` and check the request it receives:
+
+```typescript
+import { of, lastValueFrom } from 'rxjs';
+import type { HttpInterceptorHandler, HttpInterceptorRequest } from 'nestjs-axios-undici';
+import { createAuthInterceptor } from './auth.interceptor';
+
+describe('authInterceptor', () => {
+  it('adds the Authorization header', async () => {
+    const next: HttpInterceptorHandler = {
+      handle: jest.fn().mockReturnValue(of({ data: 'ok', status: 200 })),
+    };
+    const request: HttpInterceptorRequest = { url: 'https://api.example.com', options: { headers: {} } };
+
+    await lastValueFrom(createAuthInterceptor('token')(request, next));
+
+    expect(next.handle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+        }),
+      }),
+    );
+  });
+});
+```
+
+Class interceptors with dependencies can be created through a testing module:
+
+```typescript
+describe('LoggingInterceptor', () => {
+  let interceptor: LoggingInterceptor;
+  let logger: LoggerService;
+
+  beforeEach(async () => {
+    const module = await Test.createTestingModule({
+      providers: [LoggingInterceptor, LoggerService],
+    }).compile();
+
+    interceptor = module.get(LoggingInterceptor);
+    logger = module.get(LoggerService);
+  });
+
+  it('logs requests', async () => {
+    const spy = jest.spyOn(logger, 'log');
+    const next = { handle: jest.fn().mockReturnValue(of({ data: 'ok', status: 200 })) };
+
+    await lastValueFrom(interceptor.intercept({ url: '/test', options: {} }, next));
+
+    expect(spy).toHaveBeenCalledWith('Request to /test');
+  });
+});
+```
+
+To test an interceptor together with the real `HttpService`, register it on `HttpModule` with a `MockAgent` dispatcher, as shown above.

@@ -51,7 +51,7 @@ describe('Axios Full Compatibility E2E Tests', () => {
   afterEach(async () => {
     if (mockServer) {
       await new Promise<void>((resolve, reject) => {
-        mockServer.close((err) => {
+        mockServer.close(err => {
           if (err) reject(err);
           else resolve();
         });
@@ -222,8 +222,8 @@ describe('Axios Full Compatibility E2E Tests', () => {
   });
 
   describe('Status Code Handling', () => {
-    const testStatusCode = async (code: number, expectedText: string) => {
-      serverUrl = await createMockServer((req, res) => {
+    const serveStatus = (code: number) =>
+      createMockServer((req, res) => {
         res.writeHead(code, { 'Content-Type': 'text/plain' });
         // 204 No Content and 304 Not Modified shouldn't have body
         if (code === 204 || code === 304) {
@@ -233,52 +233,51 @@ describe('Axios Full Compatibility E2E Tests', () => {
         }
       });
 
-      // For error status codes, we need to catch the error
-      if (code >= 400) {
-        const [axiosError, undiciError] = await Promise.all([
-          firstValueFrom(axiosService.get(serverUrl)).catch(e => e),
-          firstValueFrom(undiciService.request(serverUrl)).catch(e => e),
-        ]);
+    it('should skip 1xx informational responses and return the final response', async () => {
+      serverUrl = await createMockServer((req, res) => {
+        // Interim responses before the final one
+        res.writeProcessing(); // 102 Processing
+        res.writeEarlyHints({ link: '</style.css>; rel=preload' }); // 103 Early Hints
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('final response');
+      });
 
-        expect(undiciError.response.status).toBe(code);
-        expect(undiciError.response.status).toBe(axiosError.response.status);
-        expect(undiciError.response.statusText).toBe(expectedText);
-        expect(undiciError.response.data).toBe(`Status ${code}`);
-        expect(undiciError.isAxiosError).toBe(true);
-      } else {
-        const [axiosRes, undiciRes] = await Promise.all([
-          firstValueFrom(axiosService.get(serverUrl, { maxRedirects: 0 })),
-          firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
-        ]);
+      const [axiosRes, undiciRes] = await Promise.all([
+        firstValueFrom(axiosService.get(serverUrl)),
+        firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+      ]);
 
-        expect(undiciRes.status).toBe(code);
-        expect(undiciRes.status).toBe(axiosRes.status);
-        expect(undiciRes.statusText).toBe(expectedText);
-        // 204 and 304 should have empty data
-        if (code === 204 || code === 304) {
-          expect(undiciRes.data).toBe('');
-        } else {
-          expect(undiciRes.data).toBe(`Status ${code}`);
-        }
-      }
-    };
-
-    it.skip('should handle 1xx status codes', async () => {
-      // Skipped: Undici doesn't support 1xx status codes
-      await testStatusCode(100, 'Continue');
-      await testStatusCode(101, 'Switching Protocols');
+      expect(axiosRes.status).toBe(200);
+      expect(undiciRes.status).toBe(200);
+      expect(undiciRes.statusText).toBe('OK');
+      expect(undiciRes.data).toBe('final response');
+      expect(undiciRes.data).toBe(axiosRes.data);
     });
 
-    it('should handle 2xx status codes', async () => {
-      await testStatusCode(200, 'OK');
-      await testStatusCode(201, 'Created');
-      await testStatusCode(202, 'Accepted');
-      await testStatusCode(204, 'No Content');
+    it.each([
+      [200, 'OK'],
+      [201, 'Created'],
+      [202, 'Accepted'],
+      [204, 'No Content'],
+    ])('should handle 2xx status code %i %s', async (code, expectedText) => {
+      serverUrl = await serveStatus(code);
+
+      const [axiosRes, undiciRes] = await Promise.all([
+        firstValueFrom(axiosService.get(serverUrl, { maxRedirects: 0 })),
+        firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+      ]);
+
+      expect(undiciRes.status).toBe(code);
+      expect(undiciRes.status).toBe(axiosRes.status);
+      expect(undiciRes.statusText).toBe(expectedText);
+      // 204 should have empty data
+      expect(undiciRes.data).toBe(code === 204 ? '' : `Status ${code}`);
+      expect(undiciRes.data).toBe(axiosRes.data);
     });
 
     it('should handle 3xx status codes', async () => {
-      // Note: 304 Not Modified is treated as an error by Axios
-      // We need to handle it specially
+      // 304 Not Modified is outside the default validateStatus range (2xx),
+      // so both Axios and Undici reject with an axios-style error
       serverUrl = await createMockServer((req, res) => {
         res.writeHead(304);
         res.end();
@@ -289,69 +288,77 @@ describe('Axios Full Compatibility E2E Tests', () => {
         firstValueFrom(undiciService.request(serverUrl)).catch(e => e),
       ]);
 
-      // 304 Not Modified might not throw an error in all configurations
-      // Check if it's an error or a response
-      if (axiosResult instanceof Error) {
-        expect((axiosResult as any).response.status).toBe(304);
-        expect(undiciResult).toBeInstanceOf(Error);
-        expect((undiciResult as any).response.status).toBe(304);
-        expect((undiciResult as any).response.data).toBe((axiosResult as any).response.data);
-        expect((undiciResult as any).isAxiosError).toBe(true);
-      } else {
-        // If axios doesn't throw, neither should undici
-        expect((axiosResult as any).status).toBe(304);
-        expect((undiciResult as any).status).toBe(304);
-        expect((undiciResult as any).data).toBe((axiosResult as any).data);
-      }
+      expect(axiosResult).toBeInstanceOf(Error);
+      expect((axiosResult as any).response.status).toBe(304);
+      expect(undiciResult).toBeInstanceOf(Error);
+      expect((undiciResult as any).response.status).toBe(304);
+      expect((undiciResult as any).response.data).toBe(
+        (axiosResult as any).response.data,
+      );
+      expect((undiciResult as any).isAxiosError).toBe(true);
 
-      // For actual redirects, we need special handling
-      const testRedirect = async (code: number, text: string) => {
+      // For actual redirects, both should reject when redirects are disabled
+      const redirects: Array<[number, string]> = [
+        [301, 'Moved Permanently'],
+        [302, 'Found'],
+      ];
+      for (const [code, text] of redirects) {
+        // Replace the previous mock server with one returning this redirect code
+        await new Promise<void>(resolve => {
+          mockServer.close(() => resolve());
+          mockServer.closeAllConnections();
+        });
         serverUrl = await createMockServer((req, res) => {
           res.writeHead(code, {
             'Content-Type': 'text/plain',
-            Location: 'http://example.com',
+            Location: '/redirected',
           });
           res.end();
         });
 
-        try {
-          const [axiosRes, undiciRes] = await Promise.all([
-            firstValueFrom(
-              axiosService.get(serverUrl, { maxRedirects: 0 }),
-            ).catch(e => e),
-            firstValueFrom(undiciService.request(serverUrl, { maxRedirections: 0 })).catch(e => e) as Promise<any>,
-          ]);
+        const [axiosRes, undiciRes] = await Promise.all([
+          firstValueFrom(
+            axiosService.get(serverUrl, { maxRedirects: 0 }),
+          ).catch(e => e),
+          firstValueFrom(
+            undiciService.request(serverUrl, { maxRedirections: 0 }),
+          ).catch(e => e) as Promise<any>,
+        ]);
 
-          // Both Axios and Undici should throw on redirects when maxRedirects is 0
-          expect(axiosRes).toBeInstanceOf(Error);
-          expect((axiosRes as any).response?.status).toBe(code);
+        // Both Axios and Undici should throw on redirects when maxRedirects is 0
+        expect(axiosRes).toBeInstanceOf(Error);
+        expect((axiosRes as any).response?.status).toBe(code);
 
-          expect(undiciRes).toBeInstanceOf(Error);
-          expect((undiciRes as any).response?.status).toBe(code);
-          expect((undiciRes as any).response?.statusText).toBe(text);
-        } catch (error) {
-          // Handle any unexpected errors
-          console.error('Redirect test error:', error);
-          throw error;
-        }
-      };
-
-      await testRedirect(301, 'Moved Permanently');
-      await testRedirect(302, 'Found');
+        expect(undiciRes).toBeInstanceOf(Error);
+        expect((undiciRes as any).response?.status).toBe(code);
+        expect((undiciRes as any).response?.statusText).toBe(text);
+      }
     });
 
-    it('should handle 4xx status codes', async () => {
-      await testStatusCode(400, 'Bad Request');
-      await testStatusCode(401, 'Unauthorized');
-      await testStatusCode(403, 'Forbidden');
-      await testStatusCode(404, 'Not Found');
-      await testStatusCode(422, 'Unprocessable Entity');
-    });
+    it.each([
+      [400, 'Bad Request'],
+      [401, 'Unauthorized'],
+      [403, 'Forbidden'],
+      [404, 'Not Found'],
+      [422, 'Unprocessable Entity'],
+      [500, 'Internal Server Error'],
+      [502, 'Bad Gateway'],
+      [503, 'Service Unavailable'],
+    ])('should handle error status code %i %s', async (code, expectedText) => {
+      serverUrl = await serveStatus(code);
 
-    it('should handle 5xx status codes', async () => {
-      await testStatusCode(500, 'Internal Server Error');
-      await testStatusCode(502, 'Bad Gateway');
-      await testStatusCode(503, 'Service Unavailable');
+      const [axiosError, undiciError] = await Promise.all([
+        firstValueFrom(axiosService.get(serverUrl)).catch(e => e),
+        firstValueFrom(undiciService.request(serverUrl)).catch(e => e),
+      ]);
+
+      expect(axiosError).toBeInstanceOf(Error);
+      expect(undiciError).toBeInstanceOf(Error);
+      expect(undiciError.response.status).toBe(code);
+      expect(undiciError.response.status).toBe(axiosError.response.status);
+      expect(undiciError.response.statusText).toBe(expectedText);
+      expect(undiciError.response.data).toBe(`Status ${code}`);
+      expect(undiciError.isAxiosError).toBe(true);
     });
   });
 
@@ -555,9 +562,9 @@ describe('Axios Full Compatibility E2E Tests', () => {
           ) as Promise<any>,
         ]);
 
-        if (method !== 'HEAD') {
-          expect(undiciRes.data.method).toBe(method);
-        }
+        // HEAD responses carry no body; every other method echoes its name
+        expect(undiciRes.data).toEqual(method === 'HEAD' ? '' : { method });
+        expect(undiciRes.data).toEqual(axiosRes.data);
         expect(undiciRes.status).toBe(axiosRes.status);
       });
     }

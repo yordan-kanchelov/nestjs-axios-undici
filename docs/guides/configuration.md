@@ -20,8 +20,6 @@ import { HttpModule } from 'nestjs-axios-undici';
         'Content-Type': 'application/json',
         'User-Agent': 'MyApp/1.0',
       },
-      // Default method (defaults to GET)
-      method: 'GET',
     }),
   ],
 })
@@ -65,6 +63,8 @@ HttpModule.register({
   interceptors: [authInterceptor, LoggingInterceptor],
 });
 ```
+
+Class interceptors are instantiated inside `HttpModule`, so an interceptor that injects your own providers needs one of the patterns in [Interceptors with dependencies](/docs/guides/interceptors.md#interceptors-with-dependencies).
 
 ## Async Configuration
 

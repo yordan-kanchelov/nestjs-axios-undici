@@ -3,24 +3,29 @@ import { Injectable, Inject } from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 import { lastValueFrom, Observable } from 'rxjs';
 import type { AxiosLikeResponse } from '../src/modules/http/interfaces';
-import type { Dispatcher } from 'undici';
+import { JsonServer, startJsonServer } from './test-helpers/json-server';
 
 describe('Type Inference Patterns E2E', () => {
+  let server: JsonServer;
+  let postUrl: string;
+
+  beforeAll(async () => {
+    server = await startJsonServer();
+    postUrl = `${server.baseUrl}/posts/1`;
+  });
+
+  afterAll(() => server.close());
+
   describe('Standard HttpService (axios-compatible by default)', () => {
     @Injectable()
     class StandardTestService {
       constructor(private readonly httpService: HttpService) {}
 
-      async fetchData() {
-        const response = await lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>('https://jsonplaceholder.typicode.com/posts/1')
-        );
-        
+      async fetchResponse() {
         // Response is already AxiosLikeResponse type
-        expect(response.status).toBeDefined();
-        expect(response.data).toBeDefined();
-        
-        return response.data;
+        return lastValueFrom(
+          this.httpService.get<{ id: number; title: string }>(postUrl),
+        );
       }
     }
 
@@ -36,7 +41,11 @@ describe('Type Inference Patterns E2E', () => {
     });
 
     it('should work with axios-compatible responses by default', async () => {
-      const data = await service.fetchData();
+      const response = await service.fetchResponse();
+      expect(response.status).toBeDefined();
+      expect(response.data).toBeDefined();
+
+      const data = response.data;
       expect(data.id).toBe(1);
       expect(data.title).toBeDefined();
     });
@@ -47,17 +56,10 @@ describe('Type Inference Patterns E2E', () => {
     class TypedTestService {
       constructor(private readonly httpService: HttpService) {}
 
-      async fetchData() {
-        const response = await lastValueFrom(
-          this.httpService.get<{ id: number; title: string }>('https://jsonplaceholder.typicode.com/posts/1')
+      async fetchResponse() {
+        return lastValueFrom(
+          this.httpService.get<{ id: number; title: string }>(postUrl),
         );
-        
-        // TypeScript knows these properties exist
-        expect(response.data).toBeDefined();
-        expect(response.status).toBe(200);
-        expect(response.statusText).toBe('OK');
-        
-        return response.data;
       }
     }
 
@@ -73,7 +75,13 @@ describe('Type Inference Patterns E2E', () => {
     });
 
     it('should work with axios-compatible responses', async () => {
-      const data = await service.fetchData();
+      const response = await service.fetchResponse();
+      // TypeScript knows these properties exist
+      expect(response.data).toBeDefined();
+      expect(response.status).toBe(200);
+      expect(response.statusText).toBe('OK');
+
+      const data = response.data;
       expect(data.id).toBe(1);
       expect(data.title).toBeDefined();
     });
@@ -86,9 +94,9 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl),
         );
-        
+
         return response.data;
       }
     }
@@ -117,20 +125,18 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl),
         );
         // Always returns AxiosLikeResponse
         return response.data;
       }
 
       async fetchWithHeaders() {
-        const response = await lastValueFrom(
-          this.httpService.get('https://jsonplaceholder.typicode.com/posts/1')
-        );
+        const response = await lastValueFrom(this.httpService.get(postUrl));
         return {
           data: response.data,
           contentType: response.headers['content-type'],
-          status: response.status
+          status: response.status,
         };
       }
     }
@@ -142,10 +148,10 @@ describe('Type Inference Patterns E2E', () => {
       }).compile();
 
       const service = module.get<ResponseService>(ResponseService);
-      
+
       const data = await service.fetchData();
       expect(data.id).toBe(1);
-      
+
       const withHeaders = await service.fetchWithHeaders();
       expect(withHeaders.status).toBe(200);
       expect(withHeaders.contentType).toContain('application/json');
@@ -159,7 +165,7 @@ describe('Type Inference Patterns E2E', () => {
 
       async fetchData() {
         const response = await lastValueFrom(
-          this.httpService.get<{ id: number }>('https://jsonplaceholder.typicode.com/posts/1')
+          this.httpService.get<{ id: number }>(postUrl),
         );
         return response.data;
       }
@@ -185,20 +191,25 @@ describe('Type Inference Patterns E2E', () => {
   describe('Type assertions for compile-time safety', () => {
     it('should compile with correct types', () => {
       // These are compile-time checks - if they compile, the test passes
-      
+
       // HttpService now returns AxiosLikeResponse
       type GetReturn = ReturnType<HttpService['get']>;
-      type IsObservable = GetReturn extends Observable<AxiosLikeResponse> ? true : false;
+      type IsObservable =
+        GetReturn extends Observable<AxiosLikeResponse> ? true : false;
       const isObservable: IsObservable = true;
       expect(isObservable).toBe(true);
-      
+
       // Check that response has expected properties
-      type ResponseHasData = AxiosLikeResponse extends { data: any } ? true : false;
+      type ResponseHasData = AxiosLikeResponse extends { data: any }
+        ? true
+        : false;
       const hasData: ResponseHasData = true;
       expect(hasData).toBe(true);
-      
+
       // Check that response has status
-      type ResponseHasStatus = AxiosLikeResponse extends { status: number } ? true : false;
+      type ResponseHasStatus = AxiosLikeResponse extends { status: number }
+        ? true
+        : false;
       const hasStatus: ResponseHasStatus = true;
       expect(hasStatus).toBe(true);
     });

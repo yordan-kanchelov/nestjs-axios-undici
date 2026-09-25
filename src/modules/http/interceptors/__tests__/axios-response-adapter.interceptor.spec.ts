@@ -1,7 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { of, firstValueFrom } from 'rxjs';
-import { AxiosResponseAdapterInterceptor, axiosResponseAdapter } from '../axios-response-adapter.interceptor';
-import type { HttpInterceptorHandler, HttpInterceptorRequest } from '../../interfaces';
+import {
+  AxiosResponseAdapterInterceptor,
+  axiosResponseAdapter,
+} from '../axios-response-adapter.interceptor';
+import type {
+  HttpInterceptorHandler,
+  HttpInterceptorRequest,
+} from '../../interfaces';
 import type { Dispatcher } from 'undici';
 
 describe('AxiosResponseAdapterInterceptor', () => {
@@ -21,7 +27,9 @@ describe('AxiosResponseAdapterInterceptor', () => {
     },
   });
 
-  const createMockNext = (response: Partial<Dispatcher.ResponseData>): HttpInterceptorHandler => ({
+  const createMockNext = (
+    response: Partial<Dispatcher.ResponseData>,
+  ): HttpInterceptorHandler => ({
     handle: jest.fn().mockReturnValue(of(response as Dispatcher.ResponseData)),
   });
 
@@ -42,8 +50,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       // Verify Axios-like structure
       expect(result.data).toEqual({ id: 1, name: 'Test' });
       expect(result.status).toBe(200);
@@ -54,7 +64,7 @@ describe('AxiosResponseAdapterInterceptor', () => {
         method: 'GET',
         headers: request.options.headers,
       });
-      
+
       // Verify body.text was called for JSON content
       expect(mockResponse.body.text).toHaveBeenCalled();
     });
@@ -75,8 +85,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       expect(result.data).toBe('Plain text response');
       expect(result.status).toBe(201);
       expect(result.statusText).toBe('Created');
@@ -100,8 +112,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       expect(result.data).toBeInstanceOf(Buffer);
       expect(result.data.length).toBe(8);
       expect(mockResponse.body.arrayBuffer).toHaveBeenCalled();
@@ -117,8 +131,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       expect(result.data).toBe('');
       expect(result.status).toBe(204);
       expect(result.statusText).toBe('No Content');
@@ -140,8 +156,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       expect(result.data).toBe('Invalid JSON text');
       expect(result.status).toBe(200);
     });
@@ -160,12 +178,14 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      await expect(firstValueFrom(interceptor.intercept(request, next))).rejects.toMatchObject({
+      await expect(
+        firstValueFrom(interceptor.intercept(request, next)),
+      ).rejects.toMatchObject({
         response: {
           status: 999,
-          statusText: 'Unknown'
+          statusText: 'Unknown',
         },
-        isAxiosError: true
+        isAxiosError: true,
       });
     });
 
@@ -186,8 +206,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(interceptor.intercept(request, next));
-      
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
       expect(result.data).toBe(xmlContent);
       expect(mockResponse.body.text).toHaveBeenCalled();
     });
@@ -210,8 +232,10 @@ describe('AxiosResponseAdapterInterceptor', () => {
       const request = createMockRequest();
       const next = createMockNext(mockResponse);
 
-      const result: any = await firstValueFrom(axiosResponseAdapter(request, next));
-      
+      const result: any = await firstValueFrom(
+        axiosResponseAdapter(request, next),
+      );
+
       expect(result.data).toEqual({ success: true });
       expect(result.status).toBe(200);
       expect(result.statusText).toBe('OK');

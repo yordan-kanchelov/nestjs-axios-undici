@@ -1,6 +1,6 @@
 # Axios Compatibility and Supported Options
 
-This page lists what works when you switch from `@nestjs/axios` to `nestjs-axios-undici`, and what behaves differently. Every row is covered by a side-by-side test against real axios / `@nestjs/axios` in [`tests/axios-compatibility-matrix.e2e.spec.ts`](../tests/axios-compatibility-matrix.e2e.spec.ts).
+This page lists what works when you switch from `@nestjs/axios` to `nestjs-axios-undici`, and what behaves differently. Every row is covered by a side-by-side test against real axios / `@nestjs/axios` in [`tests/axios-compatibility-matrix.e2e.spec.ts`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/tests/axios-compatibility-matrix.e2e.spec.ts).
 
 Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ not supported
 
@@ -87,7 +87,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `registerAsync({ useFactory, inject, imports })` | ✅ | Axios options are mapped exactly like in `register()`. |
 | `registerAsync({ useClass })` / `({ useExisting })` | ✅ | |
 | `extraProviders`, `global` | ✅ | |
-| Class-based interceptors in `registerAsync()` options | ❌ | Only function interceptors are used; register class interceptors with `register()` or `httpService.addInterceptor()`. |
+| Class-based interceptors in `registerAsync()` options | ✅ | Dependencies are resolved from `imports` and `extraProviders`; see [Interceptors with dependencies](/docs/guides/interceptors.md#interceptors-with-dependencies). |
 
 ## Module-level axios options
 
@@ -95,7 +95,8 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 
 | Option | Status | Notes |
 |--------|:------:|-------|
-| `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType`, `maxRedirects` | ✅ | Applied to every request; per-request values win (headers and params are merged). |
+| `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType` | ✅ | Applied to every request; per-request values win (headers and params are merged). `timeout` maps to undici's `headersTimeout`/`bodyTimeout`. |
+| `maxRedirects` | ⚠️ | Applied to every request through undici's redirect interceptor. Without it redirects are not followed (see [Request config](#request-config)). |
 | `maxBodyLength` / `maxContentLength` | ⚠️ | Size-limit checks (see error code note above). |
 | `transformRequest` / `transformResponse` | ⚠️ | Run as interceptors: `transformRequest` receives the already-serialized body (axios: the raw `data`), `transformResponse` receives the parsed `data` (axios: the raw string). |
 | `httpAgent` / `httpsAgent` | ⚠️ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts. Other agent options are ignored. |

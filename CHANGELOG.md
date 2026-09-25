@@ -20,10 +20,14 @@ First release as `nestjs-axios-undici` (previously published as `nestjs-undici-i
 - String and `Buffer` request bodies default to `Content-Type: application/x-www-form-urlencoded`, as in axios.
 - Per-request headers are merged with module headers instead of replacing them.
 - Module-level `timeout`, `auth`, `params` and `maxRedirects` apply to every request.
-- Requires Node.js 22 or newer. Tested on Node.js 22, 24 and 26.
+- Requires Node.js 22.12 or newer (tested on Node.js 22, 24 and 26), `@nestjs/common` 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8. Older versions of these never worked with this code and are no longer listed as supported.
+- The package has an `exports` map: only the package root can be imported.
 
 ### Fixes
 
+- Class interceptors passed to `registerAsync()` are instantiated, with dependencies from the module's `imports` and `extraProviders` (they failed at request time before). Interceptor instances are accepted by `register()` and `registerAsync()` (they were dropped).
+- `maxRedirects` works when another copy of undici is the global dispatcher, such as the one bundled with Node.js 22 after something reads the global `fetch` first (it failed with `invalid onError method`).
+- `HttpModuleOptions` and the other module option types are exported.
 - `tough-cookie` is a runtime dependency (it was only a devDependency, which broke installs without automatic peer dependencies).
 
 ### Project

@@ -21,7 +21,12 @@ describe('axios request adapter', () => {
 
     it('accepts the request(config) form and upper-cases the method', () => {
       const { url, options } = normalizeAxiosRequest(
-        { url: 'http://api/x', method: 'post', data: { a: 1 }, params: { q: 1 } },
+        {
+          url: 'http://api/x',
+          method: 'post',
+          data: { a: 1 },
+          params: { q: 1 },
+        },
         undefined,
       );
       expect(url).toBe('http://api/x?q=1');
@@ -38,7 +43,9 @@ describe('axios request adapter', () => {
     it('does not treat URL instances as a config object', () => {
       expect(isAxiosRequestConfig(new URL('http://api/x'))).toBe(false);
       expect(isAxiosRequestConfig({ url: 'http://api/x' })).toBe(true);
-      expect(isAxiosRequestConfig({ protocol: 'http:', host: 'api' })).toBe(false);
+      expect(isAxiosRequestConfig({ protocol: 'http:', host: 'api' })).toBe(
+        false,
+      );
     });
 
     it('merges module headers, axiosRef defaults and request headers case-insensitively', () => {
@@ -48,7 +55,10 @@ describe('axios request adapter', () => {
       defaults.headers['X-Flat'] = 'f';
       const { options } = normalizeAxiosRequest(
         'http://api/x',
-        { method: 'GET', headers: { 'x-module': 'overridden', 'X-Remove': null } as any },
+        {
+          method: 'GET',
+          headers: { 'x-module': 'overridden', 'X-Remove': null } as any,
+        },
         {
           defaults,
           instanceOptions: { headers: { 'X-Module': 'm', 'X-Remove': 'r' } },
@@ -94,14 +104,18 @@ describe('axios request adapter', () => {
 
   describe('URL helpers', () => {
     it('combineURLs concatenates like axios', () => {
-      expect(combineURLs('http://api/v1/', '/users')).toBe('http://api/v1/users');
+      expect(combineURLs('http://api/v1/', '/users')).toBe(
+        'http://api/v1/users',
+      );
       expect(combineURLs('http://api/v1', '')).toBe('http://api/v1');
     });
 
     it('buildURL strips the hash and appends to an existing query', () => {
       expect(buildURL('/a?x=1#frag', { y: 2 })).toBe('/a?x=1&y=2');
       expect(buildURL('/a', {})).toBe('/a');
-      expect(buildURL('/a', { k: 'v' }, { serialize: () => 'custom' })).toBe('/a?custom');
+      expect(buildURL('/a', { k: 'v' }, { serialize: () => 'custom' })).toBe(
+        '/a?custom',
+      );
     });
   });
 
@@ -112,10 +126,20 @@ describe('axios request adapter', () => {
       expect(headers).toEqual({ 'Content-Type': 'application/json' });
 
       const formHeaders: Record<string, any> = {};
-      expect(serializeRequestData(new URLSearchParams({ a: '1' }), formHeaders, 'PUT')).toBe('a=1');
-      expect(formHeaders['Content-Type']).toBe('application/x-www-form-urlencoded;charset=utf-8');
+      expect(
+        serializeRequestData(
+          new URLSearchParams({ a: '1' }),
+          formHeaders,
+          'PUT',
+        ),
+      ).toBe('a=1');
+      expect(formHeaders['Content-Type']).toBe(
+        'application/x-www-form-urlencoded;charset=utf-8',
+      );
 
-      expect(serializeRequestData(new Uint8Array([1, 2]), {}, 'POST')).toEqual(Buffer.from([1, 2]));
+      expect(serializeRequestData(new Uint8Array([1, 2]), {}, 'POST')).toEqual(
+        Buffer.from([1, 2]),
+      );
       expect(serializeRequestData(0, {}, 'POST')).toBeUndefined();
     });
 
@@ -125,20 +149,24 @@ describe('axios request adapter', () => {
       const headers: Record<string, any> = {};
       const body = serializeRequestData(form, headers, 'POST');
       expect(typeof body.pipe).toBe('function');
-      expect(headers['Content-Type']).toMatch(/^multipart\/form-data; boundary=/);
+      expect(headers['Content-Type']).toMatch(
+        /^multipart\/form-data; boundary=/,
+      );
     });
 
     it('mergeHeaders reads AxiosHeaders and raw undici header arrays', () => {
-      expect(mergeHeaders(new AxiosHeaders({ 'X-A': '1' }), ['X-B', '2'])).toEqual({
+      expect(
+        mergeHeaders(new AxiosHeaders({ 'X-A': '1' }), ['X-B', '2']),
+      ).toEqual({
         'x-a': '1',
         'X-B': '2',
       });
     });
 
     it('toUrlEncodedForm supports nested values', () => {
-      expect(toUrlEncodedForm({ a: 1, b: 'x y', list: [1, 2], obj: { k: 'v' } })).toBe(
-        'a=1&b=x%20y&list%5B%5D=1&list%5B%5D=2&obj%5Bk%5D=v',
-      );
+      expect(
+        toUrlEncodedForm({ a: 1, b: 'x y', list: [1, 2], obj: { k: 'v' } }),
+      ).toBe('a=1&b=x%20y&list%5B%5D=1&list%5B%5D=2&obj%5Bk%5D=v');
     });
   });
 });

@@ -5,9 +5,21 @@
  * with nestjs-axios-undici using both axios-style and native interceptor APIs.
  */
 
-import { HttpModule, HttpService, AxiosHeaders, HttpInterceptorRequest, HttpInterceptorHandler } from "../lib";
-import { DynamicModule, Global, Module as NestModule, OnModuleInit, Injectable } from "@nestjs/common";
-import { context, propagation } from "@opentelemetry/api";
+import {
+  HttpModule,
+  HttpService,
+  AxiosHeaders,
+  HttpInterceptorRequest,
+  HttpInterceptorHandler,
+} from '../lib';
+import {
+  DynamicModule,
+  Global,
+  Module as NestModule,
+  OnModuleInit,
+  Injectable,
+} from '@nestjs/common';
+import { context, propagation } from '@opentelemetry/api';
 import { firstValueFrom } from 'rxjs';
 import { Observable } from 'rxjs';
 
@@ -44,7 +56,7 @@ export class HttpConfigModuleAxiosStyle implements OnModuleInit {
 
   public onModuleInit() {
     // Add Axios-compatible interceptor to inject OpenTelemetry trace context
-    this.httpService.axiosRef.interceptors.request.use((config) => {
+    this.httpService.axiosRef.interceptors.request.use(config => {
       // Inject OpenTelemetry trace context into headers
       const traceHeaders: Record<string, string> = {};
       propagation.inject(context.active(), traceHeaders);
@@ -66,14 +78,14 @@ export class HttpConfigModuleAxiosStyle implements OnModuleInit {
 
     // Add response interceptor for logging
     this.httpService.axiosRef.interceptors.response.use(
-      (response) => {
+      response => {
         console.log(`Response from ${response.config.url}: ${response.status}`);
         return response;
       },
-      (error) => {
+      error => {
         console.error(`Error from ${error.config?.url}:`, error.message);
         return Promise.reject(error);
-      }
+      },
     );
   }
 }
@@ -86,7 +98,7 @@ export class HttpConfigModuleNative implements OnModuleInit {
   public static forRoot(config?: HttpConfig): DynamicModule {
     const httpModule = HttpModule.register({
       timeout: config?.timeout ?? 5000,
-      maxRedirections: config?.maxRedirects ?? 5,  // Note: 'maxRedirections' for native undici
+      maxRedirections: config?.maxRedirects ?? 5, // Note: 'maxRedirections' for native undici
       bodyTimeout: config?.timeout ?? 5000,
       headersTimeout: config?.timeout ?? 5000,
     });
@@ -103,7 +115,10 @@ export class HttpConfigModuleNative implements OnModuleInit {
   public onModuleInit() {
     // Add native interceptor to inject OpenTelemetry trace context
     this.httpService.addInterceptor(
-      (request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> => {
+      (
+        request: HttpInterceptorRequest,
+        next: HttpInterceptorHandler,
+      ): Observable<any> => {
         // Inject OpenTelemetry trace context into headers
         const traceHeaders: Record<string, string> = {};
         propagation.inject(context.active(), traceHeaders);
@@ -121,7 +136,7 @@ export class HttpConfigModuleNative implements OnModuleInit {
         };
 
         return next.handle(updatedRequest);
-      }
+      },
     );
   }
 }
@@ -130,7 +145,10 @@ export class HttpConfigModuleNative implements OnModuleInit {
 
 @Injectable()
 export class OpenTelemetryInterceptor {
-  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler): Observable<any> {
+  intercept(
+    request: HttpInterceptorRequest,
+    next: HttpInterceptorHandler,
+  ): Observable<any> {
     // Inject OpenTelemetry trace context into headers
     const traceHeaders: Record<string, string> = {};
     propagation.inject(context.active(), traceHeaders);
@@ -180,7 +198,7 @@ export class ExampleService {
   async makeRequest() {
     // The interceptors will automatically add OpenTelemetry headers
     const response = await firstValueFrom(
-      this.httpService.get('https://api.example.com/data')
+      this.httpService.get('https://api.example.com/data'),
     );
 
     return response.data;
@@ -189,7 +207,7 @@ export class ExampleService {
   async makePostRequest(data: any) {
     // OpenTelemetry headers are added to all requests
     const response = await firstValueFrom(
-      this.httpService.post('https://api.example.com/users', data)
+      this.httpService.post('https://api.example.com/users', data),
     );
 
     return response.data;

@@ -1,8 +1,14 @@
-import * as http from "http";
-import * as https from "https";
+import * as http from 'http';
+import * as https from 'https';
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpModule, HttpService } from "../src";
-import { DynamicModule, Global, Module, OnModuleInit, Injectable } from "@nestjs/common";
+import { HttpModule, HttpService } from '../src';
+import {
+  DynamicModule,
+  Global,
+  Module,
+  OnModuleInit,
+  Injectable,
+} from '@nestjs/common';
 
 describe('Exact @nestjs/axios Compatibility', () => {
   it('should work with the exact pattern that works with @nestjs/axios', async () => {
@@ -36,7 +42,7 @@ describe('Exact @nestjs/axios Compatibility', () => {
 
       public onModuleInit() {
         // Add Axios interceptor
-        this.httpService.axiosRef.interceptors.request.use((config) => {
+        this.httpService.axiosRef.interceptors.request.use(config => {
           // Mock OpenTelemetry headers
           const headers: Record<string, string> = {
             'X-Trace-Id': '12345',
@@ -44,7 +50,7 @@ describe('Exact @nestjs/axios Compatibility', () => {
           };
 
           Object.entries(headers).forEach(([key, value]) => {
-            if (config.headers && typeof config.headers.set === "function") {
+            if (config.headers && typeof config.headers.set === 'function') {
               config.headers.set(key, value);
             } else if (config.headers) {
               // Fallback for different header types

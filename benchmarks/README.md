@@ -271,39 +271,23 @@ node benchmarks/micro/compare.js --base ../base-checkout --head . --rounds 5 --d
 
 ### Local Development (without Docker)
 
-1. **Start services individually:**
-   ```bash
-   # Terminal 1 - Mock service
-   npx nx serve mock-service
+Each app runs the same way its Dockerfile runs it. From `benchmarks/`, after `./scripts/pack-lib.sh`, `npm ci` and `npm run install-lib`:
 
-   # Terminal 2 - Fastify+Axios service
-   npx nx serve nestjs-fastify-axios
+```bash
+# Terminal 1 - mock upstream service
+PORT=3001 npx ts-node --transpile-only --project apps/mock-service/tsconfig.app.json apps/mock-service/src/main.ts
 
-   # Terminal 3 - Fastify+Undici service
-   npx nx serve nestjs-fastify-undici
-   
-   # Terminal 4 - Express+Axios service
-   npx nx serve nestjs-express-axios
-   ```
+# Terminal 2 - any app, e.g. Fastify + nestjs-axios-undici
+PORT=3003 MOCK_SERVICE_URL=http://localhost:3001/api/data \
+  npx ts-node --transpile-only --project apps/nestjs-fastify-undici-interceptor/tsconfig.app.json \
+  apps/nestjs-fastify-undici-interceptor/src/main.ts
 
-2. **Run simple test:**
-   ```bash
-   ./simple-test.sh
-   ```
+curl http://localhost:3003/api
+```
 
 ### Manual Testing
 
-Test individual endpoints:
-```bash
-# Fastify+Axios
-curl http://localhost:3002/api | jq
-
-# Fastify+Undici
-curl http://localhost:3003/api | jq
-
-# Express+Axios
-curl http://localhost:3004/api | jq
-```
+With a Compose stack running, `./simple-test.sh` curls the services (it needs `jq`). Set `PORT_BASE` to the stack's base port: 3010 for Node 22 (the default), 3020 for Node 24, 3030 for Node 26. Each app answers on `http://localhost:<PORT_BASE + n>/api`; the port mappings are in the Compose files.
 
 ## 📁 Project Structure
 
@@ -395,31 +379,28 @@ undici_http_duration...........: avg=17.72ms min=402µs  med=15.28ms max=188.05m
 ### Docker Issues
 ```bash
 # Clean rebuild
-docker-compose down
-docker-compose up --build
+docker compose -f docker-compose-node24.yml down
+docker compose -f docker-compose-node24.yml up --build
 ```
 
 ### Port Conflicts
-Ensure ports 3001-3004 are available:
+Each Compose stack publishes 7 ports: 3011-3017 (Node 22), 3021-3027 (Node 24), 3031-3037 (Node 26). Check that they are free:
 ```bash
-lsof -i :3001-3004
+lsof -i :3011-3017
 ```
 
 ### k6 Command Not Found
 Install k6: https://k6.io/docs/getting-started/installation/
 
-### Undici Module Issues
-If you see "Cannot find module 'undici'":
-```bash
-npm install undici
-```
+### Cannot find module 'nestjs-axios-undici'
+The library is installed from the local build, not from npm. Run `./scripts/pack-lib.sh`, then `npm run install-lib` (again after every `npm ci` / `npm install`).
 
 ## 🏃 Available Scripts
 
 - `./test-all-node-versions.sh` - Run performance tests across Node.js 22, 24, and 26
 - `node generate-comparison-report.js` - Build `results/PERFORMANCE-COMPARISON-REPORT.md` from the per-version results
 - `node generate-comparison-report.js --update-readme` - Refresh the result tables in this README
-- `./simple-test.sh` - Quick manual testing with curl for all services
+- `./simple-test.sh` - Quick manual check of a running Compose stack with curl (needs `jq`)
 
 ### Docker Compose Files
 

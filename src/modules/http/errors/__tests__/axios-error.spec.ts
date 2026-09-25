@@ -17,7 +17,13 @@ const undiciError = (code: string, message = code) =>
 
 describe('axios errors', () => {
   it('maps status codes to ERR_BAD_REQUEST / ERR_BAD_RESPONSE', () => {
-    const response = { data: '', status: 404, statusText: 'Not Found', headers: {}, config: {} };
+    const response = {
+      data: '',
+      status: 404,
+      statusText: 'Not Found',
+      headers: {},
+      config: {},
+    };
     const error = createStatusError(response);
     expect(error).toBeInstanceOf(AxiosError);
     expect(error).toMatchObject({
@@ -26,7 +32,9 @@ describe('axios errors', () => {
       status: 404,
       isAxiosError: true,
     });
-    expect(createStatusError({ ...response, status: 502 }).code).toBe('ERR_BAD_RESPONSE');
+    expect(createStatusError({ ...response, status: 502 }).code).toBe(
+      'ERR_BAD_RESPONSE',
+    );
   });
 
   it.each([
@@ -45,7 +53,9 @@ describe('axios errors', () => {
   });
 
   it('maps aborts to CanceledError', () => {
-    const abort = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    const abort = Object.assign(new Error('This operation was aborted'), {
+      name: 'AbortError',
+    });
     const error = toAxiosError(abort, request);
     expect(error).toBeInstanceOf(CanceledError);
     expect(error).toMatchObject({ code: 'ERR_CANCELED', message: 'canceled' });
@@ -56,8 +66,12 @@ describe('axios errors', () => {
   });
 
   it('keeps network error codes and maps undici socket errors to ECONNRESET', () => {
-    expect(toAxiosError(undiciError('ECONNREFUSED'), request).code).toBe('ECONNREFUSED');
-    expect(toAxiosError(undiciError('UND_ERR_SOCKET', 'other side closed'), request)).toMatchObject({
+    expect(toAxiosError(undiciError('ECONNREFUSED'), request).code).toBe(
+      'ECONNREFUSED',
+    );
+    expect(
+      toAxiosError(undiciError('UND_ERR_SOCKET', 'other side closed'), request),
+    ).toMatchObject({
       code: 'ECONNRESET',
       message: 'other side closed',
       isAxiosError: true,
@@ -74,6 +88,11 @@ describe('axios errors', () => {
 
   it('toJSON returns a serialisable snapshot', () => {
     const error = new AxiosError('boom', 'ERR_X', { url: '/x', method: 'GET' });
-    expect(error.toJSON()).toMatchObject({ message: 'boom', name: 'AxiosError', code: 'ERR_X', config: { url: '/x' } });
+    expect(error.toJSON()).toMatchObject({
+      message: 'boom',
+      name: 'AxiosError',
+      code: 'ERR_X',
+      config: { url: '/x' },
+    });
   });
 });

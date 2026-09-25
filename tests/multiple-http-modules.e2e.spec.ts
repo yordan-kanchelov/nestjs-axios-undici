@@ -1,5 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Injectable, Module, DynamicModule, Global, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Module,
+  DynamicModule,
+  Global,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 import * as http from 'http';
 import * as https from 'https';
@@ -9,11 +15,16 @@ describe('Multiple HttpModule Imports Issue', () => {
     // First module that uses HttpModule
     @Module({
       imports: [HttpModule.register({ timeout: 1000 })],
-      providers: [{
-        provide: 'SERVICE_A',
-        useFactory: (httpService: HttpService) => ({ name: 'A', httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'SERVICE_A',
+          useFactory: (httpService: HttpService) => ({
+            name: 'A',
+            httpService,
+          }),
+          inject: [HttpService],
+        },
+      ],
       exports: ['SERVICE_A'],
     })
     class ModuleA {}
@@ -21,11 +32,16 @@ describe('Multiple HttpModule Imports Issue', () => {
     // Second module that uses HttpModule
     @Module({
       imports: [HttpModule.register({ timeout: 2000 })],
-      providers: [{
-        provide: 'SERVICE_B',
-        useFactory: (httpService: HttpService) => ({ name: 'B', httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'SERVICE_B',
+          useFactory: (httpService: HttpService) => ({
+            name: 'B',
+            httpService,
+          }),
+          inject: [HttpService],
+        },
+      ],
       exports: ['SERVICE_B'],
     })
     class ModuleB {}
@@ -58,11 +74,7 @@ describe('Multiple HttpModule Imports Issue', () => {
 
     // App module that imports all of them
     @Module({
-      imports: [
-        HttpConfigModule.forRoot(),
-        ModuleA,
-        ModuleB,
-      ],
+      imports: [HttpConfigModule.forRoot(), ModuleA, ModuleB],
     })
     class AppModule {}
 
@@ -74,7 +86,7 @@ describe('Multiple HttpModule Imports Issue', () => {
 
     const serviceA = module.get('SERVICE_A');
     const serviceB = module.get('SERVICE_B');
-    
+
     expect(serviceA).toBeDefined();
     expect(serviceB).toBeDefined();
     expect(serviceA.httpService).toBeInstanceOf(HttpService);
@@ -83,33 +95,34 @@ describe('Multiple HttpModule Imports Issue', () => {
     await module.close();
   });
 
-  it('should reproduce the UNDICI_INSTANCE_TOKEN error', async () => {
-    // Try to create a scenario that causes the error
+  it('should not throw the UNDICI_INSTANCE_TOKEN error when importing the HttpModule class directly', async () => {
+    // Regression: importing the bare HttpModule class (without register())
+    // used to fail to resolve UNDICI_INSTANCE_TOKEN
     @Module({
       imports: [HttpModule], // Import the module class directly
-      providers: [{
-        provide: 'BROKEN_SERVICE',
-        useFactory: (httpService: HttpService) => ({ httpService }),
-        inject: [HttpService],
-      }],
+      providers: [
+        {
+          provide: 'BROKEN_SERVICE',
+          useFactory: (httpService: HttpService) => ({ httpService }),
+          inject: [HttpService],
+        },
+      ],
     })
     class BrokenModule {}
 
-    try {
-      const module = await Test.createTestingModule({
-        imports: [BrokenModule],
-      }).compile();
-      
-      await module.close();
-      console.log('No error - this pattern works');
-    } catch (error) {
-      console.log('Error reproduced:', error.message);
-      expect(error.message).toContain('UNDICI_INSTANCE_TOKEN');
-    }
+    const module = await Test.createTestingModule({
+      imports: [BrokenModule],
+    }).compile();
+
+    const brokenService = module.get('BROKEN_SERVICE');
+    expect(brokenService.httpService).toBeInstanceOf(HttpService);
+
+    await module.close();
   });
 
   it('should test HttpModule import without register()', async () => {
-    // This might be the issue - importing HttpModule without calling register()
+    // Importing HttpModule without calling register() and re-exporting it
+    // from a global module must still expose HttpService
     @Global()
     @Module({})
     class ConfigModule {
@@ -122,18 +135,13 @@ describe('Multiple HttpModule Imports Issue', () => {
       }
     }
 
-    try {
-      const module = await Test.createTestingModule({
-        imports: [ConfigModule.forRoot()],
-      }).compile();
-      
-      // Try to get HttpService
-      const httpService = module.get(HttpService);
-      console.log('HttpService retrieved:', !!httpService);
-      
-      await module.close();
-    } catch (error) {
-      console.log('Error with bare HttpModule import:', error.message);
-    }
+    const module = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot()],
+    }).compile();
+
+    const httpService = module.get(HttpService);
+    expect(httpService).toBeInstanceOf(HttpService);
+
+    await module.close();
   });
 });

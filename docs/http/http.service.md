@@ -1,200 +1,97 @@
 # HttpService
 
-The `HttpService` is the main service for making HTTP requests in your NestJS application. It always returns axios-compatible responses, making it a drop-in replacement for `@nestjs/axios`.
-
-## Basic Usage
-
-To use the HttpService, inject it into your component or service:
+`HttpService` makes the HTTP requests. Its methods match `@nestjs/axios`' `HttpService`: they return an RxJS `Observable` that emits an axios-compatible response, and non-2xx responses are emitted as axios errors.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { HttpService } from 'nestjs-axios-undici';
-import { lastValueFrom } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
-export class UserService {
+export class UsersService {
   constructor(private readonly httpService: HttpService) {}
 
   async getUser(id: number) {
-    const response = await lastValueFrom(
-      this.httpService.get(`https://api.example.com/users/${id}`)
-    );
-    return response.data; // Axios-compatible response
+    const { data } = await firstValueFrom(this.httpService.get<User>(`https://api.example.com/users/${id}`));
+    return data;
   }
 }
 ```
 
-## Available Methods
+See [Making Requests](/docs/guides/making-requests.md) and [Error Handling](/docs/guides/error-handling.md) for usage.
 
-The HttpService provides all standard HTTP methods:
+## Request methods
 
-### GET Request
+All methods return `Observable<AxiosLikeResponse<T>>`.
+
+| Method | Description |
+|--------|-------------|
+| `request<T>(config)` | Axios call form: `{ url, method, params, data, headers, ... }`. |
+| `request<T>(url, options?)` | Undici call form: `url` plus [undici request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) and the axios per-request options. |
+| `get<T>(url, config?)` | |
+| `delete<T>(url, config?)` | |
+| `head<T>(url, config?)` | |
+| `options<T>(url, config?)` | |
+| `post<T>(url, data?, config?)` | |
+| `put<T>(url, data?, config?)` | |
+| `patch<T>(url, data?, config?)` | |
+| `postForm<T>(url, data?, config?)` | `FormData` is sent as `multipart/form-data`, other data url-encoded. |
+| `putForm<T>(url, data?, config?)` | Same as `postForm`. |
+| `patchForm<T>(url, data?, config?)` | Same as `postForm`. |
+
+`config` accepts the axios per-request options (`headers`, `params`, `paramsSerializer`, `baseURL`, `auth`, `timeout`, `signal`, `cancelToken`, `responseType`, `validateStatus`, `maxRedirects`, `maxContentLength`, ...) as well as undici request options such as `dispatcher`. See [Request config](/docs/axios-supported-options.md#request-config).
+
+## Response
+
+| Property | Description |
+|----------|-------------|
+| `data` | Parsed body: JSON for JSON content types, a string for text, a `Buffer` for binary content. |
+| `status`, `statusText` | HTTP status code and text. |
+| `headers` | Response headers, with lower-case names. |
+| `config` | The request `url`, `method`, `headers`, `timeout` and `validateStatus`. |
+
+## `axiosRef`
+
+An axios-instance-like object, for code written against `@nestjs/axios`' `httpService.axiosRef`:
+
+- `axiosRef.interceptors.request.use(onFulfilled, onRejected)` / `axiosRef.interceptors.response.use(...)`, returning an id for `eject(id)`; `clear()` removes all of them.
+- `axiosRef.defaults.baseURL`, `axiosRef.defaults.timeout` and `axiosRef.defaults.headers` (`common`, `get`, `post`, ...), applied to every later request.
+- `axiosRef.request(config)`, `get`, `delete`, `head`, `options`, `post`, `put`, `patch`, returning a Promise of the response.
+
 ```typescript
-const response = await lastValueFrom(
-  this.httpService.get('/users')
-);
-console.log(response.data); // The parsed response data
-console.log(response.status); // HTTP status code
-console.log(response.headers); // Response headers
+this.httpService.axiosRef.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+const { data } = await this.httpService.axiosRef.get('https://api.example.com/users');
 ```
 
-### POST Request
-```typescript
-const newUser = { name: 'John Doe', email: 'john@example.com' };
-const response = await lastValueFrom(
-  this.httpService.post('/users', newUser)
-);
-console.log(response.data); // Created user data
-```
+Other `AxiosInstance` members are not available. See [`axiosRef`](/docs/axios-supported-options.md#axiosref) for the differences from axios.
 
-### PUT Request
-```typescript
-const updatedUser = { name: 'Jane Doe' };
-const response = await lastValueFrom(
-  this.httpService.put('/users/1', updatedUser)
-);
-```
+## `addInterceptor(interceptor)`
 
-### PATCH Request
-```typescript
-const partialUpdate = { email: 'newemail@example.com' };
-const response = await lastValueFrom(
-  this.httpService.patch('/users/1', partialUpdate)
-);
-```
-
-### DELETE Request
-```typescript
-const response = await lastValueFrom(
-  this.httpService.delete('/users/1')
-);
-```
-
-### HEAD Request
-```typescript
-const response = await lastValueFrom(
-  this.httpService.head('/users/1')
-);
-```
-
-## Request Options
-
-All methods accept an optional configuration object:
+Adds a native interceptor (a function or an object with an `intercept()` method) after the existing ones. It returns nothing; to remove interceptors later, use `axiosRef.interceptors` and `eject()`.
 
 ```typescript
-const response = await lastValueFrom(
-  this.httpService.get('/users', {
-    headers: {
-      'Authorization': 'Bearer token',
-      'X-Custom-Header': 'value'
-    },
-    timeout: 5000, // 5 seconds
-    params: {
-      page: 1,
-      limit: 10
-    }
-  })
-);
-```
-
-## Working with Observables
-
-The HttpService returns RxJS Observables, allowing you to use RxJS operators:
-
-```typescript
-import { map, catchError, retry } from 'rxjs/operators';
-import { of } from 'rxjs';
-
-getUserName(id: number): Observable<string> {
-  return this.httpService.get(`/users/${id}`).pipe(
-    map(response => response.data.name),
-    retry(3),
-    catchError(error => {
-      console.error('Error fetching user:', error);
-      return of('Unknown User');
-    })
-  );
-}
-```
-
-## Type Safety
-
-The HttpService supports TypeScript generics for type-safe responses:
-
-```typescript
-interface User {
-  id: number;
-  name: string;
-  email: string;
-}
-
-async getUser(id: number): Promise<User> {
-  const response = await lastValueFrom(
-    this.httpService.get<User>(`/users/${id}`)
-  );
-  return response.data; // Type is User
-}
-```
-
-## Error Handling
-
-Errors are thrown as standard JavaScript errors with axios-compatible structure:
-
-```typescript
-try {
-  const response = await lastValueFrom(
-    this.httpService.get('/users/999')
-  );
-} catch (error) {
-  if (error.response) {
-    // Server responded with error status
-    console.log(error.response.status); // e.g., 404
-    console.log(error.response.data); // Error response body
-  } else if (error.request) {
-    // Request was made but no response received
-    console.log('No response received');
-  } else {
-    // Error in request configuration
-    console.log('Request error:', error.message);
-  }
-}
-```
-
-## Interceptors
-
-You can add interceptors dynamically to the HttpService:
-
-```typescript
-// Add an interceptor
-const interceptorId = this.httpService.addInterceptor((request, next) => {
-  console.log('Request:', request.url);
+this.httpService.addInterceptor((request, next) => {
+  request.options.headers = { ...request.options.headers, 'X-Request-ID': randomUUID() };
   return next.handle(request);
 });
-
-// Remove an interceptor
-this.httpService.removeInterceptor(interceptorId);
 ```
 
-## Migration from @nestjs/axios
+See [Interceptors](/docs/guides/interceptors.md).
 
-Migration requires updating imports and adapting interceptor usage:
+## `interceptorCount`
+
+Read-only. The number of interceptors in this service's chain.
+
+## `setGlobalDispatcher(dispatcher)`
+
+Sets the undici `Dispatcher` used by later requests made through this `HttpService`. Despite the name, it does not change undici's global dispatcher. A `dispatcher` passed per request takes precedence. Neither applies when the module creates its own dispatcher (`proxy`, `withCredentials`, or `httpAgent`/`httpsAgent` with `maxSockets`).
 
 ```typescript
-// Before
-import { HttpService } from '@nestjs/axios';
+import { Agent } from 'undici';
 
-// After
-import { HttpService } from 'nestjs-axios-undici';
+this.httpService.setGlobalDispatcher(new Agent({ connections: 10 }));
 ```
 
-**What stays the same:**
-- Response structure (data, status, headers)
-- HTTP method calls (get, post, put, etc.)
-- Observable/Promise handling
+## `undiciRef`
 
-**What changes:**
-- Interceptor API (see examples above)
-- Some configuration options
-- No direct access to axios instance
-
-For detailed migration patterns, see the [migration guide](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts).
+Read-only. The undici request options this service uses as defaults for every request (module `headers`, timeouts, `dispatcher`, ...).

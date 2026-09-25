@@ -7,7 +7,14 @@ import {
   HttpModule as AxiosHttpModule,
   HttpService as AxiosHttpService,
 } from '@nestjs/axios';
-import { firstValueFrom, of, throwError, Observable, mergeMap, delay } from 'rxjs';
+import {
+  firstValueFrom,
+  of,
+  throwError,
+  Observable,
+  mergeMap,
+  delay,
+} from 'rxjs';
 import { map, catchError, retry, timeout, tap } from 'rxjs/operators';
 import * as http from 'http';
 import { AddressInfo } from 'net';
@@ -29,7 +36,7 @@ describe('Axios Real-World Scenarios', () => {
   afterEach(async () => {
     if (mockServer) {
       await new Promise<void>((resolve, reject) => {
-        mockServer.close((err) => {
+        mockServer.close(err => {
           if (err) reject(err);
           else resolve();
         });
@@ -94,30 +101,35 @@ describe('Axios Real-World Scenarios', () => {
       // Add response interceptor to handle 401 and refresh token
       httpService.addInterceptor((request, next) => {
         return next.handle(request).pipe(
-          catchError((error) => {
+          catchError(error => {
             // With axios adapter, errors have response property
-            if (error.response?.status === 401 && !request.url.toString().includes('refresh-token')) {
+            if (
+              error.response?.status === 401 &&
+              !request.url.toString().includes('refresh-token')
+            ) {
               // Refresh token
-              return httpService.request(`${serverUrl}/refresh-token`, { method: 'POST' }).pipe(
-                mergeMap((refreshResponse: any) => {
-                  authToken = refreshResponse.data.access_token;
-                  
-                  // Retry original request with new token
-                  const retryRequest = {
-                    ...request,
-                    options: {
-                      ...request.options,
-                      headers: {
-                        ...request.options.headers,
-                        Authorization: `Bearer ${authToken}`,
+              return httpService
+                .request(`${serverUrl}/refresh-token`, { method: 'POST' })
+                .pipe(
+                  mergeMap((refreshResponse: any) => {
+                    authToken = refreshResponse.data.access_token;
+
+                    // Retry original request with new token
+                    const retryRequest = {
+                      ...request,
+                      options: {
+                        ...request.options,
+                        headers: {
+                          ...request.options.headers,
+                          Authorization: `Bearer ${authToken}`,
+                        },
                       },
-                    },
-                  };
-                  
-                  // Make the retry request
-                  return next.handle(retryRequest);
-                })
-              );
+                    };
+
+                    // Make the retry request
+                    return next.handle(retryRequest);
+                  }),
+                );
             }
             return throwError(() => error);
           }),
@@ -433,4 +445,3 @@ describe('Axios Real-World Scenarios', () => {
     });
   });
 });
-

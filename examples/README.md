@@ -1,150 +1,49 @@
 # Examples
 
-This directory contains various examples demonstrating the features of `nestjs-axios-undici`.
+Runnable examples for `nestjs-axios-undici`. Each one imports the library from `../lib`, so build it first.
 
-## Running Examples
+| Example | Shows |
+|---------|-------|
+| [`axios-to-undici-migration.ts`](axios-to-undici-migration.ts) | The same service code running on `@nestjs/axios` and on `nestjs-axios-undici`, with axios options and `axiosRef` interceptors |
+| [`axios-compatibility-features.ts`](axios-compatibility-features.ts) | axios options in `register()`, axios-style interceptors, response and error shape, every HTTP method |
+| [`interceptors.ts`](interceptors.ts) | Native class-based and function-based interceptors |
+| [`axios-headers-example.ts`](axios-headers-example.ts) | The `AxiosHeaders` class |
+| [`opentelemetry-integration.ts`](opentelemetry-integration.ts) | Three ways to propagate OpenTelemetry trace context |
 
-The examples can be run individually or as a test suite:
-
-### Setup Examples
-First, set up the examples by installing dependencies:
-
-```bash
-npm run setup:examples
-```
-
-This will:
-- Build the library
-- Install dependencies for the interceptor-demo
-- Create necessary configuration files
-
-### Run All Examples as Tests
-Run all examples as an e2e test suite:
+## Running
 
 ```bash
+# All examples, as a test run (builds the library first)
 npm run test:examples
+
+# A single example
+npm run build
+npx ts-node --project examples/tsconfig.json examples/interceptors.ts
 ```
 
-For verbose output:
+`npm run test:examples` starts a local echo server and passes its URL to the examples as `EXAMPLES_BASE_URL`, so the run doesn't depend on external hosts. Run on their own, the examples call `https://jsonplaceholder.typicode.com`.
 
-```bash
-npm run test:examples:verbose
-```
+## Adding an example
 
-### Run Individual Examples
+1. Export a main function and run it when the file is executed directly; exit non-zero on failure:
 
-#### Root Examples
-```bash
-# OpenTelemetry Integration
-npx ts-node examples/opentelemetry-integration.ts
+   ```typescript
+   export async function demonstrateFeature() {
+     const app = await NestFactory.createApplicationContext(AppModule);
+     try {
+       // ...
+     } finally {
+       await app.close();
+     }
+   }
 
-# Axios Compatibility Features
-npx ts-node examples/axios-compatibility-features.ts
+   if (require.main === module) {
+     demonstrateFeature().catch(error => {
+       console.error(error);
+       process.exit(1);
+     });
+   }
+   ```
 
-# Axios Headers
-npx ts-node examples/axios-headers-example.ts
-```
-
-#### Interceptor Demo Examples
-```bash
-cd examples/interceptor-demo
-
-# Basic axios example
-npm run test:axios
-
-# Migration patterns
-npx ts-node src/axios-to-undici-migration.ts
-
-# Interceptor patterns
-npx ts-node src/interceptors-example.ts
-```
-
-## Example Descriptions
-
-### Root Examples
-
-1. **opentelemetry-integration.ts**
-   - Shows three ways to integrate OpenTelemetry trace propagation
-   - Axios-style interceptors (easiest migration)
-   - Native interceptors (better performance)
-   - Class-based interceptors (most flexible)
-
-2. **axios-compatibility-features.ts**
-   - Comprehensive demonstration of all axios compatibility features
-   - Configuration mapping (timeout, maxRedirects, etc.)
-   - Axios-style interceptor API
-   - Response structure compatibility
-   - Error handling compatibility
-   - All HTTP methods
-
-3. **axios-headers-example.ts**
-   - Focused example on AxiosHeaders class
-   - Case-insensitive header operations
-   - Creating headers from various sources
-   - Header concatenation and manipulation
-
-### Interceptor Demo Examples
-
-1. **axios-example.ts**
-   - Pure axios reference implementation
-   - Useful for comparing behavior
-
-2. **axios-to-undici-migration.ts**
-   - Comprehensive migration patterns
-   - Side-by-side comparisons
-   - Real-world scenarios
-
-3. **interceptors-example.ts**
-   - Basic interceptor usage patterns
-   - Function-based interceptors
-   - Class-based interceptors
-
-## Using Examples as Tests
-
-The examples are designed to be runnable as tests. When run via `npm run test:examples`, they:
-
-1. Execute in isolation with proper error handling
-2. Report pass/fail status
-3. Show execution time
-4. Provide a summary report
-
-This serves as additional e2e testing beyond the formal test suite, ensuring that:
-- All documented patterns work correctly
-- The library integrates properly with NestJS
-- Examples remain up-to-date with library changes
-
-## Adding New Examples
-
-When adding new examples:
-
-1. Make them self-contained and runnable
-2. Export a main function for testing: `export async function demonstrateFeature()`
-3. Include error handling
-4. Add clear console output indicating success/failure
-5. Update the `examples` array in `scripts/run-examples.js`
-
-Example structure:
-```typescript
-export async function demonstrateFeature() {
-  const app = await NestFactory.createApplicationContext(AppModule);
-
-  try {
-    // Your example code here
-    console.log('✅ Feature demonstrated successfully!');
-    return true;
-  } catch (error) {
-    console.error('❌ Error:', error);
-    throw error;
-  } finally {
-    await app.close();
-  }
-}
-
-// Run if called directly
-if (require.main === module) {
-  demonstrateFeature().catch(error => {
-    console.error(error);
-    process.exit(1);
-  });
-}
-```
+2. Use `process.env.EXAMPLES_BASE_URL` for any request URL.
+3. Add it to the `examples` list in [`scripts/run-examples.js`](../scripts/run-examples.js).

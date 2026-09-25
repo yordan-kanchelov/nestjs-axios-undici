@@ -12,9 +12,7 @@ describe('Real-world NestJS Integration', () => {
       constructor(private readonly httpService: HttpService) {}
 
       fetchData(url: string): Observable<any> {
-        return this.httpService.get(url).pipe(
-          map(response => response.data)
-        );
+        return this.httpService.get(url).pipe(map(response => response.data));
       }
     }
 
@@ -151,7 +149,8 @@ describe('Real-world NestJS Integration', () => {
         ConfigModule,
         HttpModule.registerAsync({
           imports: [ConfigModule],
-          useFactory: (configService: ConfigService) => configService.getHttpConfig(),
+          useFactory: (configService: ConfigService) =>
+            configService.getHttpConfig(),
           inject: [ConfigService],
         }),
       ],
@@ -222,10 +221,10 @@ describe('Real-world NestJS Integration', () => {
   it('should handle axios-compatible configuration in a real app', async () => {
     // Using axios-style configuration
     const axiosConfig = {
-      baseURL: 'https://jsonplaceholder.typicode.com',
+      baseURL: 'https://api.example.com',
       timeout: 5000,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       maxRedirects: 5,
@@ -233,7 +232,7 @@ describe('Real-world NestJS Integration', () => {
     };
 
     @Injectable()
-    class JsonPlaceholderService {
+    class UsersApiService {
       constructor(private readonly httpService: HttpService) {}
 
       getUsers() {
@@ -251,8 +250,8 @@ describe('Real-world NestJS Integration', () => {
 
     @Module({
       imports: [HttpModule.register(axiosConfig)],
-      providers: [JsonPlaceholderService],
-      exports: [JsonPlaceholderService],
+      providers: [UsersApiService],
+      exports: [UsersApiService],
     })
     class JsonPlaceholderModule {}
 
@@ -260,7 +259,7 @@ describe('Real-world NestJS Integration', () => {
       imports: [JsonPlaceholderModule],
     }).compile();
 
-    const service = module.get<JsonPlaceholderService>(JsonPlaceholderService);
+    const service = module.get<UsersApiService>(UsersApiService);
     expect(service).toBeDefined();
 
     // Verify the service can use all HTTP methods

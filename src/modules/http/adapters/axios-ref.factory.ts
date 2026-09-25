@@ -20,20 +20,48 @@ type BodyMethod = 'post' | 'put' | 'patch';
  * The HttpService surface used to back the promise-based axiosRef methods.
  */
 export interface AxiosRefHost {
-  request<T = any>(config: AxiosCompatibleRequestConfig): Observable<AxiosLikeResponse<T>>;
-  get<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  delete<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  head<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  options<T = any>(url: string, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  post<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  put<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
-  patch<T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions): Observable<AxiosLikeResponse<T>>;
+  request<T = any>(
+    config: AxiosCompatibleRequestConfig,
+  ): Observable<AxiosLikeResponse<T>>;
+  get<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  delete<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  head<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  options<T = any>(
+    url: string,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  post<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  put<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
+  patch<T = any>(
+    url: string,
+    data?: any,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>>;
 }
 
 /**
  * Creates the `defaults` object exposed as `httpService.axiosRef.defaults`.
  */
-export function createAxiosRefDefaults(moduleOptions?: Record<string, any>): AxiosRefDefaults {
+export function createAxiosRefDefaults(
+  moduleOptions?: Record<string, any>,
+): AxiosRefDefaults {
   return {
     baseURL: moduleOptions?.baseURL,
     headers: {
@@ -59,11 +87,17 @@ export function createAxiosRef(
   addInterceptor: (interceptor: HttpInterceptorFunction) => void,
   moduleOptions?: Record<string, any>,
 ): AxiosRef {
-  const bodyless = (method: BodylessMethod) =>
+  const bodyless =
+    (method: BodylessMethod) =>
     <T = any>(url: string, config?: AxiosCompatibleRequestOptions) =>
       firstValueFrom(host[method]<T>(url, config));
-  const withBody = (method: BodyMethod) =>
-    <T = any>(url: string, data?: any, config?: AxiosCompatibleRequestOptions) =>
+  const withBody =
+    (method: BodyMethod) =>
+    <T = any>(
+      url: string,
+      data?: any,
+      config?: AxiosCompatibleRequestOptions,
+    ) =>
       firstValueFrom(host[method]<T>(url, data, config));
 
   return {

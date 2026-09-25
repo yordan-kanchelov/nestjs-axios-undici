@@ -1,0 +1,6 @@
+lib/
+coverage/
+benchmarks/
+package-lock.json
+docs/
+*.md

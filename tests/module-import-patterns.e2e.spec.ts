@@ -1,5 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Injectable, Module, DynamicModule, Global, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Module,
+  DynamicModule,
+  Global,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpModule, HttpService } from '../src';
 
 describe('Module Import Patterns', () => {
@@ -79,38 +85,29 @@ describe('Module Import Patterns', () => {
       }
     }
 
-    // Test pattern 1
-    try {
-      const module1 = await Test.createTestingModule({
-        imports: [Test1Module.forRoot()],
-      }).compile();
-      await module1.close();
-      console.log('Pattern 1 (export class): SUCCESS');
-    } catch (error) {
-      console.log('Pattern 1 (export class): FAILED', error.message);
-    }
+    // Pattern 1 (export the module class): compiles and provides HttpService
+    const module1 = await Test.createTestingModule({
+      imports: [Test1Module.forRoot()],
+    }).compile();
+    expect(module1.get(HttpService)).toBeInstanceOf(HttpService);
+    await module1.close();
 
-    // Test pattern 2
-    try {
-      const module2 = await Test.createTestingModule({
-        imports: [Test2Module.forRoot()],
-      }).compile();
-      await module2.close();
-      console.log('Pattern 2 (export instance): SUCCESS');
-    } catch (error) {
-      console.log('Pattern 2 (export instance): FAILED', error.message);
-    }
+    // Pattern 2 (export the dynamic module instance): compiles and provides HttpService
+    const module2 = await Test.createTestingModule({
+      imports: [Test2Module.forRoot()],
+    }).compile();
+    expect(module2.get(HttpService)).toBeInstanceOf(HttpService);
+    await module2.close();
 
-    // Test pattern 3
-    try {
-      const module3 = await Test.createTestingModule({
+    // Pattern 3 (export HttpService directly without re-exporting the module):
+    // Nest rejects exporting a provider that belongs to an imported module
+    await expect(
+      Test.createTestingModule({
         imports: [Test3Module.forRoot()],
-      }).compile();
-      await module3.close();
-      console.log('Pattern 3 (export service): SUCCESS');
-    } catch (error) {
-      console.log('Pattern 3 (export service): FAILED', error.message);
-    }
+      }).compile(),
+    ).rejects.toThrow(
+      'Nest cannot export a provider/module that is not a part of the currently processed module (Test3Module)',
+    );
   });
 
   it('should handle the exact user pattern', async () => {
@@ -137,7 +134,7 @@ describe('Module Import Patterns', () => {
       }
 
       public onModuleInit() {
-        this.httpService.axiosRef.interceptors.request.use((config) => {
+        this.httpService.axiosRef.interceptors.request.use(config => {
           console.log('Interceptor called');
           return config;
         });
