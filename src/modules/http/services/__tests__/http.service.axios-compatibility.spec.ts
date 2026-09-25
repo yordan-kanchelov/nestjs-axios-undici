@@ -262,7 +262,6 @@ describe('HttpService - Axios Compatibility', () => {
       module = await Test.createTestingModule({
         imports: [
           HttpModule.register({
-            socketPath: '/var/run/docker.sock',
             xsrfCookieName: 'XSRF-TOKEN',
           }),
         ],
@@ -273,11 +272,25 @@ describe('HttpService - Axios Compatibility', () => {
         '[nestjs-axios-undici] Axios compatibility warnings:',
       );
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('socketPath'),
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('XSRF protection'),
       );
+
+      consoleWarnSpy.mockRestore();
+      mockServer = null;
+    });
+
+    it('does not warn for socketPath (now supported)', async () => {
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      module = await Test.createTestingModule({
+        imports: [
+          HttpModule.register({
+            socketPath: '/var/run/docker.sock',
+          }),
+        ],
+      }).compile();
+
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
 
       consoleWarnSpy.mockRestore();
       mockServer = null;

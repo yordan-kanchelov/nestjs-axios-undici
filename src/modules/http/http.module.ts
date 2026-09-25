@@ -172,9 +172,12 @@ export class HttpModule {
       config.withCredentials ||
       config.xsrfCookieName ||
       config.xsrfHeaderName ||
-      config.proxy ||
+      config.proxy !== undefined ||
       config.maxBodyLength !== undefined ||
-      config.maxContentLength !== undefined
+      config.maxContentLength !== undefined ||
+      config.socketPath ||
+      config.httpVersion !== undefined ||
+      config.http2Options
     );
 
     let processedConfig = config;

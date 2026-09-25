@@ -17,7 +17,6 @@ import {
 } from '../../../src';
 import { differential, Ctx } from './harness';
 
-const CONFIG = 'plan.md phase 2: fix(config): transport options';
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
 const COOKIE_JAR =
   'plan.md phase 2: breaking: withCredentials becomes a no-op; add cookieJar';
@@ -238,7 +237,6 @@ differential('Differential: HttpModule.register() options', routes, [
     options: { socketPath: '/tmp/does-not-exist.sock' },
     run: (s: any) => s.get('http://localhost/echo'),
     normalize: (o: any) => ({ ok: !!o.result, code: o.error?.code }),
-    knownDifference: CONFIG,
   },
 ]);
 

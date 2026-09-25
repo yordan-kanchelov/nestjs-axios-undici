@@ -1,5 +1,10 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { request, ProxyAgent, Agent as UndiciAgent } from 'undici';
+import {
+  request,
+  ProxyAgent,
+  Agent as UndiciAgent,
+  EnvHttpProxyAgent,
+} from 'undici';
 import { CookieAgent } from 'http-cookie-agent/undici';
 import { CookieJar } from 'tough-cookie';
 
@@ -186,6 +191,11 @@ export class HttpService {
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
   private cookieJar?: CookieJar;
+  // `socketPath` (module- or request-level) dispatchers, cached per path so
+  // a request-level `socketPath` (checked on every request, see
+  // `executeRequest`) never builds a new `Agent` once one exists for that
+  // path.
+  private socketPathDispatchers?: Map<string, Dispatcher>;
   // Perf item 2: `createInterceptorHandler` builds a linked list of one
   // handler object per interceptor; that chain never changes shape between
   // requests unless `this.interceptors` itself is replaced or grown, so it's
@@ -235,22 +245,62 @@ export class HttpService {
     this.setupDispatcher();
   }
 
+  /**
+   * Builds `this.customDispatcher` from the axios-style transport options
+   * resolved at module setup (`axios-config.adapter.ts`), and only those:
+   * TLS/keep-alive/maxSockets from `httpAgent`/`httpsAgent`, `socketPath`,
+   * an explicit `proxy`, the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`
+   * environment variables (axios reads them when `proxy` is unset; `proxy:
+   * false` opts out, like axios), and `httpVersion: 2`. Runs once, in the
+   * constructor - never on the request path.
+   *
+   * Precedence: a `dispatcher` passed directly in module options always
+   * wins and is left untouched - none of the branches below run.
+   */
   private setupDispatcher(): void {
     const options = this.moduleOptions as any;
     if (!options) return;
+    if (this.instanceOptions.dispatcher) return;
 
     let baseDispatcher: Dispatcher | undefined;
 
-    // Handle ProxyAgent first (highest priority)
     if (options.__proxyAgent) {
-      baseDispatcher = new ProxyAgent(options.__proxyAgent);
-    }
-    // Handle custom agent options
-    else if (options.__agentOptions) {
-      baseDispatcher = new UndiciAgent({
-        connections: options.__agentOptions.connections,
-        pipelining: options.pipelining || 1,
+      // Explicit `proxy: {...}` - highest priority among the auto-built
+      // dispatchers. `proxyTunnel: false` matches axios: a plain HTTP
+      // target is forwarded to the proxy in absolute form (`GET
+      // http://host/path HTTP/1.1`), not CONNECT-tunnelled - undici's
+      // default for every target. An HTTPS target still gets a real
+      // CONNECT tunnel either way (this flag only affects http-to-http).
+      baseDispatcher = new ProxyAgent({
+        ...options.__proxyAgent,
+        proxyTunnel: false,
       });
+    } else if (this.shouldUseEnvProxyAgent(options)) {
+      // No explicit dispatcher/proxy/agent/socketPath configured, and at
+      // least one of HTTP_PROXY/HTTPS_PROXY (case-insensitive) is set -
+      // read once here, matching axios' own default (`proxy-from-env`).
+      // `EnvHttpProxyAgent` itself re-reads `NO_PROXY` per request origin.
+      baseDispatcher = new EnvHttpProxyAgent({ proxyTunnel: false });
+    } else if (options.socketPath || options.__agentOptions) {
+      const agentOptions = options.__agentOptions || {};
+      const connect: Record<string, unknown> = { ...agentOptions.tls };
+      if (options.socketPath) connect.socketPath = options.socketPath;
+
+      baseDispatcher = new UndiciAgent({
+        ...(agentOptions.connections !== undefined
+          ? { connections: agentOptions.connections }
+          : {}),
+        pipelining: agentOptions.pipelining ?? options.pipelining ?? 1,
+        ...(agentOptions.allowH2 ? { allowH2: true } : {}),
+        ...(Object.keys(connect).length > 0 ? { connect } : {}),
+      });
+
+      if (options.socketPath) {
+        // Also serve as the cache for a later request-level `socketPath`
+        // that happens to match the module's own.
+        this.socketPathDispatchers ??= new Map();
+        this.socketPathDispatchers.set(options.socketPath, baseDispatcher);
+      }
     }
 
     // Handle cookie support - wrap existing dispatcher if present
@@ -276,6 +326,47 @@ export class HttpService {
       // Set as default dispatcher in instance options
       this.instanceOptions.dispatcher = this.customDispatcher;
     }
+  }
+
+  /**
+   * True when no explicit dispatcher/proxy/agent/socketPath is configured
+   * and `HTTP_PROXY`/`HTTP_proxy`/`HTTPS_PROXY`/`https_proxy` says a proxy
+   * should be used by default - matching axios' own `proxy-from-env`
+   * behaviour. `proxy: false` (as in axios) opts out entirely.
+   *
+   * This is a behaviour change from earlier versions, which never read
+   * these variables: a request to `http://127.0.0.1:...` now goes through
+   * whatever `HTTP_PROXY` the process has set unless `NO_PROXY` covers it,
+   * `proxy: false` is passed, or a `dispatcher`/`proxy`/`httpAgent`/
+   * `httpsAgent`/`socketPath` is configured - see docs/axios-supported-options.md.
+   */
+  private shouldUseEnvProxyAgent(options: any): boolean {
+    if (options.proxy === false) return false;
+    if (options.proxy || options.__proxyAgent) return false;
+    if (options.httpAgent || options.httpsAgent) return false;
+    if (options.socketPath) return false;
+    const env = process.env;
+    return !!(
+      env.HTTP_PROXY ||
+      env.http_proxy ||
+      env.HTTPS_PROXY ||
+      env.https_proxy
+    );
+  }
+
+  /**
+   * `Agent({ connect: { socketPath } })`, cached per path so a per-request
+   * `socketPath` (checked on every request - see `executeRequest`) never
+   * allocates a new `Agent` once one exists for that path.
+   */
+  private getSocketPathDispatcher(socketPath: string): Dispatcher {
+    this.socketPathDispatchers ??= new Map();
+    let dispatcher = this.socketPathDispatchers.get(socketPath);
+    if (!dispatcher) {
+      dispatcher = new UndiciAgent({ connect: { socketPath } });
+      this.socketPathDispatchers.set(socketPath, dispatcher);
+    }
+    return dispatcher;
   }
 
   public setGlobalDispatcher(dispatcher: Dispatcher): void {
@@ -435,33 +526,16 @@ export class HttpService {
       (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
     }
 
-    // Handle axios-specific options from module configuration
-    let finalUrl = url;
-    const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
-
-    if (axiosCompat?.baseURL) {
-      // Apply baseURL if the URL is relative
-      const urlString = typeof url === 'string' ? url : url.toString();
-      if (
-        !urlString.startsWith('http://') &&
-        !urlString.startsWith('https://')
-      ) {
-        finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
-      }
-    }
-
-    // Handle socket path
-    if (moduleOpts?.__socketPath) {
-      // Transform URL to use unix socket
-      const urlString =
-        typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
-      const urlObj = new URL(urlString);
-      finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
-    }
+    // `baseURL` was already applied by `normalizeAxiosRequest` above (it
+    // reads `instanceOptions.baseURL` directly); `socketPath` (module- or
+    // request-level, already present in `mergedOptions` via the spreads
+    // above) is applied to the *dispatcher*, not the URL - see
+    // `executeRequest`/`getSocketPathDispatcher`. The request URL's host is
+    // only ever used for the `Host` header, matching axios.
 
     // Create the request object for interceptors
     const interceptorRequest: HttpInterceptorRequest = {
-      url: finalUrl,
+      url,
       options: mergedOptions,
     };
     // Cheap fields for a lazily-built `response.config`/`error.config`
@@ -499,14 +573,24 @@ export class HttpService {
       const {
         maxRedirections,
         beforeRedirect: requestBeforeRedirect,
+        socketPath: requestSocketPath,
         ...requestOptions
       } = interceptorRequest.options as typeof interceptorRequest.options & {
         maxRedirections?: number;
         beforeRedirect?: BeforeRedirect;
+        socketPath?: string;
       };
+      // Precedence: an explicit per-request `dispatcher` always wins; then a
+      // request-level `socketPath` (module-level `socketPath` is already
+      // baked into `this.customDispatcher` by `setupDispatcher`); then the
+      // module's own auto-built dispatcher (TLS/proxy/socketPath/HTTP2) or
+      // an explicit module-level `dispatcher`.
       const dispatcher =
-        this.customDispatcher ||
         requestOptions.dispatcher ||
+        (requestSocketPath
+          ? this.getSocketPathDispatcher(requestSocketPath)
+          : undefined) ||
+        this.customDispatcher ||
         this.instanceOptions.dispatcher;
 
       // Abort the undici request when the Observable is unsubscribed before
