@@ -11,3 +11,5 @@ Also new: the axios `beforeRedirect(options, responseDetails, requestDetails)` o
 A request body that's a Node.js stream (not a `Buffer`/string/`FormData`) can't be resent on a redirect that keeps it (307/308, or a non-POST 301/302) - that now rejects clearly with `ERR_FR_REDIRECTION_FAILURE` instead of sending a broken request. Buffer the body yourself first if you need it to survive a redirect, or set `maxRedirects: 0` and follow it manually.
 
 Redirects are handled manually on the response (a 3xx status + `Location` check) rather than by composing undici's own redirect interceptor onto every request, so a non-redirecting response's cost is unchanged.
+
+`timeout` covers the whole redirect chain, as in axios, and `axiosRef.defaults.maxRedirects` is honoured.

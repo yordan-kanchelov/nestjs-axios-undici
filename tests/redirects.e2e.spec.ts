@@ -37,6 +37,14 @@ describe('HttpService redirects', () => {
           loopHits++;
           res.writeHead(302, { Location: '/loop' });
           res.end();
+        } else if (req.url?.startsWith('/slow-hop/')) {
+          const left = Number(req.url.split('/')[2]);
+          setTimeout(() => {
+            res.writeHead(left > 0 ? 302 : 200, {
+              Location: `/slow-hop/${left - 1}`,
+            });
+            res.end();
+          }, 80);
         } else if (req.url === '/before-redirect') {
           res.writeHead(302, { Location: '/final' });
           res.end();
@@ -285,6 +293,28 @@ describe('HttpService redirects', () => {
     } finally {
       setGlobalDispatcher(previous);
       await agent.close();
+    }
+  });
+  it('applies timeout to the whole redirect chain, not per hop', async () => {
+    const started = Date.now();
+    const error = await firstValueFrom(
+      service.get(`${baseUrl}/slow-hop/5`, { timeout: 150 }),
+    ).catch(e => e);
+    expect(error.code).toBe('ECONNABORTED');
+    expect(error.message).toBe('timeout of 150ms exceeded');
+    expect(Date.now() - started).toBeLessThan(400);
+  });
+
+  it('honours axiosRef.defaults.maxRedirects', async () => {
+    service.axiosRef.defaults.maxRedirects = 2;
+    try {
+      const error = await firstValueFrom(service.get(`${baseUrl}/loop`)).catch(
+        e => e,
+      );
+      expect(error.code).toBe('ERR_FR_TOO_MANY_REDIRECTS');
+      expect(loopHits).toBe(3);
+    } finally {
+      delete service.axiosRef.defaults.maxRedirects;
     }
   });
 });

@@ -60,6 +60,7 @@ type HeaderMap = Record<string, AxiosHeaderValue>;
 export interface AxiosRefDefaults {
   baseURL?: string;
   timeout?: number;
+  maxRedirects?: number;
   headers: {
     common: HeaderMap;
     get: HeaderMap;

@@ -736,7 +736,8 @@ export function normalizeAxiosRequest(
   const defaultTimeout =
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
-  const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
+  const maxRedirects =
+    input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
 
   // Fast path: nothing axios-specific to do for this request. In practice
   // this only triggers for calls that bypass HttpService's axiosRef defaults
@@ -946,7 +947,8 @@ export function buildAxiosConfig(
   const defaultTimeout =
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
-  const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
+  const maxRedirects =
+    input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
 
   const {
     url: _url,

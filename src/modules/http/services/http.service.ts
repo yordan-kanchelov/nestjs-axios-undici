@@ -555,6 +555,10 @@ export class HttpService {
       let currentOptions: Record<string, any> = options;
       let redirectCount = 0;
       let maxRedirects: number | undefined;
+      // `timeout` is one budget for the whole redirect chain, as in axios,
+      // not a fresh one per hop: each hop gets what's left of it.
+      const timeout = options.headersTimeout as number | undefined;
+      const startedAt = timeout ? performance.now() : 0;
 
       const onResponse = (res: UndiciResponse): void => {
         const location = res.headers.location as string | string[] | undefined;
@@ -604,6 +608,22 @@ export class HttpService {
                 headers: hop.headers,
                 body: hop.body,
               };
+              if (timeout) {
+                const remaining = Math.floor(
+                  timeout - (performance.now() - startedAt),
+                );
+                if (remaining <= 0) {
+                  fail(
+                    Object.assign(new Error('Headers Timeout Error'), {
+                      name: 'HeadersTimeoutError',
+                      code: 'UND_ERR_HEADERS_TIMEOUT',
+                    }),
+                  );
+                  return;
+                }
+                currentOptions.headersTimeout = remaining;
+                currentOptions.bodyTimeout = remaining;
+              }
               // A redirect hop runs inside this `.then()`, past the point
               // rxjs' Observable constructor can catch a synchronous throw
               // for us (see the comment on the first `request()` call
