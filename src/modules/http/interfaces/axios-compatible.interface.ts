@@ -92,6 +92,8 @@ export interface AxiosCompatibleRequestOptions extends Omit<
   validateStatus?: ((status: number) => boolean) | null;
   maxRedirects?: number;
   maxContentLength?: number;
+  /** `false` disables response decompression (gzip/br/deflate). Default: decompress. */
+  decompress?: boolean;
   cancelToken?: AxiosCancelTokenLike;
 }
 

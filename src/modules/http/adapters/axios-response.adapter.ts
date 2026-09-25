@@ -1,8 +1,8 @@
 import type { Dispatcher } from 'undici';
 import { createStatusError } from '../errors/axios-error';
 import {
-  parseJsonOrText,
   readBodyAsResponseType,
+  readDefaultBody,
 } from './axios-response-type.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
@@ -96,6 +96,11 @@ export async function toAxiosLikeResponse(
   // Check if maxContentLength is set in options
   const maxContentLength = (request.options as any)?.maxContentLength;
   const responseType = (request.options as any)?.responseType;
+  const decompress = (request.options as any)?.decompress;
+  const contentEncodingHeader = undiciResponse.headers['content-encoding'];
+  const contentEncoding = Array.isArray(contentEncodingHeader)
+    ? contentEncodingHeader[0]
+    : contentEncodingHeader;
 
   try {
     if (responseType && undiciResponse.body) {
@@ -103,72 +108,26 @@ export async function toAxiosLikeResponse(
         undiciResponse.body,
         responseType,
         maxContentLength,
+        { contentEncoding, decompress },
       );
     } else if (undiciResponse.body) {
-      if (contentType.includes('application/json')) {
-        const text = await undiciResponse.body.text();
-
-        // Check content length
-        if (maxContentLength && Buffer.byteLength(text) > maxContentLength) {
-          const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`,
-          );
-          error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
-          throw error;
-        }
-
-        parsedData = parseJsonOrText(text);
-      } else if (
-        contentType.includes('text/') ||
-        contentType.includes('application/xml')
-      ) {
-        parsedData = await undiciResponse.body.text();
-
-        // Check content length
-        if (
-          maxContentLength &&
-          Buffer.byteLength(parsedData) > maxContentLength
-        ) {
-          const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`,
-          );
-          error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
-          throw error;
-        }
-      } else if (
-        (undiciResponse.statusCode === 204 ||
-          undiciResponse.statusCode === 304) &&
-        !contentType
-      ) {
-        // No Content or Not Modified without content-type should return empty string
-        try {
-          const text = await undiciResponse.body.text();
-          parsedData = text || '';
-        } catch {
-          parsedData = '';
-        }
-      } else {
-        // For binary data, convert to Buffer
-        const arrayBuffer = await undiciResponse.body.arrayBuffer();
-
-        // Check content length
-        if (maxContentLength && arrayBuffer.byteLength > maxContentLength) {
-          const error: any = new Error(
-            `maxContentLength size of ${maxContentLength} exceeded`,
-          );
-          error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
-          throw error;
-        }
-
-        parsedData = arrayBuffer.byteLength ? Buffer.from(arrayBuffer) : '';
-      }
+      parsedData = await readDefaultBody(undiciResponse.body, contentType, {
+        maxContentLength,
+        contentEncoding,
+        decompress,
+      });
     } else {
       // Axios returns empty string for null body
       parsedData = '';
     }
   } catch (error) {
-    // If it's a size limit error, re-throw it
-    if ((error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED') {
+    // Size-limit errors, and failures after the body was read (for example
+    // corrupt gzip/br/deflate data), reject like axios does: the body can't be
+    // read again, so falling back would silently return empty data.
+    if (
+      (error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED' ||
+      (undiciResponse.body as any)?.bodyUsed
+    ) {
       throw error;
     }
 
@@ -193,7 +152,13 @@ export async function toAxiosLikeResponse(
   const axiosLikeResponse: AxiosLikeResponse = {
     data: parsedData,
     status: undiciResponse.statusCode,
-    statusText: STATUS_TEXT_MAP[undiciResponse.statusCode] || 'Unknown',
+    // undici exposes the server's actual reason phrase (matching axios, which
+    // reads Node's `res.statusMessage`); the table is only a fallback for a
+    // dispatcher that doesn't provide one (e.g. HTTP/2, which has none).
+    statusText:
+      undiciResponse.statusText ||
+      STATUS_TEXT_MAP[undiciResponse.statusCode] ||
+      'Unknown',
     headers: undiciResponse.headers as Record<string, string | string[]>,
     config,
   };

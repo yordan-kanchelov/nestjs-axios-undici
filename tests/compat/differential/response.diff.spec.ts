@@ -7,7 +7,6 @@
 import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { differential, normData, normHeaders, Ctx } from './harness';
 
-const DECODE = 'plan.md phase 2: fix(response): decode bodies like axios';
 const TYPES = 'plan.md phase 2: types: axios interop';
 
 const raw = (ctx: Ctx, qs: Record<string, string>) =>
@@ -146,21 +145,6 @@ const bodyCases: Array<[string, Record<string, string>, any?]> = [
   ['500 text body', { status: '500', ct: 'text/plain', body: 'boom' }],
 ];
 
-// A few content types still decode differently (see plan/reports/axios-compat.md §4):
-// `+json` suffix types come back as a Buffer here, where axios decodes and parses them.
-const bodyKnownDifference = new Set([
-  'problem+json',
-  'vnd.api+json',
-  'hal+json',
-  'no content-type text',
-  'no content-type json-looking',
-  'octet-stream',
-  'application/javascript',
-  'x-www-form-urlencoded',
-  'image/svg+xml',
-  'text/plain json-looking',
-]);
-
 differential('Differential: response decoding', routes, [
   ...bodyCases.map(([name, qs, cfg]) => ({
     name: `GET ${name}`,
@@ -169,7 +153,6 @@ differential('Differential: response decoding', routes, [
       result: await resultShape(o.result),
       error: o.error?.message,
     }),
-    knownDifference: bodyKnownDifference.has(name) ? DECODE : undefined,
   })),
   {
     name: 'GET 204 no body',
@@ -209,14 +192,12 @@ differential('Differential: response decoding', routes, [
         }),
       ),
     normalize: async (o: any) => resultShape(o.result),
-    knownDifference: DECODE,
   },
   {
     name: 'unknown status 299',
     run: (s, ctx) =>
       s.get(raw(ctx, { status: '299', ct: 'text/plain', body: 'x' })),
     normalize: async (o: any) => resultShape(o.result),
-    knownDifference: DECODE,
   },
   ...(['json', 'text', 'arraybuffer', 'blob', 'stream'] as const).flatMap(t =>
     [
@@ -231,8 +212,6 @@ differential('Differential: response decoding', routes, [
         result: await resultShape(o.result),
         error: o.error?.message,
       }),
-      // 'blob' isn't native in Node: axios returns a string, we return a Buffer.
-      knownDifference: t === 'blob' ? DECODE : undefined,
     })),
   ),
   {
@@ -287,7 +266,6 @@ differential('Differential: response decoding', routes, [
     name: `compressed ${path}`,
     run: (s: any, ctx: Ctx) => s.get(`${ctx.base}${path}`),
     normalize: async (o: any) => resultShape(o.result),
-    knownDifference: 'plan.md phase 2: fix(response): decode bodies like axios',
   })),
   {
     name: 'server gzips when Accept-Encoding allows (typical CDN)',

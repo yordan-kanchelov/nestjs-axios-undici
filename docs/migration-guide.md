@@ -58,7 +58,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 The `HttpModule.register()` and `HttpModule.registerAsync()` methods automatically detect axios-style configuration options and map them to their undici equivalents. No need for special registration methods!
 
-Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, JSON parsing of non-JSON content types, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
+Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
 
 ## Key Features for Migration
 
@@ -121,7 +121,7 @@ headers.forEach((value, key) => console.log(key, value));
 
 ### 3. Automatic Configuration Mapping
 
-`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. `decompress` and `socketPath` are not supported. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped.
+`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `decompress`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. `socketPath` is not supported. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped.
 
 ### 4. Axios-Compatible Responses
 
