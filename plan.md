@@ -171,6 +171,15 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 
 Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs for raw undici and 510–560 µs for @nestjs/axios. No memory leak, and keep-alive reuse works.
 
+- [ ] ★ **perf: request-path pass (next after the default-headers PR).**
+  - Why: each Phase 2 fix passes the CPU-per-request check on its own, but the costs add up. `get` went +7.6% in #15, then about +8% in the default-headers PR.
+  - Record the CPU per request against 0.6.1 as the baseline, and keep `get` within +10% of it for 1.0.
+  - Options:
+    - cache the interceptor handler chain until interceptors change
+    - pre-merge default, module and method headers once, and invalidate that when `axiosRef.defaults` changes
+    - skip config re-normalisation in `defer()` when no interceptors are registered
+    - merge the promise `.then()` calls
+    - avoid `AxiosHeaders` Proxy access on the hot path
 - [ ] ★ **Abort the request on unsubscribe.** This is the same item as in phase 2. It costs 1–3 µs per request.
 - [ ] ★ **bench: a fair app set.**
   - Configurations: `@nestjs/axios` and nestjs-axios-undici in identical apps, each with and without the same axiosRef interceptor (no stdout logging), plus raw undici as the floor.
