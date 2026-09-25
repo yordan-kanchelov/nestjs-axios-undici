@@ -50,16 +50,11 @@ function allow(
 // Known, documented gaps. Anything else missing on our side fails the test.
 const ALLOWLIST: Record<string, AllowedGap> = {};
 
-allow(
-  ALLOWLIST,
-  'HttpService',
-  ['instance', 'makeObservable'],
-  {
-    reason:
-      'protected @nestjs/axios internals (TypeScript `protected` is still enumerable at runtime), not part of the public API',
-    tracked: 'plan/reports/automation.md §3 (API-surface parity)',
-  },
-);
+allow(ALLOWLIST, 'HttpService', ['instance', 'makeObservable'], {
+  reason:
+    'protected @nestjs/axios internals (TypeScript `protected` is still enumerable at runtime), not part of the public API',
+  tracked: 'plan/reports/automation.md §3 (API-surface parity)',
+});
 allow(ALLOWLIST, 'HttpService', ['query'], {
   reason:
     'HttpService.query() (the HTTP QUERY method) is new in @nestjs/axios 12 and not implemented yet',
@@ -70,8 +65,7 @@ allow(ALLOWLIST, 'HttpService', ['query'], {
 const AXIOS_REF_REAL_INSTANCE: AllowedGap = {
   reason:
     'axiosRef is not yet a real axios instance: it is not callable, and getUri/create/*Form/query are missing',
-  tracked:
-    'plan.md phase 2 "feat(axiosRef): make it a real axios instance"',
+  tracked: 'plan.md phase 2 "feat(axiosRef): make it a real axios instance"',
 };
 allow(
   ALLOWLIST,
@@ -153,7 +147,6 @@ allow(
 /** Public own keys along the whole prototype chain (methods and data props alike). */
 function ownMembers(value: unknown): Set<string> {
   const out = new Set<string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (
     let o: any = value;
     o !== null &&
@@ -163,7 +156,11 @@ function ownMembers(value: unknown): Set<string> {
     o = Object.getPrototypeOf(o)
   ) {
     for (const key of Reflect.ownKeys(o)) {
-      if (typeof key === 'string' && key !== 'constructor' && !key.startsWith('_')) {
+      if (
+        typeof key === 'string' &&
+        key !== 'constructor' &&
+        !key.startsWith('_')
+      ) {
         out.add(key);
       }
     }
