@@ -124,7 +124,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
     });
 
     await new Promise<void>(resolve => {
-      server.listen(0, 'localhost', () => {
+      server.listen(0, '127.0.0.1', () => {
         serverPort = (server.address() as any).port;
         resolve();
       });
@@ -175,7 +175,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
 
       // Make request with existing headers
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`, {
+        httpService.get(`http://127.0.0.1:${serverPort}/test`, {
           headers: {
             Authorization: 'Bearer my-token',
             'X-Custom-Header': 'custom-value',
@@ -213,7 +213,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       const response = await firstValueFrom(
-        httpService.post(`http://localhost:${serverPort}/api/data`, {
+        httpService.post(`http://127.0.0.1:${serverPort}/api/data`, {
           data: 'test',
         }),
       );
@@ -248,7 +248,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/multi`),
+        httpService.get(`http://127.0.0.1:${serverPort}/multi`),
       );
       const receivedHeaders = response.data.headers;
 
@@ -272,7 +272,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
 
       await expect(
         firstValueFrom(
-          httpService.get(`http://localhost:${serverPort}/error-test`),
+          httpService.get(`http://127.0.0.1:${serverPort}/error-test`),
         ),
       ).rejects.toThrow('Interceptor error');
     });
@@ -296,7 +296,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/async`),
+        httpService.get(`http://127.0.0.1:${serverPort}/async`),
       );
       const receivedHeaders = response.data.headers;
 
@@ -326,7 +326,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/axios-headers`, {
+        httpService.get(`http://127.0.0.1:${serverPort}/axios-headers`, {
           headers: plainHeaders,
         }),
       );
@@ -357,7 +357,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       // Make a request
       const response = await firstValueFrom(
         httpService.get(
-          `http://localhost:${serverPort}/interceptor-verification`,
+          `http://127.0.0.1:${serverPort}/interceptor-verification`,
         ),
       );
       const receivedHeaders = response.data.headers;
@@ -388,7 +388,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
 
       const response = await firstValueFrom(
         httpService.post(
-          `http://localhost:${serverPort}/api/trace`,
+          `http://127.0.0.1:${serverPort}/api/trace`,
           { action: 'test', timestamp: Date.now() },
           {
             headers: {
@@ -422,7 +422,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       });
 
       const response = await firstValueFrom(
-        httpService.get(`http://localhost:${serverPort}/no-trace`),
+        httpService.get(`http://127.0.0.1:${serverPort}/no-trace`),
       );
       const receivedHeaders = response.data.headers;
 

@@ -256,12 +256,16 @@ Each NestJS service:
 
 ### HttpService Micro-benchmark (regression check)
 
-`micro/compare.js` measures `HttpService` throughput of two library builds against a local keep-alive server, alternating rounds so machine noise hits both sides equally. CI runs it on every pull request that touches `src/` (base branch vs PR) and fails on a drop of more than 10%:
+`micro/compare.js` compares `HttpService` client CPU time per request (`process.cpuUsage()`) between two library builds, against a local keep-alive server. Throughput (req/s) is noisy on shared CI hardware — identical code on both sides failed a 10% req/s threshold in 2 of 4 runs during development — because it also captures how busy the runner's scheduler is. Client CPU time per request doesn't, and dividing it by a raw-undici measurement taken in the *same round* cancels out runner speed entirely, so the check is stable even when the runner itself is slow that day.
+
+Base and head are measured alternately across several rounds, for five scenarios (`get`, `post` with a JSON body, `get` with params and headers, the 404 error path, and axiosRef request/response interceptors), and the check fails only on the median **paired** CPU/req ratio (head/base, per round) exceeding the threshold. A failing scenario is measured again and judged on the pooled rounds (one median over both attempts) before the job fails. The interceptors scenario, the noisiest, uses 1.5x the threshold. rps change and the ratios against raw undici and `@nestjs/axios` are also reported, as information only.
 
 ```bash
 # from the repository root; both directories need a built lib/ and resolvable node_modules
-node benchmarks/micro/compare.js --base ../base-checkout --head . --rounds 5 --duration 5 --threshold 10
+node benchmarks/micro/compare.js --base ../base-checkout --head . --rounds 5 --duration 2 --threshold 10
 ```
+
+Measured noise (head vs head, same build both sides, CI settings, worst of several runs): 3–6% for most scenarios and up to 9.5% for interceptors against the 10% threshold (hence its 1.5x threshold); see `plan.md` phase 1 item E. An artificial ~5µs busy-loop per request added to `executeRequest` reliably fails the check.
 
 ### Continuous Integration
 
