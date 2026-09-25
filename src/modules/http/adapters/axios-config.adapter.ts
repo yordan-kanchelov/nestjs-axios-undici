@@ -141,13 +141,10 @@ export function mapAxiosConfigToUndici(
     (undiciConfig as any).__withCredentials = true;
   }
 
-  // Decompress
+  // Decompress: applied as a default per-request option (the response
+  // adapter reads it the same way it reads a per-call `decompress`).
   if (axiosConfig.decompress !== undefined) {
-    // undici.request() does not decompress responses and no Accept-Encoding
-    // header is sent by default, so servers normally reply uncompressed.
-    console.info(
-      'decompress option is ignored: responses are not decompressed (no Accept-Encoding is sent by default)',
-    );
+    (undiciConfig as any).decompress = axiosConfig.decompress;
   }
 
   // Validate status - this is handled at the interceptor level

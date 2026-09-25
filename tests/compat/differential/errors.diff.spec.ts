@@ -24,6 +24,13 @@ const routes = {
     });
     res.end();
   },
+  '/bad-gzip': (_req: any, res: any) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Encoding': 'gzip',
+    });
+    res.end('this is not gzip');
+  },
   '/redirect-loop': (_req: any, res: any) => {
     res.writeHead(302, { Location: '/redirect-loop' });
     res.end();
@@ -83,6 +90,16 @@ function errShape(o: any) {
 }
 
 differential('Differential: errors, timeouts, cancellation', routes, [
+  {
+    // Must reject (not resolve with empty data) when the body can't be decompressed
+    name: 'corrupt gzip body rejects',
+    run: (s, ctx) => s.get(`${ctx.base}/bad-gzip`),
+    normalize: (o: any) => ({
+      rejected: !!o.error,
+      code: o.error?.code,
+      isAxiosError: axios.isAxiosError(o.error),
+    }),
+  },
   {
     name: '404 error shape',
     run: (s, ctx) =>

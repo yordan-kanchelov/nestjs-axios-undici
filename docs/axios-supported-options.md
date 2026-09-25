@@ -43,9 +43,9 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `cancelToken` | ✅ | Rejects with `CanceledError` carrying the cancel message. |
 | `validateStatus` | ⚠️ | Works; `validateStatus: null` is treated as the default (axios accepts every status). |
 | `maxRedirects` | ⚠️ | Honoured when set. Without it redirects are **not** followed (axios follows up to 21). When the limit is exceeded the last 3xx is returned as a status error instead of `ERR_FR_TOO_MANY_REDIRECTS`. |
-| `responseType: 'json' \| 'text' \| 'arraybuffer' \| 'stream'` | ✅ | `arraybuffer`/`blob` give a `Buffer`, `stream` gives the undici body (a Node.js `Readable`). |
+| `responseType: 'json' \| 'text' \| 'arraybuffer' \| 'blob' \| 'stream'` | ✅ | `arraybuffer` gives a `Buffer`; `blob` gives a UTF-8 string, matching axios in Node.js (no native `Blob` decoding there); `stream` gives the undici body (a Node.js `Readable`, transparently decompressed like axios). |
 | `maxContentLength` | ⚠️ | Enforced, but the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). |
-| `decompress` | ❌ | Responses are not decompressed. No `Accept-Encoding` is sent by default, so servers normally reply uncompressed. |
+| `decompress` | ✅ | gzip/br/deflate are decompressed when `Content-Encoding` is set. `decompress: false` returns the raw compressed body, as in axios. |
 | `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength`, `transformRequest`, `transformResponse` per request | ❌ | Module-level only (see below). |
 | `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress`, `adapter` | ❌ | |
 
@@ -53,11 +53,13 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| `status`, `statusText`, `headers['x-name']` | ✅ | Header names are lower-case, as in axios. |
-| JSON body with a JSON `Content-Type` | ✅ | Invalid JSON gives the raw string, an empty body gives `''`. |
+| `status`, `statusText`, `headers['x-name']` | ✅ | Header names are lower-case, as in axios. `statusText` is the server's actual reason phrase. |
+| JSON body with a JSON `Content-Type` (`application/json`, and any `+json` suffix like `application/problem+json`) | ✅ | Invalid JSON gives the raw string, an empty body gives `''`. |
 | `204` / empty body | ✅ | `data` is `''`. |
-| JSON body with a non-JSON `Content-Type` (e.g. `text/plain`) | ⚠️ | Returned as a string; axios parses any JSON-looking string. Use `responseType: 'json'` to force parsing. |
-| Binary/unknown `Content-Type` | ⚠️ | Returned as a `Buffer`; axios returns a UTF-8 string unless `responseType: 'arraybuffer'`. |
+| JSON-looking body with a non-JSON `Content-Type` (e.g. `text/plain`, no `Content-Type`) | ✅ | Parsed as JSON, like axios' `forcedJSONParsing`; falls back to the raw string silently if parsing fails. |
+| Text-ish `Content-Type` (`text/*`, `application/xml`, `application/javascript`, `application/x-www-form-urlencoded`, `image/svg+xml`, `application/octet-stream`, no `Content-Type`) | ✅ | Decoded to a UTF-8 string, like axios' default `responseType: 'json'` handling. |
+| Other binary `Content-Type` (images, PDFs, ...) | ⚠️ | Returned as a `Buffer`; axios also returns a UTF-8 string unless `responseType: 'arraybuffer'` is set (harder to use correctly, so this library keeps it a `Buffer` by default). Set `responseType: 'arraybuffer'` for binary downloads either way. |
+| `Content-Encoding: gzip \| br \| deflate` | ✅ | Decompressed automatically; `decompress: false` opts out. |
 | `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object. |
 | `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers`, `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
 | `response.request` | ❌ | Not set. |
@@ -103,7 +105,8 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `proxy` | ⚠️ | Creates an undici `ProxyAgent` (with basic auth). `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables are not read. |
 | `withCredentials` | ⚠️ | Enables a cookie jar (`http-cookie-agent` + `tough-cookie`) that stores and resends cookies, which axios does not do in Node.js. |
 | `socketPath` | ❌ | Currently fails with `Invalid URL protocol`. Use `dispatcher: new Agent({ connect: { socketPath } })` from undici instead. |
-| `decompress`, `xsrfCookieName`, `xsrfHeaderName` | ❌ | Ignored (a warning is logged for the XSRF options). |
+| `decompress` | ✅ | Applied as the default for every request; a per-request `decompress` overrides it. |
+| `xsrfCookieName`, `xsrfHeaderName` | ❌ | Ignored (a warning is logged). |
 
 ### Connection pooling: `httpAgent` / `httpsAgent`
 
