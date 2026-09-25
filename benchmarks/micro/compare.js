@@ -9,7 +9,7 @@
 //
 // Base and head are measured alternately, in fresh processes, across --rounds rounds, and the check
 // fails only on the median paired ratio (head/base, computed per round then take the median) exceeding
-// --threshold percent. A failing run is retried once in full before the job actually fails, since a
+// --threshold percent. A failing scenario is re-measured and judged on the pooled rounds before the job fails, since a
 // single round can still get unlucky.
 //
 // Also prints, as information only (not part of the pass/fail decision): rps change, the overhead ratio
@@ -25,6 +25,9 @@ const args = Object.fromEntries(
 const rounds = Number(args.rounds || 5);
 const duration = String(args.duration || 3);
 const threshold = Number(args.threshold || 10);
+// The interceptors scenario is the noisiest (up to ~9.5% drift between identical builds in local
+// runs), so it gets 1.5x the threshold instead of flaking the check on noise alone.
+const thresholdFor = (sc) => (sc === 'interceptors' ? threshold * 1.5 : threshold);
 const concurrency = String(args.concurrency || 50);
 const warmup = String(args.warmup || 500);
 const scenarios = (args.scenarios || 'get,post,config,error,interceptors').split(',');
@@ -102,7 +105,7 @@ function verdicts(samples, scenarioList) {
     const overheadHead = median(l.head.map((x, i) => x.cpuUsPerReq / l.raw[i].cpuUsPerReq));
     const refCpu = median(l.ref.map((x, i) => x.cpuUsPerReq / l.head[i].cpuUsPerReq));
     const refRps = median(l.head.map((x, i) => x.rps / l.ref[i].rps));
-    result[sc] = { pairedCpu, rpsChg, overheadBase, overheadHead, refCpu, refRps, failed: pairedCpu > threshold };
+    result[sc] = { pairedCpu, rpsChg, overheadBase, overheadHead, refCpu, refRps, failed: pairedCpu > thresholdFor(sc) };
   }
   return result;
 }
@@ -115,13 +118,21 @@ async function main() {
   let result;
   const retried = new Set();
   try {
-    result = verdicts(measureRounds(scenarios, rounds), scenarios);
-    let failing = scenarios.filter((sc) => result[sc].failed);
+    const samples = measureRounds(scenarios, rounds);
+    result = verdicts(samples, scenarios);
+    const failing = scenarios.filter((sc) => result[sc].failed);
     if (failing.length) {
-      console.error(`retrying (once) before failing: ${failing.join(', ')}`);
-      const retryResult = verdicts(measureRounds(failing, rounds), failing);
+      // Measure the failing scenarios again and decide on the pooled rounds (one median over twice the
+      // samples), rather than requiring two independent attempts to fail: that keeps a one-off noisy
+      // round from failing the job without making a real, borderline regression easier to miss.
+      console.error(`re-measuring before failing: ${failing.join(', ')}`);
+      const extra = measureRounds(failing, rounds);
       for (const sc of failing) {
-        result[sc] = retryResult[sc];
+        for (const key of Object.keys(samples[sc])) samples[sc][key].push(...extra[sc][key]);
+      }
+      const pooled = verdicts(samples, failing);
+      for (const sc of failing) {
+        result[sc] = pooled[sc];
         retried.add(sc);
       }
     }
@@ -139,7 +150,7 @@ async function main() {
   const markdown = [
     '## HttpService micro-benchmark',
     '',
-    `Median client CPU time per request (\`process.cpuUsage()\`), paired against \`base\` in the same round, over ${rounds} alternating rounds of ${duration}s (${concurrency} concurrent requests, Node.js ${process.version}). Fails when head uses more than ${threshold}% more CPU/req than base. rps change and the raw-undici / \`@nestjs/axios\` columns are informational.`,
+    `Median client CPU time per request (\`process.cpuUsage()\`), paired against \`base\` in the same round, over ${rounds} alternating rounds of ${duration}s (${concurrency} concurrent requests, Node.js ${process.version}). Fails when head uses more than ${threshold}% more CPU/req than base (${thresholdFor('interceptors')}% for interceptors, the noisiest scenario); a failing scenario is re-measured and judged on the pooled rounds. rps change and the raw-undici / \`@nestjs/axios\` columns are informational.`,
     '',
     '| Scenario | CPU/req Δ (paired, median) | rps Δ (median) | CPU/req vs raw undici (base → head) | head vs @nestjs/axios (get) | Result |',
     '|----------|---------------------------:|----------------:|-------------------------------------:|-----------------------------:|--------|',
