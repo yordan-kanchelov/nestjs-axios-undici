@@ -1,5 +1,11 @@
 # nestjs-axios-undici
 
+## 0.6.1
+
+### Patch Changes
+
+- b6cad17: Declare `@nestjs/core` as a peer dependency. `HttpModule` imports `ModuleRef` from it, so the package failed to load when `@nestjs/core` wasn't installed.
+
 ## 0.6.0
 
 First release as `nestjs-axios-undici` (previously published as `nestjs-undici-interceptors`). The API is the same; change the import path. See the [migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide?id=coming-from-nestjs-undici-interceptors).

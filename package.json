@@ -1,6 +1,6 @@
 {
   "name": "nestjs-axios-undici",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Drop-in @nestjs/axios replacement built on Undici: the same HttpModule/HttpService API and axios-compatible responses, errors and interceptors, with much lower latency.",
   "homepage": "https://yordan-kanchelov.github.io/nestjs-axios-undici/",
   "type": "commonjs",
