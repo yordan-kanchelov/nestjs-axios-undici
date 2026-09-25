@@ -18,6 +18,7 @@ import {
   installedVersion,
   mapLimit,
   npmInstall,
+  packageWithPeers,
   readJson,
   resolveTarball,
 } from './shared.mjs';
@@ -39,13 +40,6 @@ const MATRIX = [
   { id: 'nest12-undici8', nest: '^12', undici: '^8' },
 ];
 
-const PEERS = [
-  '@nestjs/common',
-  '@nestjs/core',
-  'undici',
-  'rxjs',
-  'reflect-metadata',
-];
 const ENTRIES = ['smoke.cjs', 'smoke.mjs'];
 
 const { values } = parseArgs({
@@ -78,14 +72,8 @@ console.log(`Node: ${nodes.map(n => n.version).join(', ')}\n`);
 // Install all combinations in parallel (npm's cache is safe to share).
 const installs = await mapLimit(combos, Number(values.jobs), async combo => {
   const dir = join(workDir, combo.id);
-  createProject(dir, `consumer-${combo.id}`, {
-    'nestjs-axios-undici': `file:${tarball}`,
-    '@nestjs/common': combo.nest,
-    '@nestjs/core': combo.nest,
-    undici: combo.undici,
-    rxjs: combo.rxjs ?? '^7',
-    'reflect-metadata': combo.reflect ?? '^0.2',
-  });
+  const dependencies = packageWithPeers(tarball, combo);
+  createProject(dir, `consumer-${combo.id}`, dependencies);
   for (const f of ['scenario.cjs', ...ENTRIES]) {
     copyFileSync(join(fixtures, f), join(dir, f));
   }
@@ -96,28 +84,29 @@ const installs = await mapLimit(combos, Number(values.jobs), async combo => {
     console.log(`FAIL ${combo.id}: install\n${error.message}`);
     return { combo, dir, error: error.message };
   }
+  const peers = Object.keys(dependencies).slice(1);
   const versions = Object.fromEntries(
-    PEERS.map(name => [name, installedVersion(dir, name)]),
+    peers.map(name => [name, installedVersion(dir, name)]),
   );
   const seconds = ((Date.now() - start) / 1000).toFixed(1);
   console.log(
     `installed ${combo.id} in ${seconds}s: ${formatVersions(versions)}`,
   );
-  return { combo, dir, versions };
+  return { combo, dir, versions, peers };
 });
 console.log();
 
 const results = [];
-for (const { combo, dir, versions, error } of installs) {
+for (const { combo, dir, versions, peers, error } of installs) {
   if (error) {
     results.push({ combo: combo.id, step: 'install', status: 'fail', error });
     continue;
   }
   for (const node of nodes) {
     // Skip where a peer itself does not support this Node (undici 8 needs >= 22.19)
-    const unsupported = PEERS.map(name => [name, peerEngine(dir, name)]).find(
-      ([, range]) => range && !satisfies(node.version, range),
-    );
+    const unsupported = peers
+      .map(name => [name, peerEngine(dir, name)])
+      .find(([, range]) => range && !satisfies(node.version, range));
     for (const entry of ENTRIES) {
       const base = { combo: combo.id, node: node.version, entry, versions };
       if (unsupported) {

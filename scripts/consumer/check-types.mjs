@@ -19,6 +19,7 @@ import {
   installedVersion,
   mapLimit,
   npmInstall,
+  packageWithPeers,
   readJson,
   repoRoot,
   resolveTarball,
@@ -62,12 +63,7 @@ console.log(`Tarball: ${tarball}\n`);
 const results = await mapLimit(PROJECTS, PROJECTS.length, async project => {
   const dir = join(values.work, 'types', project.id);
   createProject(dir, `consumer-types-${project.id}`, {
-    'nestjs-axios-undici': `file:${tarball}`,
-    '@nestjs/common': project.nest,
-    '@nestjs/core': project.nest,
-    undici: project.undici,
-    rxjs: '^7',
-    'reflect-metadata': '^0.2',
+    ...packageWithPeers(tarball, project),
     '@types/node': devDependencies['@types/node'],
     ...Object.fromEntries(COMPILERS.map(c => [c.name, c.range])),
   });

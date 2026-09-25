@@ -23,6 +23,36 @@ export function resolveTarball(tarball, workDir) {
   return join(workDir, out.trim().split('\n').pop());
 }
 
+/**
+ * The tarball itself plus its declared peers, and nothing else, at the versions a
+ * combination asks for: { nest, undici, rxjs?, reflect? }. Throws on a peer the
+ * combinations don't know about, so a new peer can't go untested.
+ */
+export function packageWithPeers(tarball, combo) {
+  const manifest = JSON.parse(
+    execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], {
+      encoding: 'utf8',
+    }),
+  );
+  const versions = {
+    '@nestjs/common': combo.nest,
+    '@nestjs/core': combo.nest,
+    undici: combo.undici,
+    rxjs: combo.rxjs ?? '^7',
+    'reflect-metadata': combo.reflect ?? '^0.2',
+  };
+  const dependencies = { [manifest.name]: `file:${tarball}` };
+  for (const peer of Object.keys(manifest.peerDependencies ?? {})) {
+    if (!versions[peer]) {
+      throw new Error(
+        `peer ${peer} has no version in the consumer matrix (scripts/consumer)`,
+      );
+    }
+    dependencies[peer] = versions[peer];
+  }
+  return dependencies;
+}
+
 /** Creates a fresh project directory with the given dependencies. */
 export function createProject(dir, name, dependencies) {
   rmSync(dir, { recursive: true, force: true });

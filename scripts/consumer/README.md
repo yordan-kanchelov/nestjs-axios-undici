@@ -25,4 +25,4 @@ node scripts/consumer/check-types.mjs --tarball x.tgz
 
 `--node` runs the scenarios with other Node binaries too (the installs use the current one). Projects are created under `$TMPDIR/nestjs-axios-undici-consumer` (`--work` to change it); `matrix/results.json` there has the versions and timings of the last run.
 
-When a peer range changes in `package.json`, update the combinations in `run-matrix.mjs` and `check-types.mjs` and the "Supported versions" table in the main README.
+The installed peers are read from the tarball's `peerDependencies`, and the versions for each one come from `packageWithPeers()` in `shared.mjs`, which fails on a peer it doesn't know. When a peer is added or a range changes, update it and the combinations in `run-matrix.mjs` and `check-types.mjs`, and the "Supported versions" table in the main README.
