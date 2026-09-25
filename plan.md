@@ -113,10 +113,12 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
     - `knownDifference` only asserts that *something* differs; pin the expected differing field per case.
     - Replace the 200 ms sleep in interceptors.diff.spec.ts with polling for the close event.
     - The generic fallback normalizer in harness.ts is unused.
-- [ ] **E. perf: rebuild the PR regression check.** It isn't reliable today: 2 of 4 runs of identical code failed at the 10% threshold.
-  - Switch to client CPU time per request, compared with raw undici in the same round. That cancels out runner speed; the worst drift seen was ±3.9%.
-  - Scenarios: get, post JSON, params and headers, the 404 error path, axiosRef interceptors.
-  - Make it a required check, with one automatic re-run.
+- [~] **E. perf: rebuild the PR regression check.** (`claude/perf-check`, PR open) It isn't reliable today: 2 of 4 runs of identical code failed at the 10% threshold.
+  - Switched `benchmarks/micro/compare.js` to client CPU time per request (`process.cpuUsage()`), paired against raw undici measured in the same round (cancels out runner speed), alternating base/head rounds, gated on the median paired ratio. Scenarios: `get`, `post` with a JSON body, `get` with params and headers, the 404 error path, and axiosRef request/response interceptors. On a regression it re-runs the failing scenarios once (fresh rounds) before failing the job. `benchmarks/micro/client.js` replaces `http-service.bench.js`; `server.js` gained `/echo` and `/404`.
+  - **Noise measured:** 3 head-vs-head runs (same build both sides) at the CI settings (5 rounds × 2s, threshold 10%), on a heavily shared/contended sandbox (noisier than a dedicated CI runner). Worst paired CPU/req drift per scenario across the 3 runs: get 3.0%, post 4.7%, config 5.9%, error 4.1%, interceptors 9.5% (one outlier, close to but under the 10% threshold; the other two runs were ≤6% on every scenario). All 3 runs passed with no retry needed. `interceptors` is the noisiest scenario (highest baseline CPU/req and the most sources of variance); worth revisiting (more rounds, or a slightly higher per-scenario threshold) if it flakes in real CI.
+  - **Sensitivity measured:** an artificial ~5µs busy-loop injected into `executeRequest` (on a scratch copy of the built lib, not committed) reliably failed the check — 3 of 5 scenarios (`get`, `post`, `error`) still regressed after the automatic retry, at +12–14% paired CPU/req. `config` and `interceptors` (higher baseline CPU/req, so 5µs is a smaller fraction) passed in this run, so the check's sensitivity floor is roughly a 5µs regression on the lighter scenarios; a real regression concentrated in `executeRequest` and touching `config`/`interceptors` only would need to be a bit larger to reliably trip.
+  - **CI runtime:** the comparison step alone measured ~2m50s–2m57s on a passing run (5 rounds × 2s, `--base`/`--head` as separate built directories) in this sandbox; add checkout/install/build for both directories (~1–1.5 min with `cache: npm`) for a total job estimate of about 4 minutes. A run that hits a real regression and retries takes roughly double (~5–6 min), since the retry re-measures the failing scenarios in full.
+  - Note: making this check a **required** status check is a GitHub branch-protection setting; the repo owner has to turn it on (Settings → Branches → branch protection rule for `claude/v1.0.0` → Require status checks to pass, add "HttpService regression check" / the `regression` job).
   - Prototypes: `plan/prototypes/perf/compare2.js`, `client.js`, `server.js`.
 
 ### Phase 2: compatibility fixes (one small PR each; each flips differential cases and passes the perf check)
@@ -197,3 +199,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #10 merged (consumer matrix green on Node 22.17.0/22.19.0/22/24/26). Worker C started (`claude/api-parity-checks`).
 - 2026-09-25: PR #11 (C) merged. PR #12 (D, 183 differential scenarios, 77 known differences) open, in review.
 - 2026-09-25: PR #12 (D) merged; the differential tests pass on Nest 10/11/12. Worker E (perf check) next.
+- 2026-09-25: PR (E, `claude/perf-check`) open: CPU-per-request regression check, 5 scenarios, auto-retry-once. Noise and sensitivity measured, see item E above.

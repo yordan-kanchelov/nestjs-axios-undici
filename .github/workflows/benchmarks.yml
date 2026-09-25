@@ -64,19 +64,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Build head
         run: npm ci --ignore-scripts && npm run build
       - name: Build base (${{ github.event.pull_request.base.ref }})
         run: |
           git worktree add ../base ${{ github.event.pull_request.base.sha }}
           cd ../base && npm ci --ignore-scripts && npm run build
-      - name: Compare throughput
+      - name: Compare client CPU time per request
+        # compare.js writes its own summary table to $GITHUB_STEP_SUMMARY. On a regression it
+        # retries once (fresh rounds) before failing, so a single unlucky round doesn't fail the PR.
         run: |
           node benchmarks/micro/compare.js --base ../base --head . \
-            --rounds 5 --duration 5 --threshold 10 --markdown micro-benchmark.md
-      - name: Publish summary
-        if: always()
-        run: '[ -f micro-benchmark.md ] && cat micro-benchmark.md >> "$GITHUB_STEP_SUMMARY" || true'
+            --rounds 5 --duration 2 --threshold 10
 
   full:
     name: Full benchmark (Node ${{ matrix.node-version }})
