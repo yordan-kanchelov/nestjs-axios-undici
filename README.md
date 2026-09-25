@@ -25,7 +25,19 @@
 npm install nestjs-axios-undici undici
 ```
 
-Requires Node.js 22.12+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
+Requires Node.js 22.17+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
+
+### Supported versions
+
+| Dependency | Versions | Notes |
+| --- | --- | --- |
+| Node.js | 22.17+, 24, 26 | `undici` 8 itself requires Node.js 22.19+ |
+| NestJS (`@nestjs/common`, `@nestjs/core`) | 10, 11, 12 | |
+| `undici` | 7, 8 | |
+| `rxjs` | 7.1+ | |
+| `reflect-metadata` | 0.1.13+, 0.2 | |
+
+Every combination is installed from the packed package and run as both a CommonJS and an ESM app in CI, including the lowest versions of each range, and again weekly to catch new releases.
 
 ## Migrating from @nestjs/axios
 
