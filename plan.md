@@ -54,6 +54,16 @@ Released so far:
 - [x] **Public API: trim it where nothing is lost.** Remove the legacy and internal exports listed in `plan/reports/package-quality.md`, keeping everything with a real use. For each removal, check that a supported alternative exists, and list it in the 1.0 migration notes.
 - [x] **Benchmark apps: both Express and Fastify.** Use one shared app source with `CLIENT=axios|undici` and `PLATFORM=express|fastify`, and the same axiosRef interceptor in both. Raw undici is the floor.
 - [x] **Minimum Node version:** `>=22.17.0` (PR #10, decided from the consumer-matrix results).
+- [x] **Breaking changes are fine before 1.0.0: do it the right way** (owner, 2026-09-25). Don't add compatibility shims, deprecation cycles or loose types just to avoid a break. Every break gets a changeset with a **BREAKING** note (`minor` until the final 1.0.0 `major`) and a line in the 1.0 migration notes. What this means for the remaining items:
+  - **Types:** `HttpModuleOptions` becomes strictly typed (no `& any` / `Partial<any>`). Typos and unsupported keys become compile errors. `register()` takes a real type.
+  - **API trim:** remove the legacy and internal exports outright (no 0.7 `@deprecated` step): the typed module, the no-op interceptors, internal error helpers and unused types.
+  - **HttpService members:** rename `setGlobalDispatcher` to `setDispatcher` without an alias, make `setInterceptors` internal, return a real `interceptorCount` and a read-only `undiciRef`.
+  - **Default dispatcher:** each HttpService owns an `Agent` built from this package's undici copy, even with no transport options (`allowH2: false` unless `httpVersion: 2`, created at setup, no per-request cost). This fixes several things at once:
+    - the duplicate-undici case, where Node's bundled undici owns the global dispatcher;
+    - undici 8 negotiating HTTP/2 by default on the no-options path;
+    - `OnModuleDestroy`, which can then close everything the module created.
+
+    `setGlobalDispatcher` from undici no longer affects services that don't configure a dispatcher. That is a break; document it.
 
 ## Roadmap
 
@@ -166,7 +176,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 - [ ] Trim the public API (decided: remove what loses nothing), then commit an api-extractor report and check it in CI.
 - [ ] HttpService members: `setDispatcher` (rename), internal `setInterceptors`, a real `interceptorCount`, a read-only `undiciRef`.
 - [ ] `strict` TypeScript in `tsconfig.build.json` (7 errors).
-- [ ] Duplicate undici copy: plain requests should also use an Agent from this package's undici copy.
+- [ ] Duplicate undici copy: plain requests should also use an Agent from this package's undici copy. Per the "breaking changes are fine" decision, this is a per-service default `Agent`, done together with `OnModuleDestroy` resource cleanup.
 
 ### Phase 4: performance (see `plan/reports/performance.md`)
 
@@ -265,3 +275,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - A `cookieJar` that isn't a CookieJar now fails at setup with a clear error, instead of an opaque TypeError on the first request.
   - The docs note that a `cookieJar` next to an explicit `dispatcher` is ignored.
   - New test: `registerAsync` with a jar from a factory.
+- 2026-09-25: Owner decision: breaking changes are fine before 1.0.0, so do things the right way (see Decisions). This affects the remaining types, API trim, HttpService members and default-dispatcher items.
