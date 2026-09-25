@@ -120,7 +120,7 @@ export class LoggingInterceptor implements HttpInterceptor {
 HttpModule.register({ interceptors: [LoggingInterceptor] });
 ```
 
-More in [Interceptors](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/interceptors) and [Interceptor Patterns](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/interceptor-patterns).
+More in the [Interceptors guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/interceptors), including [interceptors with dependencies](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/guides/interceptors?id=interceptors-with-dependencies).
 
 ## Documentation
 

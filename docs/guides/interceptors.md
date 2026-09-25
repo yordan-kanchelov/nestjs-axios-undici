@@ -13,7 +13,7 @@ export class ApiService implements OnModuleInit {
 
   onModuleInit() {
     this.httpService.axiosRef.interceptors.request.use(config => {
-      config.headers['Authorization'] = 'Bearer token'; // or config.headers.set(...)
+      config.headers['Authorization'] = 'Bearer token';
       return config;
     });
 
@@ -90,7 +90,7 @@ Interceptors run in the order they are registered: the first one sees the reques
 
 ### In `register()`
 
-`HttpModule.register({ interceptors })` accepts functions and classes. Classes are instantiated by Nest inside the `HttpModule`:
+`HttpModule.register({ interceptors })` accepts functions, classes and interceptor instances. Classes are instantiated by Nest inside the `HttpModule`:
 
 ```typescript
 HttpModule.register({
@@ -108,7 +108,14 @@ this.httpService.addInterceptor((request, next) => next.handle(request));
 
 ### In `registerAsync()`
 
-`registerAsync()` only uses **function** interceptors. Class references in its `interceptors` array are not instantiated, so wrap them or use one of the patterns below.
+The options returned by `registerAsync()` accept the same interceptors as `register()`. Classes are instantiated inside the `HttpModule`, with their dependencies resolved from the module's `imports` and `extraProviders`:
+
+```typescript
+HttpModule.registerAsync({
+  imports: [ConfigModule], // provides ConfigService, which ApiKeyInterceptor injects
+  useFactory: () => ({ interceptors: [ApiKeyInterceptor] }),
+});
+```
 
 ## Interceptors with Dependencies
 
@@ -149,9 +156,18 @@ export class HttpInterceptorsSetup implements OnModuleInit {
 export class AppModule {}
 ```
 
-### 2. Build the interceptor in `registerAsync()`
+### 2. Use `registerAsync()`
 
-Inject the dependencies into `useFactory` (`imports` makes them resolvable) and return a function interceptor:
+List the modules that provide the dependencies in `imports` (or the providers in `extraProviders`) and pass the class:
+
+```typescript
+HttpModule.registerAsync({
+  imports: [LoggerModule], // exports LoggerService
+  useFactory: () => ({ interceptors: [LoggingInterceptor] }),
+});
+```
+
+Or inject the dependencies into `useFactory` and return a function interceptor:
 
 ```typescript
 HttpModule.registerAsync({
@@ -165,19 +181,6 @@ HttpModule.registerAsync({
         return next.handle(request);
       },
     ],
-  }),
-});
-```
-
-To reuse an existing class interceptor, provide it with `extraProviders` and wrap it:
-
-```typescript
-HttpModule.registerAsync({
-  imports: [LoggerModule],
-  extraProviders: [LoggingInterceptor],
-  inject: [LoggingInterceptor],
-  useFactory: (logging: LoggingInterceptor) => ({
-    interceptors: [(request, next) => logging.intercept(request, next)],
   }),
 });
 ```

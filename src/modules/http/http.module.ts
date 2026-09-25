@@ -1,4 +1,5 @@
 import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { randomStringGenerator } from '@nestjs/common/utils/random-string-generator.util';
 import { map } from 'rxjs/operators';
 
@@ -21,6 +22,26 @@ import type { HttpModuleOptions, UndiciRequestOptionsType } from './types';
 
 const INTERCEPTOR_METADATA = 'HTTP_INTERCEPTORS_METADATA';
 const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
+
+type InterceptorOption = Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction;
+
+function isInterceptorClass(interceptor: InterceptorOption): interceptor is Type<HttpInterceptor> {
+  return (
+    typeof interceptor === 'function' &&
+    (interceptor.toString().startsWith('class') ||
+      (interceptor.prototype &&
+        interceptor.prototype.constructor === interceptor &&
+        Object.getOwnPropertyNames(interceptor.prototype).includes('intercept')))
+  );
+}
+
+function isInterceptorInstance(interceptor: InterceptorOption): interceptor is HttpInterceptor {
+  return (
+    typeof interceptor === 'object' &&
+    interceptor !== null &&
+    typeof (interceptor as HttpInterceptor).intercept === 'function'
+  );
+}
 
 @Module({
   providers: [
@@ -45,24 +66,18 @@ export class HttpModule {
 
     const { interceptors: _, global: _global, ...undiciOptions } = processedConfig;
 
-    // Separate function and class interceptors
+    // Classes are resolved through Nest DI; functions and instances are used as-is
     const functionInterceptors: HttpInterceptorFunction[] = [];
     const classInterceptors: Type<HttpInterceptor>[] = [];
+    const instanceInterceptors: HttpInterceptor[] = [];
 
-    interceptors.forEach(interceptor => {
-      if (typeof interceptor === 'function') {
-        // Check if it's a class constructor by looking for class syntax markers
-        // Classes have toString() that starts with 'class' or have constructor in prototype
-        const isClass = interceptor.toString().startsWith('class') ||
-                       (interceptor.prototype &&
-                        interceptor.prototype.constructor === interceptor &&
-                        Object.getOwnPropertyNames(interceptor.prototype).includes('intercept'));
-
-        if (isClass) {
-          classInterceptors.push(interceptor as Type<HttpInterceptor>);
-        } else {
-          functionInterceptors.push(interceptor as HttpInterceptorFunction);
-        }
+    interceptors.forEach((interceptor: InterceptorOption) => {
+      if (isInterceptorClass(interceptor)) {
+        classInterceptors.push(interceptor);
+      } else if (typeof interceptor === 'function') {
+        functionInterceptors.push(interceptor as HttpInterceptorFunction);
+      } else if (isInterceptorInstance(interceptor)) {
+        instanceInterceptors.push(interceptor);
       }
     });
 
@@ -94,7 +109,7 @@ export class HttpModule {
           useFactory: (...args: any[]) => {
             // The injected arguments are the instantiated interceptors
             const interceptorInstances = args;
-            return [...functionInterceptors, ...interceptorInstances];
+            return [...functionInterceptors, ...instanceInterceptors, ...interceptorInstances];
           },
           inject: classInterceptors,
         },
@@ -228,12 +243,22 @@ export class HttpModule {
         },
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
-          useFactory: (config: HttpModuleOptions) => {
-            // Get base interceptors - axios response adapter is added in the service
-            const baseInterceptors = config.interceptors?.filter(i => typeof i === 'function') || [];
-            return baseInterceptors;
-          },
-          inject: [HTTP_MODULE_OPTIONS],
+          useFactory: (config: HttpModuleOptions, moduleRef: ModuleRef) =>
+            Promise.all(
+              (config.interceptors || [])
+                .filter(
+                  (interceptor: InterceptorOption) =>
+                    typeof interceptor === 'function' || isInterceptorInstance(interceptor),
+                )
+                .map((interceptor: InterceptorOption) =>
+                  isInterceptorClass(interceptor)
+                    ? // Known only at runtime, so not a provider: instantiate it with
+                      // dependencies from this module's scope (`imports`, `extraProviders`)
+                      moduleRef.create(interceptor)
+                    : interceptor,
+                ),
+            ),
+          inject: [HTTP_MODULE_OPTIONS, ModuleRef],
         },
         {
           provide: HttpService,

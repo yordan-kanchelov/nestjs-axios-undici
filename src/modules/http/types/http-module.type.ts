@@ -23,7 +23,7 @@ import type { Type, DynamicModule } from '@nestjs/common';
 import type { HttpInterceptor, HttpInterceptorFunction } from '../interfaces';
 
 export type HttpModuleOptions = UndiciRequestOptionsType & {
-  interceptors?: Array<Type<HttpInterceptor> | HttpInterceptorFunction>;
+  interceptors?: Array<Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction>;
 };
 
 export interface TypedDynamicModule<T> extends DynamicModule {

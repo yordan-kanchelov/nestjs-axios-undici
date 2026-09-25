@@ -58,7 +58,7 @@ Existing `@nestjs/axios` interceptor code keeps working, including `eject()` and
 
 ```typescript
 this.httpService.axiosRef.interceptors.request.use(config => {
-  config.headers.set('x-request-id', randomUUID());
+  config.headers['x-request-id'] = randomUUID();
   return config;
 });
 

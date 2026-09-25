@@ -53,7 +53,7 @@ HttpModule.registerAsync({
 ```typescript
 @Injectable()
 class HttpConfigService implements HttpModuleOptionsFactory {
-  createHttpOptions(): HttpModuleOptions {
+  createHttpOptions() {
     return { timeout: 5000 };
   }
 }
@@ -75,16 +75,19 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 An array of native interceptors, run in order for every request made through this module's `HttpService`:
 
 ```typescript
+const authInterceptor: HttpInterceptorFunction = (request, next) => {
+  request.options.headers = { ...request.options.headers, Authorization: `Bearer ${getToken()}` };
+  return next.handle(request);
+};
+
 HttpModule.register({
-  interceptors: [
-    (request, next) => next.handle(request), // function interceptor
-    LoggingInterceptor,                      // class implementing HttpInterceptor
-  ],
+  interceptors: [authInterceptor, LoggingInterceptor], // LoggingInterceptor implements HttpInterceptor
 });
 ```
 
 - In `register()`, classes are instantiated by Nest inside `HttpModule`. Their constructor dependencies must be available there (for example from a `@Global()` module); providers of your own module are not visible to it.
-- In `registerAsync()`, only functions are used.
+- In `registerAsync()`, classes are instantiated the same way, with dependencies also resolved from its `imports` and `extraProviders`.
+- Interceptor instances (objects with an `intercept()` method) are used as they are.
 
 See [Interceptors](/docs/guides/interceptors.md) for writing interceptors and for interceptors that inject other providers.
 

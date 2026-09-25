@@ -1,6 +1,6 @@
 # Migration Guide: From @nestjs/axios to nestjs-axios-undici
 
-This comprehensive guide helps you migrate from `@nestjs/axios` to `nestjs-axios-undici` with minimal code changes while gaining significant performance improvements.
+This guide helps you migrate from `@nestjs/axios` to `nestjs-axios-undici` with minimal code changes.
 
 ## Coming from `nestjs-undici-interceptors`
 
@@ -50,7 +50,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
   imports: [
     HttpModule.register({  // Same method, automatic detection!
       timeout: 5000,
-      maxRedirects: 5,    // Automatically mapped to maxRedirections
+      maxRedirects: 5,    // Follows up to 5 redirects, like axios
     })
   ]
 })
@@ -58,7 +58,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 The `HttpModule.register()` and `HttpModule.registerAsync()` methods automatically detect axios-style configuration options and map them to their undici equivalents. No need for special registration methods!
 
-Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, JSON parsing of non-JSON content types, `instanceof AxiosError`, ...). Check the [compatibility matrix](./axios-supported-options.md) before migrating.
+Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, JSON parsing of non-JSON content types, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
 
 ## Key Features for Migration
 
@@ -112,7 +112,7 @@ const headers = new AxiosHeaders();
 headers.set('Content-Type', 'application/json');
 headers.set('Authorization', 'Bearer token');
 
-// All axios methods are supported
+// Common axios methods are supported
 headers.get('content-type');  // Case-insensitive
 headers.has('Authorization'); 
 headers.delete('Authorization');
@@ -121,31 +121,14 @@ headers.forEach((value, key) => console.log(key, value));
 
 ### 3. Automatic Configuration Mapping
 
-The following axios options are automatically detected and mapped:
-
-| Axios Option | Undici Equivalent | Notes |
-|-------------|-------------------|-------|
-| `baseURL` | Joined with request URLs | ✅ Same joining rules as axios |
-| `headers` / `params` / `auth` | Applied to every request | ✅ Merged with per-request values |
-| `timeout` | `headersTimeout` & `bodyTimeout` | ✅ Automatically mapped (about 1s resolution) |
-| `maxRedirects` | `maxRedirections` | ✅ Automatically mapped |
-| `validateStatus` | `validateStatus` | ✅ Supported |
-| `httpAgent` | Undici Agent | ✅ Automatically configured |
-| `httpsAgent` | Undici Agent | ✅ Automatically configured |
-| `proxy` | ProxyAgent | ✅ Automatically configured |
-| `maxBodyLength` | Size limit interceptor | ✅ Enforced via interceptor |
-| `maxContentLength` | Size limit interceptor | ✅ Enforced via interceptor |
-| `withCredentials` | CookieAgent | ✅ Cookie jar support |
-| `decompress`, `socketPath` | - | ❌ Not supported |
-
-See [Axios Supported Options](./axios-supported-options.md) for detailed documentation.
+`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. `decompress` and `socketPath` are not supported. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped.
 
 ### 4. Axios-Compatible Responses
 
 All responses are automatically transformed to match axios structure:
 
 ```typescript
-const response = await this.httpService.get('/api/data').toPromise();
+const response = await firstValueFrom(this.httpService.get('/api/data'));
 
 // These all work just like axios:
 response.data       // Parsed response body
@@ -161,7 +144,7 @@ Errors are also axios-compatible, including network errors, timeouts (`ECONNABOR
 
 ```typescript
 try {
-  await this.httpService.get('/api/data').toPromise();
+  await firstValueFrom(this.httpService.get('/api/data'));
 } catch (error) {
   if (error.isAxiosError) {
     console.log(error.response?.status);  // 404, 500, etc.
@@ -176,15 +159,17 @@ try {
 
 ### Simple Service Migration
 
-No code changes needed for basic services:
+No code changes needed for basic services. `toPromise()` is deprecated in RxJS 7; use `firstValueFrom` / `lastValueFrom`:
 
 ```typescript
+import { firstValueFrom } from 'rxjs';
+
 @Injectable()
 export class ApiService {
   constructor(private httpService: HttpService) {}
 
   async getUsers() {
-    const { data } = await this.httpService.get('/users').toPromise();
+    const { data } = await firstValueFrom(this.httpService.get('/users'));
     return data;  // Works exactly the same!
   }
 }
@@ -192,7 +177,7 @@ export class ApiService {
 
 ### OpenTelemetry Integration
 
-Here's a complete example of migrating OpenTelemetry trace injection:
+Here's an example of migrating OpenTelemetry trace injection (more variants in [`examples/opentelemetry-integration.ts`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/opentelemetry-integration.ts)):
 
 ```typescript
 import { HttpModule, HttpService, AxiosHeaders } from "nestjs-axios-undici";
@@ -224,17 +209,11 @@ export class HttpConfigModule implements OnModuleInit {
       const traceHeaders: Record<string, string> = {};
       propagation.inject(context.active(), traceHeaders);
 
-      // Ensure headers is an AxiosHeaders instance
-      if (!config.headers) {
-        config.headers = new AxiosHeaders();
-      } else if (!(config.headers instanceof AxiosHeaders)) {
-        config.headers = AxiosHeaders.from(config.headers);
-      }
-
-      // Now you can use set() just like in axios!
+      const headers = AxiosHeaders.from(config.headers);
       Object.entries(traceHeaders).forEach(([key, value]) => {
-        config.headers.set(key, value);
+        headers.set(key, value);
       });
+      config.headers = headers;
 
       return config;
     });
@@ -244,13 +223,12 @@ export class HttpConfigModule implements OnModuleInit {
 
 ### Native Undici Interceptors (Optional)
 
-For better performance, you can optionally migrate to native undici interceptors:
+You can optionally move to native interceptors. They work on the undici request directly and skip the conversion to and from an axios config that `axiosRef` interceptors need:
 
 ```typescript
-// Native undici interceptor API
 this.httpService.addInterceptor((request, next) => {
-  request.options.headers['X-Request-ID'] = uuid();
-  
+  request.options.headers = { ...request.options.headers, 'X-Request-ID': randomUUID() };
+
   return next.handle(request).pipe(
     tap({
       error: (error) => this.logger.error(error)
@@ -310,44 +288,45 @@ this.httpService.axiosRef.interceptors.response.use((response) => {
 
 ## Gradual Migration Strategy
 
-You can run both modules side-by-side during migration:
+The two packages export different `HttpService` classes, so both modules can be imported side by side while you migrate services one at a time:
 
 ```typescript
-import { HttpModule as AxiosModule } from '@nestjs/axios';
-import { HttpModule as UndiciModule } from 'nestjs-axios-undici';
+import { HttpModule as AxiosHttpModule, HttpService as AxiosHttpService } from '@nestjs/axios';
+import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 @Module({
   imports: [
-    AxiosModule.register({ /* axios config */ }),
-    UndiciModule.register({ /* undici config */ }),
+    AxiosHttpModule.register({ /* axios config */ }),
+    HttpModule.register({ /* same config */ }),
   ],
-  providers: [
-    { provide: 'AxiosHttp', useExisting: AxiosModule },
-    { provide: 'UndiciHttp', useExisting: UndiciModule },
-  ]
+  providers: [LegacyService, MigratedService],
 })
+export class AppModule {}
+
+@Injectable()
+export class LegacyService {
+  constructor(private readonly http: AxiosHttpService) {}
+}
+
+@Injectable()
+export class MigratedService {
+  constructor(private readonly http: HttpService) {}
+}
 ```
 
-Then gradually migrate services one at a time.
+## Performance
 
-## Performance Benefits
-
-After migrating, you'll see:
-- **60-70% faster** HTTP requests
-- Lower memory usage
-- Better connection pooling
-- Native HTTP/2 support
+In the [benchmarks](/docs/benchmarks.md) (a NestJS endpoint making 5 parallel upstream calls under load, with the same logging interceptor on both sides), `nestjs-axios-undici` served 1.9-2.5x the requests per second of `@nestjs/axios`, with 48-60% lower average latency, on Node.js 22, 24 and 26. Results for your workload will vary.
 
 ## Summary
 
 Migration from `@nestjs/axios` is straightforward:
 
 1. **Change imports** from `@nestjs/axios` to `nestjs-axios-undici`
-2. **Review the [known differences](./axios-supported-options.md)** (redirects, interceptor order, response parsing)
+2. **Review the [known differences](/docs/axios-supported-options.md)** (redirects, interceptor order, response parsing)
 3. The `HttpModule.register()` method automatically detects and maps axios options
 4. Existing interceptor code works with `httpService.axiosRef.interceptors`
 5. Response structure and error handling remain the same
-6. Get 60-70% performance improvement with minimal changes
 
 The library automatically handles:
 - Configuration mapping (timeout, maxRedirects, agents, proxy, etc.)
@@ -356,10 +335,10 @@ The library automatically handles:
 - All convenience methods (get, post, put, delete, etc.)
 - AxiosHeaders class for full header compatibility
 
-For the best performance, consider migrating to the native Undici API over time, but the axios-compatible API will continue to be supported.
+The axios-compatible API is the main API of this package; native interceptors and undici options are there when you need them.
 
 ## Need Help?
 
-- See [Axios Supported Options](./axios-supported-options.md) for all configuration options
-- Check [Interceptor Patterns](./interceptor-patterns.md) for advanced patterns
-- Review the [examples](../examples/) directory for working code samples
+- See [Supported Axios Options](/docs/axios-supported-options.md) for all configuration options
+- See [Interceptors](/docs/guides/interceptors.md) for native interceptors and interceptors with dependencies
+- Browse the [examples](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/examples) for runnable code, including [`axios-to-undici-migration.ts`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/examples/axios-to-undici-migration.ts)

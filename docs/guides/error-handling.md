@@ -31,7 +31,27 @@ export class CatsService {
 }
 ```
 
-To accept other status codes, pass `validateStatus` in the module configuration, as you would with axios.
+To accept other status codes, pass `validateStatus` in the module configuration or per request, as you would with axios.
+
+To tell status errors from errors without a response, check `error.response`. Don't rely on `error.request`: unlike axios, it is not set for network errors.
+
+```typescript
+import { isAxiosError } from 'nestjs-axios-undici';
+
+try {
+  await lastValueFrom(this.httpService.get('https://api.example.com/cats/999'));
+} catch (error) {
+  if (isAxiosError(error) && error.response) {
+    // The server responded with a status outside validateStatus
+    console.log(error.response.status, error.response.data);
+  } else if (isAxiosError(error)) {
+    // No response: network error, timeout or cancellation
+    console.log(error.code, error.message);
+  } else {
+    throw error; // e.g. an error thrown by an interceptor
+  }
+}
+```
 
 ## Network Errors
 

@@ -1,4 +1,4 @@
-import { createServer, Server } from 'node:http';
+import { createServer, IncomingMessage, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 
 export interface JsonServer {
@@ -9,10 +9,13 @@ export interface JsonServer {
 /**
  * Starts a local HTTP server that answers every request with
  * `{ id: 1, title: 'hello', path, method }` as JSON, so e2e tests
- * don't depend on external hosts.
+ * don't depend on external hosts. `onRequest` sees each incoming request.
  */
-export async function startJsonServer(): Promise<JsonServer> {
+export async function startJsonServer(
+  onRequest?: (req: IncomingMessage) => void,
+): Promise<JsonServer> {
   const server: Server = createServer((req, res) => {
+    onRequest?.(req);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ id: 1, title: 'hello', path: req.url, method: req.method }));
   });

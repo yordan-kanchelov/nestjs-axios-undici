@@ -87,7 +87,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `registerAsync({ useFactory, inject, imports })` | ✅ | Axios options are mapped exactly like in `register()`. |
 | `registerAsync({ useClass })` / `({ useExisting })` | ✅ | |
 | `extraProviders`, `global` | ✅ | |
-| Class-based interceptors in `registerAsync()` options | ❌ | Only function interceptors are used; see [Interceptors with dependencies](/docs/guides/interceptors.md#interceptors-with-dependencies). |
+| Class-based interceptors in `registerAsync()` options | ✅ | Dependencies are resolved from `imports` and `extraProviders`; see [Interceptors with dependencies](/docs/guides/interceptors.md#interceptors-with-dependencies). |
 
 ## Module-level axios options
 
