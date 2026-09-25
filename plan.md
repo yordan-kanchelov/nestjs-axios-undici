@@ -134,7 +134,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 - [x] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.** PR #18, merged.
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
-- [~] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19 open (`claude/fix-redirects`).
+- [~] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19, merged.
 - [ ] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in.
 - [ ] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.)
 - [ ] ★ **types: axios interop.**
@@ -238,3 +238,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - Differential harness: 187 → 192 scenarios (5 new redirect cases: the default limit 21 vs 22, `maxRedirects: 0`, a relative `Location` without a leading slash, a cross-host `Authorization`/`Cookie` drop, `beforeRedirect`), known differences 29 → 27 (`fix: follow redirects by default (21)`: 1 → 0; `fix(errors): match axios errors`: 20 → 19, the redirect-loop-exceeds-maxRedirects case matched as a side effect of the new error shape). `tests/redirects.e2e.spec.ts` and `tests/axios-compatibility-matrix.e2e.spec.ts` updated for the new default (both previously asserted the old "not followed by default" behaviour).
   - Benchmark (Node 24, 5 rounds × 2s, this sandbox): get -1.2%, post +2.2%, config -1.0%, error -0.5%, interceptors +8.5% (threshold 15%) - all pass, no re-run needed.
 - 2026-09-25: PR #19 review fixes. `timeout` is now one budget for the whole redirect chain, as in axios; before, each hop got a fresh `timeout`, so a 5-hop chain of 80 ms hops passed a 150 ms timeout. `axiosRef.defaults.maxRedirects` is now honoured (request > defaults > module). A test was added for each, and each fails without its fix.
+- 2026-09-25: PR #19 merged: requests follow redirects by default (21), `timeout` covers the whole redirect chain, and `axiosRef.defaults.maxRedirects` is honoured (27 known differences left). CI all green, including the Node 22 rows and the HttpService regression check. Next: fix(config) transport options.
