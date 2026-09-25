@@ -131,7 +131,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
     - `resolveSignal` in axios-request.adapter.ts leaves a listener on `signal` when combined with a legacy `cancelToken`.
     - `toAxiosError` checks `options.signal` (the user's) instead of the per-request signal; it works only via the AbortError/UND_ERR_ABORTED fallback.
     - Performance: cache the interceptor handler chain until interceptors change; skip the `defer()` config re-normalisation when no interceptors are registered; merge the two `.then()` calls.
-- [~] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.** PR #18 open (`claude/refactor-axiosref-config`).
+- [x] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.** PR #18, merged.
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
 - [ ] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.)
@@ -233,3 +233,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - Header lookups on `AxiosHeaders` use its own `get`/`has`/`set` instead of scanning keys through the Proxy. This removed about 9 µs per request on the interceptor path (interceptors had been +27% vs base).
 
   Local CPU/req vs claude/v1.0.0: get +1% to +7%, post −1% to −3%, config −2% to +2%, error +2% to +10%, interceptors −5% to −7% (noisy sandbox; all within thresholds).
+- 2026-09-25: PR #18 merged: one axios config pipeline, axios interceptor order, `runWhen`/`synchronous`, transforms, and `config` as an own property (28 known differences left). CI all green, including the HttpService regression check. Next: follow redirects by default (21).
