@@ -20,7 +20,7 @@ declare const ours: HttpService;
 // Our HttpService should stand in for @nestjs/axios' HttpService wherever
 // it's injected or typed. ('query', new in @nestjs/axios 12, is a separately
 // tracked, allowlisted gap: see tests/compat/api-surface.spec.ts.)
-// @ts-expect-error -- request()'s AxiosCompatibleRequestConfig isn't assignable from axios' AxiosRequestConfig (url must be string | URL, not string | undefined); tracked in plan.md phase 2 "types: axios interop"
+// @ts-expect-error -- response.config.headers (a real AxiosHeaders instance) isn't assignable to axios' own AxiosHeaders class: our class's overloaded axios `set()`/`get()`/`toJSON()` call shapes aren't fully mirrored, only the shapes this library itself needs; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
 export const asRefHttpService: Omit<PublicOf<RefHttpService>, 'query'> = ours;
 
 // axiosRef should be usable as a plain axios AxiosInstance.
@@ -34,7 +34,7 @@ declare const axiosStyleConfig: AxiosRequestConfig;
 export function getWithAxiosConfig(): Observable<
   AxiosResponse<{ id: number }>
 > {
-  // @ts-expect-error -- our request options / response headers aren't yet assignable from/to axios' AxiosRequestConfig / AxiosResponse; tracked in plan.md phase 2 "types: axios interop"
+  // @ts-expect-error -- same root cause as asRefHttpService above: response.config.headers isn't assignable to axios' own AxiosHeaders class; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
   return ours.get<{ id: number }>('/x', axiosStyleConfig);
 }
 

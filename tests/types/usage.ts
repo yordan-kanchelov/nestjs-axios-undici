@@ -180,7 +180,6 @@ export function case15(http: HttpService) {
     headers: {},
     config: {} as InternalAxiosRequestConfig,
   };
-  // @ts-expect-error -- axios' InternalAxiosRequestConfig.signal (GenericAbortSignal) isn't assignable to our AbortSignal, and axios' AxiosHeaders class isn't assignable to ours (same root cause as case5/9); tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
   const spy: (url: string) => ReturnType<HttpService['get']> = () => of(res);
   return spy;
 }

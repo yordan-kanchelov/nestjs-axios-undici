@@ -2,6 +2,22 @@ import type { Dispatcher } from 'undici';
 import type { AxiosHeaders } from './axios-headers';
 
 /**
+ * The minimal shape axios itself requires for `signal` (its own
+ * `GenericAbortSignal`) - narrower than DOM's `AbortSignal` (`onabort`/
+ * `addEventListener`/`removeEventListener` are all optional there). A real
+ * `AbortSignal` (what this library's own request path always passes/reads)
+ * satisfies this too, so accepting the union costs nothing at runtime; it
+ * just also accepts the narrower shape axios' own types use, so a variable
+ * typed with axios' `AxiosRequestConfig` is assignable to `AxiosLikeRequestConfig`.
+ */
+export interface AxiosLikeAbortSignal {
+  readonly aborted: boolean;
+  onabort?: ((...args: any[]) => any) | null;
+  addEventListener?: (...args: any[]) => any;
+  removeEventListener?: (...args: any[]) => any;
+}
+
+/**
  * Axios-compatible request configuration, and the single type this library
  * uses everywhere a request-level config is accepted: `request(config)`,
  * `request(url, options)`, `get`/`post`/etc.'s `config` argument, axiosRef's
@@ -71,7 +87,7 @@ export interface AxiosLikeRequestConfig<D = any> {
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
   cancelToken?: AxiosCancelTokenLike;
-  signal?: AbortSignal;
+  signal?: AbortSignal | AxiosLikeAbortSignal;
   /**
    * Unix domain socket path (module- or request-level). Applied to the
    * dispatcher (`Agent({ connect: { socketPath } })`, cached per path); the
