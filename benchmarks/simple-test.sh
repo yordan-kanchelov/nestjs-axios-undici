@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Port base of the stack to test: 3000 (Node 20), 3010 (22), 3020 (24), 3030 (26)
-BASE=${PORT_BASE:-3000}
+# Port base of the stack to test: 3010 (Node 22), 3020 (24), 3030 (26)
+BASE=${PORT_BASE:-3010}
 
 echo "Testing Mock Service..."
 curl -s http://localhost:$((BASE + 1))/api/data | jq .

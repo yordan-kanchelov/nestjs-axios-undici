@@ -2,13 +2,13 @@
 
 > This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.
 
-Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js 20, 22, 24, 26.
+Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js 22, 24, 26.
 
 ## Summary
 
 - **Undici is 67-70% faster than Axios** with the same framework (Fastify + Undici vs Fastify + Axios).
 - **Fastify + Undici is 68-71% faster than the default Express + Axios setup**, with 207-248% more throughput.
-- **With interceptors**, Fastify + Undici averages 27-84ms, still faster than every Axios configuration (49-128ms at best).
+- **With interceptors**, Fastify + Undici averages 27-65ms, still faster than every Axios configuration (49-106ms at best).
 
 ## Average Response Time on Node.js 26
 
@@ -18,46 +18,46 @@ Lower is better. Hover a bar for its p95.
 
 ## Average Response Time (ms)
 
-| Configuration | Node 20 | Node 22 | Node 24 | Node 26 |
-|---|---:|---:|---:|---:|
-| Express + Axios | 138.47 | 57.13 | 96.28 | 106.46 |
-| Fastify + Axios | 127.86 | 49.25 | 101.91 | 108.02 |
-| Fastify + Undici | 42.75 | 16.30 | 31.15 | 32.91 |
-| Express + Axios + Interceptor | 170.00 | 69.72 | 130.52 | 139.25 |
-| Fastify + Axios + Interceptor | 154.52 | 59.60 | 124.96 | 131.27 |
-| Fastify + Undici + Interceptor | 84.21 | 26.97 | 58.97 | 65.38 |
+| Configuration | Node 22 | Node 24 | Node 26 |
+|---|---:|---:|---:|
+| Express + Axios | 57.13 | 96.28 | 106.46 |
+| Fastify + Axios | 49.25 | 101.91 | 108.02 |
+| Fastify + Undici | 16.30 | 31.15 | 32.91 |
+| Express + Axios + Interceptor | 69.72 | 130.52 | 139.25 |
+| Fastify + Axios + Interceptor | 59.60 | 124.96 | 131.27 |
+| Fastify + Undici + Interceptor | 26.97 | 58.97 | 65.38 |
 
 ## P95 Response Time (ms)
 
-| Configuration | Node 20 | Node 22 | Node 24 | Node 26 |
-|---|---:|---:|---:|---:|
-| Express + Axios | 232.89 | 110.40 | 170.13 | 185.01 |
-| Fastify + Axios | 221.00 | 87.91 | 180.75 | 188.17 |
-| Fastify + Undici | 74.67 | 28.80 | 54.00 | 58.22 |
-| Express + Axios + Interceptor | 297.91 | 127.03 | 233.62 | 286.83 |
-| Fastify + Axios + Interceptor | 264.29 | 109.03 | 227.69 | 232.64 |
-| Fastify + Undici + Interceptor | 133.02 | 47.27 | 95.06 | 104.06 |
+| Configuration | Node 22 | Node 24 | Node 26 |
+|---|---:|---:|---:|
+| Express + Axios | 110.40 | 170.13 | 185.01 |
+| Fastify + Axios | 87.91 | 180.75 | 188.17 |
+| Fastify + Undici | 28.80 | 54.00 | 58.22 |
+| Express + Axios + Interceptor | 127.03 | 233.62 | 286.83 |
+| Fastify + Axios + Interceptor | 109.03 | 227.69 | 232.64 |
+| Fastify + Undici + Interceptor | 47.27 | 95.06 | 104.06 |
 
 ## Throughput (requests/s)
 
-| Configuration | Node 20 | Node 22 | Node 24 | Node 26 |
-|---|---:|---:|---:|---:|
-| Express + Axios | 464 | 1122 | 666 | 603 |
-| Fastify + Axios | 502 | 1302 | 630 | 594 |
-| Fastify + Undici | 1493 | 3905 | 2044 | 1935 |
-| Express + Axios + Interceptor | 378 | 920 | 492 | 461 |
-| Fastify + Axios + Interceptor | 416 | 1076 | 513 | 489 |
-| Fastify + Undici + Interceptor | 760 | 2366 | 1083 | 978 |
+| Configuration | Node 22 | Node 24 | Node 26 |
+|---|---:|---:|---:|
+| Express + Axios | 1122 | 666 | 603 |
+| Fastify + Axios | 1302 | 630 | 594 |
+| Fastify + Undici | 3905 | 2044 | 1935 |
+| Express + Axios + Interceptor | 920 | 492 | 461 |
+| Fastify + Axios + Interceptor | 1076 | 513 | 489 |
+| Fastify + Undici + Interceptor | 2366 | 1083 | 978 |
 
 ## Interceptor Overhead
 
 How much slower the average response gets when interceptors are added.
 
-| Configuration | Node 20 | Node 22 | Node 24 | Node 26 |
-|---|---:|---:|---:|---:|
-| Express + Axios | 22.8% | 22.0% | 35.6% | 30.8% |
-| Fastify + Axios | 20.9% | 21.0% | 22.6% | 21.5% |
-| Fastify + Undici | 97.0% | 65.4% | 89.3% | 98.7% |
+| Configuration | Node 22 | Node 24 | Node 26 |
+|---|---:|---:|---:|
+| Express + Axios | 22.0% | 35.6% | 30.8% |
+| Fastify + Axios | 21.0% | 22.6% | 21.5% |
+| Fastify + Undici | 65.4% | 89.3% | 98.7% |
 
 > The Undici interceptor app uses `nestjs-axios-undici`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.
 
@@ -90,6 +90,6 @@ Every pull request that touches `src/` runs an `HttpService` micro-benchmark aga
 cd benchmarks
 ./scripts/pack-lib.sh          # build and pack the library from this checkout
 npm ci && npm run install-lib  # install benchmark deps + the packed library
-./test-all-node-versions.sh    # Docker + k6 across Node.js 20, 22, 24 and 26
+./test-all-node-versions.sh    # Docker + k6 across Node.js 22, 24 and 26
 node generate-comparison-report.js --docs ../docs/benchmarks.md
 ```

@@ -7,17 +7,17 @@ A performance benchmark comparing HTTP client/server configurations in NestJS ap
 ## 🏆 Performance Results Summary
 
 <!-- perf-summary:start -->
-> **TL;DR: Undici is 67-70% faster than Axios across Node.js 20, 22, 24, 26**
+> **TL;DR: Undici is 67-70% faster than Axios across Node.js 22, 24, 26**
 
 ### Latest Benchmark Results
 
 | Configuration | Avg Response Time | vs Baseline | Throughput |
 |--------------|-------------------|-------------|------------|
-| **Express + Axios** | 57-138ms | baseline | 100% |
-| **Fastify + Axios** | 49-128ms | -6 to 14% faster | 94-116% |
-| **Fastify + Undici** | **16-43ms** | **68-71% faster** | **307-348%** |
+| **Express + Axios** | 57-106ms | baseline | 100% |
+| **Fastify + Axios** | 49-108ms | -6 to 14% faster | 94-116% |
+| **Fastify + Undici** | **16-33ms** | **68-71% faster** | **307-348%** |
 
-*Results from Node.js 20, 22, 24, 26. [View detailed results](#-latest-performance-results) | [View full report](results/PERFORMANCE-COMPARISON-REPORT.md)*
+*Results from Node.js 22, 24, 26. [View detailed results](#-latest-performance-results) | [View full report](results/PERFORMANCE-COMPARISON-REPORT.md)*
 
 *Environment: GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner*
 <!-- perf-summary:end -->
@@ -43,7 +43,7 @@ This repository benchmarks the performance difference between Axios-based and Un
 - **Throughput**: Requests per second (RPS) under various load conditions
 - **Concurrent User Handling**: Performance with 50 and 100 concurrent users
 - **Error Rates**: Reliability under load
-- **Cross-Node.js Version Performance**: Tests on Node.js 20, 22, 24, and 26
+- **Cross-Node.js Version Performance**: Tests on Node.js 22, 24, and 26
 
 ### Test Scenario Architecture
 
@@ -68,7 +68,6 @@ This repository benchmarks the performance difference between Axios-based and Un
 
 Each service makes 5 parallel requests to the mock service.
 Port mappings for different Node versions:
-- Node 20: Ports 3001-3007
 - Node 22: Ports 3011-3017
 - Node 24: Ports 3021-3027
 - Node 26: Ports 3031-3037
@@ -83,7 +82,7 @@ The test simulates a common microservices pattern where a gateway service needs 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20+ (tests support Node.js 20, 22, 24, and 26)
+- Node.js 22+ (tests support Node.js 22, 24, and 26)
 - Docker and Docker Compose
 - k6 load testing tool (`brew install k6` on macOS)
 - jq for JSON parsing (optional, `brew install jq` on macOS)
@@ -101,7 +100,7 @@ The test simulates a common microservices pattern where a gateway service needs 
    ```
    Re-run `./scripts/pack-lib.sh && npm run install-lib` after changing `src/`. The Docker images install the same `.lib/` tarball.
 
-2. **Run comprehensive tests across Node.js 20, 22, 24, and 26:**
+2. **Run comprehensive tests across Node.js 22, 24, and 26:**
    ```bash
    ./test-all-node-versions.sh
    ```
@@ -118,7 +117,6 @@ The test simulates a common microservices pattern where a gateway service needs 
    cat results/PERFORMANCE-COMPARISON-REPORT.md
    
    # View specific version results
-   cat results/node20-performance-comparison.csv
    cat results/node22-performance-comparison.csv
    cat results/node24-performance-comparison.csv
    cat results/node26-performance-comparison.csv
@@ -128,9 +126,6 @@ The test simulates a common microservices pattern where a gateway service needs 
 
 1. **Start services for specific Node version:**
    ```bash
-   # For Node.js 20 (default)
-   docker-compose up --build
-   
    # For Node.js 22
    docker-compose -f docker-compose-node22.yml up --build
    
@@ -143,9 +138,6 @@ The test simulates a common microservices pattern where a gateway service needs 
 
 2. **Run the corresponding k6 test:**
    ```bash
-   # For Node.js 20
-   k6 run k6-scripts/test-node20.js
-   
    # For Node.js 22
    k6 run k6-scripts/test-node22.js
    
@@ -184,13 +176,10 @@ The performance tests use k6 to simulate realistic load patterns:
 ### Performance Results
 
 <!-- perf-details:start -->
-With 5 parallel HTTP requests per endpoint call, tested across Node.js 20, 22, 24, 26:
+With 5 parallel HTTP requests per endpoint call, tested across Node.js 22, 24, 26:
 
 | Node Version | Configuration | Avg Response (ms) | P95 (ms) | P99 (ms) | vs Express+Axios |
 |--------------|---------------|-------------------|----------|----------|------------------|
-| **Node 20** | Express + Axios | 138.47 | 232.89 | 417.70 | baseline |
-| **Node 20** | Fastify + Axios | 127.86 | 221.00 | 237.86 | 7.7% faster |
-| **Node 20** | Fastify + Undici | 42.75 | 74.67 | 79.12 | **69.1% faster** |
 | **Node 22** | Express + Axios | 57.13 | 110.40 | 134.81 | baseline |
 | **Node 22** | Fastify + Axios | 49.25 | 87.91 | 108.58 | 13.8% faster |
 | **Node 22** | Fastify + Undici | 16.30 | 28.80 | 34.74 | **71.5% faster** |
@@ -205,7 +194,6 @@ With 5 parallel HTTP requests per endpoint call, tested across Node.js 20, 22, 2
 
 | Node Version | Express + Axios | Fastify + Axios | Fastify + Undici |
 |--------------|-----------------|-----------------|------------------|
-| **Node 20** | 170.00ms (+22.8%) | 154.52ms (+20.9%) | 84.21ms (+97.0%) |
 | **Node 22** | 69.72ms (+22.0%) | 59.60ms (+21.0%) | 26.97ms (+65.4%) |
 | **Node 24** | 130.52ms (+35.6%) | 124.96ms (+22.6%) | 58.97ms (+89.3%) |
 | **Node 26** | 139.25ms (+30.8%) | 131.27ms (+21.5%) | 65.38ms (+98.7%) |
@@ -214,9 +202,9 @@ With 5 parallel HTTP requests per endpoint call, tested across Node.js 20, 22, 2
 
 - **Undici is 67-70% faster than Axios** on the same framework (Fastify) across all tested Node.js versions
 - **Framework impact is smaller**: Fastify is -5.8 to 13.8% faster than Express with Axios
-- **Best configuration**: Fastify + Undici at 16-43ms average, fastest on Node.js 22 (16.30ms)
+- **Best configuration**: Fastify + Undici at 16-33ms average, fastest on Node.js 22 (16.30ms)
 - **Throughput**: Fastify + Undici delivers 207-248% more requests/s than Express + Axios
-- **Interceptors**: Fastify + Undici with interceptors averages 27-84ms, still well ahead of every Axios configuration
+- **Interceptors**: Fastify + Undici with interceptors averages 27-65ms, still well ahead of every Axios configuration
 <!-- perf-details:end -->
 
 **Conclusion:** For maximum performance in NestJS applications, use the Undici HTTP client. The choice of HTTP client (Undici vs Axios) has a much larger impact on performance than the choice of server framework (Fastify vs Express); see the findings above for the measured ranges.
@@ -278,8 +266,8 @@ node benchmarks/micro/compare.js --base ../base-checkout --head . --rounds 5 --d
 ### Continuous Integration
 
 `.github/workflows/benchmarks.yml` in the repository root:
-- **Pull requests**: typechecks the apps on Node.js 20-26 and runs the micro-benchmark regression check.
-- **Pushes to main** (touching `src/` or `benchmarks/`) and manual runs: the full Docker + k6 benchmark on Node.js 20, 22, 24 and 26. When every version succeeds, the results, this README's tables and `docs/benchmarks.md` are regenerated and committed.
+- **Pull requests**: typechecks the apps on Node.js 22, 24 and 26 and runs the micro-benchmark regression check.
+- **Releases** (called by the Release workflow after a version is published) and manual runs: the full Docker + k6 benchmark on Node.js 22, 24 and 26. When every version succeeds, the results, this README's tables and `docs/benchmarks.md` are regenerated and committed, and the docs site is redeployed.
 
 ### Local Development (without Docker)
 
@@ -335,13 +323,11 @@ nestjs-axios-undici/
 │   └── nestjs-fastify-undici-interceptor/ # Fastify + nestjs-axios-undici
 ├── k6-scripts/
 │   ├── lib/benchmark.js   # Shared scenarios, checks and summary output
-│   ├── test-node20.js     # Node.js 20 test (~7.5 min)
 │   ├── test-node22.js     # Node.js 22 test (~7.5 min)
 │   ├── test-node24.js     # Node.js 24 test (~7.5 min)
 │   └── test-node26.js     # Node.js 26 test (~7.5 min)
 ├── results/               # Test results (CSV, JSON, MD)
 ├── generate-comparison-report.js # Builds the report (and README tables with --update-readme)
-├── docker-compose.yml       # Node.js 20 configuration
 ├── docker-compose-node22.yml # Node.js 22 configuration
 ├── docker-compose-node24.yml # Node.js 24 configuration
 ├── docker-compose-node26.yml # Node.js 26 configuration
@@ -354,8 +340,8 @@ nestjs-axios-undici/
 ### Docker Configuration
 
 All services use a unified Dockerfile approach with build arguments:
-- Base image: `node:${NODE_VERSION}-slim` (defaults to Node 20)
-- Build argument: `NODE_VERSION` (20, 22, 24, or 26)
+- Base image: `node:${NODE_VERSION}-slim` (defaults to Node 24)
+- Build argument: `NODE_VERSION` (22, 24, or 26)
 - TypeScript execution via `ts-node` with proper project configuration
 
 Example Docker build with specific Node version:
@@ -430,14 +416,13 @@ npm install undici
 
 ## 🏃 Available Scripts
 
-- `./test-all-node-versions.sh` - Run performance tests across Node.js 20, 22, 24, and 26
+- `./test-all-node-versions.sh` - Run performance tests across Node.js 22, 24, and 26
 - `node generate-comparison-report.js` - Build `results/PERFORMANCE-COMPARISON-REPORT.md` from the per-version results
 - `node generate-comparison-report.js --update-readme` - Refresh the result tables in this README
 - `./simple-test.sh` - Quick manual testing with curl for all services
 
 ### Docker Compose Files
 
-- `docker-compose.yml` - Node.js 20 services (ports 3001-3007)
 - `docker-compose-node22.yml` - Node.js 22 services (ports 3011-3017)
 - `docker-compose-node24.yml` - Node.js 24 services (ports 3021-3027)
 - `docker-compose-node26.yml` - Node.js 26 services (ports 3031-3037)

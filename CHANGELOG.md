@@ -20,7 +20,7 @@ First release as `nestjs-axios-undici` (previously published as `nestjs-undici-i
 - String and `Buffer` request bodies default to `Content-Type: application/x-www-form-urlencoded`, as in axios.
 - Per-request headers are merged with module headers instead of replacing them.
 - Module-level `timeout`, `auth`, `params` and `maxRedirects` apply to every request.
-- Requires Node.js 20.18.1 or newer (the undici 7 minimum). Tested on Node.js 20, 22, 24 and 26.
+- Requires Node.js 22 or newer. Tested on Node.js 22, 24 and 26.
 
 ### Fixes
 
@@ -28,5 +28,5 @@ First release as `nestjs-axios-undici` (previously published as `nestjs-undici-i
 
 ### Project
 
-- Benchmarks (k6 + Docker across Node.js 20-26, and a pull-request regression check) live in `benchmarks/` and run against the library code of each commit. Results: [benchmarks](docs/benchmarks.md).
+- Benchmarks (k6 + Docker across Node.js 22, 24 and 26, and a pull-request regression check) live in `benchmarks/` and run against the library code of each commit. Results: [benchmarks](docs/benchmarks.md).
 - Merged upstream `nestjs-undici` v0.2.60.

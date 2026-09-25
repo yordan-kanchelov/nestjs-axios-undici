@@ -1,14 +1,9 @@
 name: Benchmarks
 
+# Pull requests: typecheck + HttpService regression check.
+# Full Docker/k6 benchmark: called by the Release workflow after a version is
+# published (once per release), or run manually.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'benchmarks/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/benchmarks.yml'
   pull_request:
     paths:
       - 'src/**'
@@ -21,7 +16,14 @@ on:
       node_versions:
         description: 'Node.js versions for the full benchmark (comma-separated)'
         required: false
-        default: '20,22,24,26'
+        default: '22,24,26'
+        type: string
+  workflow_call:
+    inputs:
+      node_versions:
+        description: 'Node.js versions for the full benchmark (comma-separated)'
+        required: false
+        default: '22,24,26'
         type: string
 
 permissions:
@@ -30,11 +32,13 @@ permissions:
 jobs:
   typecheck:
     name: Typecheck benchmark apps (Node ${{ matrix.node-version }})
+    # Pull requests and manual runs; a release already passed the PR checks
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24, 26]
+        node-version: [22, 24, 26]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ${{ fromJSON(format('[{0}]', github.event.inputs.node_versions || '20,22,24,26')) }}
+        node-version: ${{ fromJSON(format('[{0}]', inputs.node_versions || '22,24,26')) }}
     defaults:
       run:
         working-directory: benchmarks
@@ -101,12 +105,12 @@ jobs:
           sudo apt-get install k6
       - name: Start services
         run: |
-          if [ "${{ matrix.node-version }}" = "20" ]; then COMPOSE_FILE=docker-compose.yml; else COMPOSE_FILE=docker-compose-node${{ matrix.node-version }}.yml; fi
+          COMPOSE_FILE=docker-compose-node${{ matrix.node-version }}.yml
           echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
           docker compose -f $COMPOSE_FILE up -d --build
       - name: Wait for services
         run: |
-          case "${{ matrix.node-version }}" in 20) BASE=3000;; 22) BASE=3010;; 24) BASE=3020;; 26) BASE=3030;; esac
+          case "${{ matrix.node-version }}" in 22) BASE=3010;; 24) BASE=3020;; 26) BASE=3030;; esac
           for OFFSET in 1 2 3 4 5 6 7; do
             URL="http://localhost:$((BASE + OFFSET))/api"; [ $OFFSET = 1 ] && URL="$URL/data"
             for i in $(seq 1 90); do curl -sf "$URL" > /dev/null && break; sleep 2; done

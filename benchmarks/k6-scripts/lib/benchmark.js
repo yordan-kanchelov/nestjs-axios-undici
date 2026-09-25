@@ -3,7 +3,7 @@ import { check } from 'k6';
 import { Rate, Trend, Counter } from 'k6/metrics';
 
 // Services under test. `port` is the offset from the Node version's port base
-// (Node 20: 3000, Node 22: 3010, Node 24: 3020, Node 26: 3030).
+// (Node 22: 3010, Node 24: 3020, Node 26: 3030).
 export const SERVICES = [
   { key: 'express_axios', label: 'Express+Axios', exec: 'testExpressAxios', port: 4, tag: 'express-axios', startTime: '0s' },
   { key: 'fastify_axios', label: 'Fastify+Axios', exec: 'testFastifyAxios', port: 2, tag: 'fastify-axios', startTime: '1m15s' },

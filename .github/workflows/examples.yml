@@ -1,13 +1,9 @@
 name: Example Tests
 
+# Pull requests only: merges to main are covered by the PR run and the
+# Release workflow's tests.
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'src/**'
-      - 'examples/**'
-      - 'package.json'
-      - 'scripts/**'
+  workflow_dispatch:
   pull_request:
     branches: [main, develop]
     paths:
@@ -23,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20.x, 22.x, 24.x, 26.x]
+        node-version: [22.x, 24.x, 26.x]
 
     steps:
       - uses: actions/checkout@v4

@@ -512,7 +512,7 @@ function buildDocsPage(runs) {
     'cd benchmarks',
     './scripts/pack-lib.sh          # build and pack the library from this checkout',
     'npm ci && npm run install-lib  # install benchmark deps + the packed library',
-    './test-all-node-versions.sh    # Docker + k6 across Node.js 20, 22, 24 and 26',
+    './test-all-node-versions.sh    # Docker + k6 across Node.js 22, 24 and 26',
     'node generate-comparison-report.js --docs ../docs/benchmarks.md',
     '```',
     '',
