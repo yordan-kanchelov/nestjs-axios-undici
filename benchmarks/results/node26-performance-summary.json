@@ -1,7 +1,7 @@
 {
   "test_info": {
     "node_version": "Node.js 26",
-    "timestamp": "2026-09-24T23:05:53.774Z",
+    "timestamp": "2026-09-25T08:20:29.081Z",
     "duration_seconds": 445,
     "scenarios": [
       "express_axios",
@@ -13,107 +13,107 @@
     ],
     "max_vus": 100,
     "environment": "GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner",
-    "library_ref": "nestjs-axios-undici@0.6.0 (046f981)"
+    "library_ref": "nestjs-axios-undici@0.6.0 (0ec2451)"
   },
   "results": {
     "express_axios": {
-      "requests": 42183,
-      "duration_avg": 106.45992222475904,
-      "duration_med": 93.557014,
-      "duration_p95": 185.00817030000002,
-      "duration_p99": 197.07698322000002,
-      "duration_min": 1.423061,
-      "duration_max": 474.96856,
+      "requests": 80698,
+      "duration_avg": 55.590444970990475,
+      "duration_med": 49.6664105,
+      "duration_p95": 95.14669834999998,
+      "duration_p99": 105.67579592999998,
+      "duration_min": 0.936741,
+      "duration_max": 225.279425,
       "error_rate": 0,
-      "rps": 602.6142857142858
+      "rps": 1152.8285714285714
     },
     "fastify_axios": {
-      "requests": 41577,
-      "duration_avg": 108.0169998265868,
-      "duration_med": 94.275745,
-      "duration_p95": 188.1728196,
-      "duration_p99": 199.1491781999999,
-      "duration_min": 1.496185,
-      "duration_max": 417.504092,
+      "requests": 82337,
+      "duration_avg": 54.47959150416006,
+      "duration_med": 47.842363,
+      "duration_p95": 93.4440776,
+      "duration_p99": 104.76360156,
+      "duration_min": 0.944995,
+      "duration_max": 202.583345,
       "error_rate": 0,
-      "rps": 593.9571428571429
+      "rps": 1176.2428571428572
     },
     "fastify_undici": {
-      "requests": 135460,
-      "duration_avg": 32.907503578133905,
-      "duration_med": 26.0136395,
-      "duration_p95": 58.22200209999999,
-      "duration_p99": 63.05602091,
-      "duration_min": 0.691149,
-      "duration_max": 98.294983,
+      "requests": 282187,
+      "duration_avg": 15.741324871365162,
+      "duration_med": 13.767005,
+      "duration_p95": 26.890326,
+      "duration_p99": 32.66554144000004,
+      "duration_min": 0.424598,
+      "duration_max": 54.189815,
       "error_rate": 0,
-      "rps": 1935.142857142857
+      "rps": 4031.2428571428572
     },
     "express_axios_interceptor": {
-      "requests": 32267,
-      "duration_avg": 139.24630898881196,
-      "duration_med": 120.392748,
-      "duration_p95": 286.8319147,
-      "duration_p99": 400.74717804,
-      "duration_min": 1.87558,
-      "duration_max": 539.245082,
+      "requests": 59261,
+      "duration_avg": 75.73225783076659,
+      "duration_med": 65.948978,
+      "duration_p95": 136.965354,
+      "duration_p99": 148.9735636,
+      "duration_min": 1.130881,
+      "duration_max": 314.087987,
       "error_rate": 0,
-      "rps": 460.95714285714286
+      "rps": 846.5857142857143
     },
     "fastify_axios_interceptor": {
-      "requests": 34222,
-      "duration_avg": 131.27108964660133,
-      "duration_med": 118.200794,
-      "duration_p95": 232.6408033,
-      "duration_p99": 247.01969326000005,
-      "duration_min": 1.817995,
-      "duration_max": 497.042387,
+      "requests": 63874,
+      "duration_avg": 70.24030969405379,
+      "duration_med": 62.25957,
+      "duration_p95": 123.97574184999999,
+      "duration_p99": 133.40041706999997,
+      "duration_min": 1.11963,
+      "duration_max": 311.344709,
       "error_rate": 0,
-      "rps": 488.8857142857143
+      "rps": 912.4857142857143
     },
     "fastify_undici_interceptor": {
-      "requests": 68435,
-      "duration_avg": 65.37833751922258,
-      "duration_med": 54.688035,
-      "duration_p95": 104.0644614,
-      "duration_p99": 108.86753252000001,
-      "duration_min": 1.080721,
-      "duration_max": 177.271744,
+      "requests": 158497,
+      "duration_avg": 28.145099152134854,
+      "duration_med": 23.847067,
+      "duration_p95": 46.714322599999996,
+      "duration_p99": 51.711391840000005,
+      "duration_min": 0.596482,
+      "duration_max": 86.846071,
       "error_rate": 0,
-      "rps": 977.6428571428571
+      "rps": 2264.2428571428572
     }
   },
   "comparison": {
     "fastify_axios_vs_express_axios": {
-      "throughput_improvement": "-1.44%",
-      "avg_response_improvement": "-1.46%",
-      "p95_response_improvement": "-1.71%",
-      "p99_response_improvement": "-1.05%"
+      "throughput_improvement": "2.03%",
+      "avg_response_improvement": "2.00%",
+      "p95_response_improvement": "1.79%",
+      "p99_response_improvement": "0.86%"
     },
     "fastify_undici_vs_express_axios": {
-      "throughput_improvement": "221.12%",
-      "avg_response_improvement": "69.09%",
-      "p95_response_improvement": "68.53%",
-      "p99_response_improvement": "68.00%"
+      "throughput_improvement": "249.68%",
+      "avg_response_improvement": "71.68%",
+      "p95_response_improvement": "71.74%",
+      "p99_response_improvement": "69.09%"
     },
     "fastify_undici_vs_fastify_axios": {
-      "throughput_improvement": "225.81%",
-      "avg_response_improvement": "69.53%",
-      "p95_response_improvement": "69.06%",
-      "p99_response_improvement": "68.34%"
+      "throughput_improvement": "242.72%",
+      "avg_response_improvement": "71.11%",
+      "p95_response_improvement": "71.22%",
+      "p99_response_improvement": "68.82%"
     },
     "interceptor_overhead": {
       "express_axios": {
-        "throughput_impact": "-23.51%",
-        "avg_response_impact": "23.55%"
+        "throughput_impact": "-26.56%",
+        "avg_response_impact": "26.60%"
       },
       "fastify_axios": {
-        "throughput_impact": "-17.69%",
-        "avg_response_impact": "17.71%"
+        "throughput_impact": "-22.42%",
+        "avg_response_impact": "22.44%"
       },
       "fastify_undici": {
-        "throughput_impact": "-49.48%",
-        "avg_response_impact": "49.67%"
+        "throughput_impact": "-43.83%",
+        "avg_response_impact": "44.07%"
       }
     }
   }

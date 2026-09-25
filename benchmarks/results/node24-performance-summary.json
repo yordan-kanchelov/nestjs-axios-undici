@@ -1,7 +1,7 @@
 {
   "test_info": {
     "node_version": "Node.js 24",
-    "timestamp": "2026-09-24T23:05:52.472Z",
+    "timestamp": "2026-09-25T08:19:33.643Z",
     "duration_seconds": 445,
     "scenarios": [
       "express_axios",
@@ -13,107 +13,107 @@
     ],
     "max_vus": 100,
     "environment": "GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner",
-    "library_ref": "nestjs-axios-undici@0.6.0 (046f981)"
+    "library_ref": "nestjs-axios-undici@0.6.0 (0ec2451)"
   },
   "results": {
     "express_axios": {
-      "requests": 46636,
-      "duration_avg": 96.27662919384173,
-      "duration_med": 82.9265755,
-      "duration_p95": 170.1339605,
-      "duration_p99": 180.24256044999998,
-      "duration_min": 1.324151,
-      "duration_max": 387.59707,
+      "requests": 39003,
+      "duration_avg": 115.17064133276793,
+      "duration_med": 102.612755,
+      "duration_p95": 199.3303811,
+      "duration_p99": 213.9254065800001,
+      "duration_min": 1.574635,
+      "duration_max": 531.563803,
       "error_rate": 0,
-      "rps": 666.2285714285714
+      "rps": 557.1857142857143
     },
     "fastify_axios": {
-      "requests": 44068,
-      "duration_avg": 101.91247846736886,
-      "duration_med": 86.280607,
-      "duration_p95": 180.74973990000004,
-      "duration_p99": 281.2783795,
-      "duration_min": 1.317461,
-      "duration_max": 410.403786,
+      "requests": 38751,
+      "duration_avg": 115.92518284753952,
+      "duration_med": 102.456503,
+      "duration_p95": 201.54650049999998,
+      "duration_p99": 215.8616275,
+      "duration_min": 1.621943,
+      "duration_max": 471.048885,
       "error_rate": 0,
-      "rps": 629.5428571428571
+      "rps": 553.5857142857143
     },
     "fastify_undici": {
-      "requests": 143113,
-      "duration_avg": 31.151836501862306,
-      "duration_med": 25.002203,
-      "duration_p95": 54.00397399999999,
-      "duration_p99": 59.36834636000001,
-      "duration_min": 0.682613,
-      "duration_max": 98.416452,
+      "requests": 117937,
+      "duration_avg": 37.83551941330502,
+      "duration_med": 30.286738,
+      "duration_p95": 66.0167474,
+      "duration_p99": 70.98240708,
+      "duration_min": 0.807897,
+      "duration_max": 120.540114,
       "error_rate": 0,
-      "rps": 2044.4714285714285
+      "rps": 1684.8142857142857
     },
     "express_axios_interceptor": {
-      "requests": 34418,
-      "duration_avg": 130.5164307814524,
-      "duration_med": 118.745593,
-      "duration_p95": 233.6173282,
-      "duration_p99": 247.63864932,
-      "duration_min": 1.835151,
-      "duration_max": 478.213736,
+      "requests": 31791,
+      "duration_avg": 141.3370276891256,
+      "duration_med": 127.237647,
+      "duration_p95": 250.4028165,
+      "duration_p99": 265.56548139999995,
+      "duration_min": 2.016356,
+      "duration_max": 595.998028,
       "error_rate": 0,
-      "rps": 491.6857142857143
+      "rps": 454.15714285714284
     },
     "fastify_axios_interceptor": {
-      "requests": 35944,
-      "duration_avg": 124.95824777723631,
-      "duration_med": 109.373344,
-      "duration_p95": 227.68837274999998,
-      "duration_p99": 344.20284542999997,
-      "duration_min": 1.670238,
-      "duration_max": 475.98569,
+      "requests": 32980,
+      "duration_avg": 136.23542448265616,
+      "duration_med": 122.62517,
+      "duration_p95": 240.675924,
+      "duration_p99": 256.06180857,
+      "duration_min": 1.863883,
+      "duration_max": 594.697096,
       "error_rate": 0,
-      "rps": 513.4857142857143
+      "rps": 471.14285714285717
     },
     "fastify_undici_interceptor": {
-      "requests": 75801,
-      "duration_avg": 58.97484620995781,
-      "duration_med": 49.730502,
-      "duration_p95": 95.06363,
-      "duration_p99": 99.308146,
-      "duration_min": 0.918306,
-      "duration_max": 175.142762,
+      "requests": 63875,
+      "duration_avg": 70.03491370202737,
+      "duration_med": 60.410855,
+      "duration_p95": 111.5412766,
+      "duration_p99": 117.18500602,
+      "duration_min": 1.166799,
+      "duration_max": 182.357827,
       "error_rate": 0,
-      "rps": 1082.8714285714286
+      "rps": 912.5
     }
   },
   "comparison": {
     "fastify_axios_vs_express_axios": {
-      "throughput_improvement": "-5.51%",
-      "avg_response_improvement": "-5.85%",
-      "p95_response_improvement": "-6.24%",
-      "p99_response_improvement": "-56.06%"
+      "throughput_improvement": "-0.65%",
+      "avg_response_improvement": "-0.66%",
+      "p95_response_improvement": "-1.11%",
+      "p99_response_improvement": "-0.91%"
     },
     "fastify_undici_vs_express_axios": {
-      "throughput_improvement": "206.87%",
-      "avg_response_improvement": "67.64%",
-      "p95_response_improvement": "68.26%",
-      "p99_response_improvement": "67.06%"
+      "throughput_improvement": "202.38%",
+      "avg_response_improvement": "67.15%",
+      "p95_response_improvement": "66.88%",
+      "p99_response_improvement": "66.82%"
     },
     "fastify_undici_vs_fastify_axios": {
-      "throughput_improvement": "224.75%",
-      "avg_response_improvement": "69.43%",
-      "p95_response_improvement": "70.12%",
-      "p99_response_improvement": "78.89%"
+      "throughput_improvement": "204.35%",
+      "avg_response_improvement": "67.36%",
+      "p95_response_improvement": "67.24%",
+      "p99_response_improvement": "67.12%"
     },
     "interceptor_overhead": {
       "express_axios": {
-        "throughput_impact": "-26.20%",
-        "avg_response_impact": "26.23%"
+        "throughput_impact": "-18.49%",
+        "avg_response_impact": "18.51%"
       },
       "fastify_axios": {
-        "throughput_impact": "-18.44%",
-        "avg_response_impact": "18.44%"
+        "throughput_impact": "-14.89%",
+        "avg_response_impact": "14.91%"
       },
       "fastify_undici": {
-        "throughput_impact": "-47.03%",
-        "avg_response_impact": "47.18%"
+        "throughput_impact": "-45.84%",
+        "avg_response_impact": "45.98%"
       }
     }
   }

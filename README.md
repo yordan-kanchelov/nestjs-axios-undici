@@ -13,7 +13,7 @@
 
 `@nestjs/axios` is the default way to make HTTP calls in NestJS, and axios is not built for throughput. Undici is Node.js's own HTTP client: it keeps connections alive and pools them by default, and it does less work per request. This package gives you Undici without rewriting your services.
 
-- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **2.0-2.2x the requests per second** of `@nestjs/axios`, with **50-55% lower average and 55-58% lower p95 latency**, on Node.js 22, 24 and 26. The benchmarks run in CI on every change; see the [results](docs/benchmarks.md).
+- 🚀 **About 2x the throughput, half the latency.** In our benchmark (a NestJS endpoint fanning out 5 upstream calls under load, with the same logging interceptor on both sides), it served **1.9-2.5x the requests per second** of `@nestjs/axios`, with **48-60% lower average and 54-62% lower p95 latency**, on Node.js 22, 24 and 26. The benchmarks run in CI on every change; see the [results](docs/benchmarks.md).
 - 🔁 **Drop-in replacement.** Same `HttpModule` / `HttpService`, same `register` / `registerAsync` options, same `get` / `post` / `put` / `patch` / `delete` methods and `request(config)`, the same response shape (`data`, `status`, `headers`) and the same errors (`isAxiosError`, `error.response`, `error.code`). A 65-test compatibility matrix runs every case against real `@nestjs/axios`.
 - 🧩 **Interceptors, two ways.** Keep your `httpService.axiosRef.interceptors.request.use(...)` code, or use native interceptors: functions or injectable classes that wrap every request.
 - 🪶 **No axios dependency.** Requests go straight through Undici.
