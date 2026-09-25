@@ -5,8 +5,17 @@
 // a peerDependency. Node builtins are allowed, and so is `/// <reference types="node" />`.
 // Catches bugs like 0.6.0 requiring @nestjs/core without declaring it.
 //
+// A runtime `require(...)` of an *optional* peer (`peerDependenciesMeta[name].optional`)
+// is only a problem when it runs unconditionally as the module loads - i.e. it isn't
+// nested inside a function/method body. That would crash `require()`ing this package for
+// every consumer who hasn't installed the optional peer. A `require(...)` nested inside a
+// function (loaded lazily, only when the feature that needs it is actually used - see
+// `HttpService`'s `loadCookieAgent`) is fine and expected: that's the whole point of an
+// optional peer. Runtime files are parsed with the full TypeScript AST for this reason;
+// type (.d.ts) files have no such runtime-ordering concept and are still scanned with
+// TypeScript's lightweight preprocessor.
+//
 // Usage: node scripts/consumer/check-declared-deps.cjs [<package dir> | <file.tgz>]
-// Imports are read with TypeScript's preprocessor, which ignores comments and strings.
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -50,13 +59,9 @@ for (const file of walk(libDir)) {
   scanned++;
   const kind = isTypes ? 'type' : 'runtime';
   const rel = path.relative(root, file);
-  const info = ts.preProcessFile(fs.readFileSync(file, 'utf8'), true, true);
-  const specs = info.importedFiles.map(f => f.fileName);
-  for (const ref of info.typeReferenceDirectives) {
-    // `/// <reference types="node" />` means @types/node, which Node consumers have
-    if (ref.fileName !== 'node') specs.push(ref.fileName);
-  }
-  for (const spec of specs) {
+  const text = fs.readFileSync(file, 'utf8');
+  const specs = isTypes ? typeSpecs(text) : runtimeSpecs(file, text);
+  for (const { spec, topLevel } of specs) {
     if (spec.startsWith('.') || path.isAbsolute(spec) || isBuiltin(spec)) {
       continue;
     }
@@ -69,8 +74,12 @@ for (const file of walk(libDir)) {
       problems.push(
         `${kind} import '${spec}' in ${rel} is not a dependency or peerDependency${hint}`,
       );
-    } else if (kind === 'runtime' && optionalPeers.has(name)) {
-      problems.push(`runtime import of optional peer '${spec}' in ${rel}`);
+    } else if (kind === 'runtime' && optionalPeers.has(name) && topLevel) {
+      problems.push(
+        `top-level runtime import of optional peer '${spec}' in ${rel} - load it lazily ` +
+          `(require() nested inside a function, only called when the feature that needs ` +
+          `it is used) so the package still loads without it installed`,
+      );
     }
   }
 }
@@ -97,6 +106,76 @@ if (problems.length) {
   process.exit(1);
 }
 console.log('\nOK: every bare import is declared.');
+
+/** `.d.ts` files: every referenced module, read with TypeScript's lightweight preprocessor. */
+function typeSpecs(text) {
+  const info = ts.preProcessFile(text, true, true);
+  const specs = info.importedFiles.map(f => ({
+    spec: f.fileName,
+    topLevel: true,
+  }));
+  for (const ref of info.typeReferenceDirectives) {
+    // `/// <reference types="node" />` means @types/node, which Node consumers have
+    if (ref.fileName !== 'node')
+      specs.push({ spec: ref.fileName, topLevel: true });
+  }
+  return specs;
+}
+
+/**
+ * Runtime `.js` files: every `require('spec')` call and static `import ... from 'spec'`,
+ * each tagged with whether it runs unconditionally as the module loads (`topLevel: true`)
+ * or is nested inside a function/method body, so it only runs when that function is
+ * actually called (`topLevel: false`) - see the file-level comment above. Parsed with the
+ * full TypeScript AST (not the lightweight preprocessor above) because that distinction
+ * needs real scope information.
+ */
+function runtimeSpecs(file, text) {
+  const source = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.JS,
+  );
+  const isFunctionLike = node =>
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node);
+  const isTopLevel = node => {
+    for (let cur = node.parent; cur; cur = cur.parent) {
+      if (isFunctionLike(cur)) return false;
+    }
+    return true;
+  };
+
+  const specs = [];
+  const visit = node => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require' &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteralLike(node.arguments[0])
+    ) {
+      specs.push({ spec: node.arguments[0].text, topLevel: isTopLevel(node) });
+    } else if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      // `import`/`export ... from` can only appear at the top level of a module.
+      specs.push({ spec: node.moduleSpecifier.text, topLevel: true });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return specs;
+}
 
 function packageName(spec) {
   const parts = spec.split('/');

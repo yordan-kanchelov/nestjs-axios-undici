@@ -122,7 +122,7 @@ headers.forEach((value, key) => console.log(key, value));
 
 ### 3. Automatic Configuration Mapping
 
-`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent` (including TLS options - `ca`, `cert`, `key`, `rejectUnauthorized`, ...), `proxy` (an explicit object, or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables when `proxy` is unset), `socketPath`, `httpVersion`, `withCredentials`, `decompress`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped, and the precedence note there if you also pass an explicit `dispatcher`.
+`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent` (including TLS options - `ca`, `cert`, `key`, `rejectUnauthorized`, ...), `proxy` (an explicit object, or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables when `proxy` is unset), `socketPath`, `httpVersion`, `decompress`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici (`withCredentials` is also detected, but is a no-op - see [Cookies (`cookieJar`)](#cookies-cookiejar) below). See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped, and the precedence note there if you also pass an explicit `dispatcher`.
 
 **Reading `HTTP_PROXY`/`HTTPS_PROXY` by default is new** and matches axios; if your environment sets these and you don't want requests (including to `localhost`) proxied, pass `proxy: false`.
 
@@ -268,6 +268,18 @@ HttpModule.register({
   dispatcher: new ProxyAgent('http://proxy.example.com:8080')
 })
 ```
+
+### Cookies (`cookieJar`)
+
+`withCredentials: true` is a no-op, matching axios itself on Node.js. **Breaking change:** in 0.6 it turned on a cookie jar shared by the whole `HttpService` - a `Set-Cookie` from one caller's upstream response could be replayed on a different caller's later request. If you relied on that for cookie handling, opt in explicitly with `cookieJar` (a `tough-cookie` `CookieJar` instance, module-level only) instead - see [Cookies: `cookieJar`](/docs/axios-supported-options.md#cookies-cookiejar) for the full picture, including why only a jar instance is accepted (never `true`):
+
+```typescript
+import { CookieJar } from 'tough-cookie';
+
+HttpModule.register({ cookieJar: new CookieJar() });
+```
+
+`http-cookie-agent` and `tough-cookie` are optional peer dependencies - install them (`npm i http-cookie-agent tough-cookie`) to use `cookieJar`; a project that never sets it pays nothing for them.
 
 ### Request/Response Transforms
 

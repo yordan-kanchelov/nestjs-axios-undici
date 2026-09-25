@@ -5,8 +5,6 @@ import {
   Agent as UndiciAgent,
   EnvHttpProxyAgent,
 } from 'undici';
-import { CookieAgent } from 'http-cookie-agent/undici';
-import { CookieJar } from 'tough-cookie';
 
 import { Observable, defer, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
@@ -63,6 +61,37 @@ type UndiciResponse = Dispatcher.ResponseData;
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
+}
+
+/** The one member of `http-cookie-agent/undici` this module needs. */
+type CookieAgentCtor = new (options: {
+  cookies?: { jar: unknown };
+  factory?: () => Dispatcher;
+  [key: string]: unknown;
+}) => Dispatcher;
+
+/**
+ * Lazily loads `http-cookie-agent` (which itself requires `tough-cookie`),
+ * only when a module-level `cookieJar` is actually configured. Both are
+ * optional peers (see `package.json`): plan.md phase 2, "breaking:
+ * `withCredentials` becomes a no-op; add cookieJar" - `withCredentials`
+ * itself no longer touches either package, and requiring them unconditionally
+ * at module load previously cost about 150ms (`plan/reports/package-quality.md`
+ * item 7), so neither is `import`ed at the top of this file - only `require`d
+ * here, and only from inside `setupDispatcher`, which runs once per
+ * `HttpService`, never on the request path.
+ */
+function loadCookieAgent(): CookieAgentCtor {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy load of an optional peer, see above
+    return require('http-cookie-agent/undici').CookieAgent;
+  } catch (cause) {
+    throw new Error(
+      'cookieJar requires the optional peer dependencies http-cookie-agent and tough-cookie; ' +
+        'install them with npm i http-cookie-agent tough-cookie',
+      { cause },
+    );
+  }
 }
 
 /**
@@ -193,7 +222,6 @@ export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
-  private cookieJar?: CookieJar;
   // `socketPath` (module- or request-level) dispatchers, cached per path so
   // a request-level `socketPath` (checked on every request, see
   // `executeRequest`) never builds a new `Agent` once one exists for that
@@ -254,8 +282,9 @@ export class HttpService {
    * TLS/keep-alive/maxSockets from `httpAgent`/`httpsAgent`, `socketPath`,
    * an explicit `proxy`, the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`
    * environment variables (axios reads them when `proxy` is unset; `proxy:
-   * false` opts out, like axios), and `httpVersion: 2`. Runs once, in the
-   * constructor - never on the request path.
+   * false` opts out, like axios), `httpVersion: 2`, and a `cookieJar` (not an
+   * axios option - see below). Runs once, in the constructor - never on the
+   * request path.
    *
    * Precedence: a `dispatcher` passed directly in module options always
    * wins and is left untouched - none of the branches below run.
@@ -320,13 +349,23 @@ export class HttpService {
       });
     }
 
-    // Handle cookie support - wrap existing dispatcher if present
-    if (options.__withCredentials) {
-      this.cookieJar = new CookieJar();
-
-      // Create cookie agent, optionally wrapping the base dispatcher
+    // Cookie support: opt-in only, through an explicit `cookieJar` (a
+    // `tough-cookie` `CookieJar` instance). `withCredentials` is accepted
+    // (kept in the types for axios compatibility) but is otherwise a no-op -
+    // matching axios itself, which ignores it on Node.js - so it's not read
+    // here at all any more (plan.md phase 2: "breaking: `withCredentials`
+    // becomes a no-op; add cookieJar"). Only an instance is accepted, never
+    // `true`: a shorthand that builds one jar per service would be exactly
+    // the shared-jar-leaks-cookies-between-users problem this change fixes,
+    // just with a different trigger, so the caller must own the jar (and
+    // its scope - process-wide, per-request, per-user, ...) explicitly.
+    // There's also no per-request `cookieJar`: wiring one up means building
+    // a `CookieAgent` (wrapping `baseDispatcher`) for it, which only happens
+    // once here, in the constructor - never on the request path.
+    if (options.cookieJar) {
+      const CookieAgent = loadCookieAgent();
       const cookieAgentOptions: any = {
-        cookies: { jar: this.cookieJar },
+        cookies: { jar: options.cookieJar },
       };
 
       // If we have a base dispatcher (proxy or custom agent), wrap it

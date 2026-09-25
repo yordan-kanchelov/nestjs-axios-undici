@@ -81,6 +81,11 @@ export interface AxiosConfigOptions {
   responseEncoding?: string;
   xsrfCookieName?: string;
   xsrfHeaderName?: string;
+  /**
+   * Accepted for axios compatibility; a no-op, like axios itself on Node.js.
+   * Use the `cookieJar` module option (a `tough-cookie` `CookieJar`
+   * instance) to opt into cookie handling instead.
+   */
   withCredentials?: boolean;
   auth?: {
     username: string;
@@ -223,11 +228,13 @@ export function mapAxiosConfigToUndici(
     (undiciConfig as any).__proxyAgent = proxyOptions;
   }
 
-  // Handle withCredentials - cookie support
-  if (axiosConfig.withCredentials) {
-    // Store flag for later cookie agent creation
-    (undiciConfig as any).__withCredentials = true;
-  }
+  // `withCredentials` needs no mapping: it's a no-op, like axios itself on
+  // Node.js (plan.md phase 2: "breaking: withCredentials becomes a no-op;
+  // add cookieJar"). It stays in `AxiosConfigOptions` below only so it keeps
+  // type-checking for axios compatibility. Cookie handling is opt-in through
+  // an explicit `cookieJar` module option (`HttpService.setupDispatcher`),
+  // which isn't an axios option and so needs no mapping here either - it
+  // passes through unchanged, like `dispatcher`.
 
   // Decompress: applied as a default per-request option (the response
   // adapter reads it the same way it reads a per-call `decompress`).
