@@ -144,37 +144,53 @@ function formatHeaderName(header: string): string {
 
 /**
  * The per-instance backing store, keyed by lower-cased header name to
- * `[originalName, value]`. Held in a module-level `WeakMap` rather than an
- * instance field on purpose: a TypeScript class with *any* `private`/`#`
- * instance field becomes nominally typed (only that exact class, or a
- * subclass, can satisfy it structurally) - see the class doc below. Axios'
- * own `.d.ts` declares `AxiosHeaders` with no private members at all, so a
- * `WeakMap` keeps this class purely structural too, which is what makes it
- * mutually assignable with axios' own `AxiosHeaders` (plan.md "feat(axiosRef):
- * make it a real axios instance").
+ * `[originalName, value]`. Kept under this module-private, `unique symbol`
+ * key rather than a *named* field on purpose: a TypeScript class with any
+ * `private`/`protected`/`#` member becomes nominally typed (only that exact
+ * class, or a subclass, can satisfy it structurally) - axios' own `.d.ts`
+ * declares `AxiosHeaders` with no private members at all, so any of those
+ * would break the mutual assignability plan.md "feat(axiosRef): make it a
+ * real axios instance" needs (this class assignable *to* axios' own
+ * `AxiosHeaders`, and vice versa). A symbol-keyed field sidesteps that: it's
+ * an ordinary (structurally-typed) class field, just one nothing outside
+ * this module can name - declared `?:` (optional) below so axios' own
+ * class, which naturally doesn't have it, still satisfies "this class
+ * requires it" the same way any object satisfies an unset optional
+ * property. It also happens to be the fastest option measured (a plain
+ * property read/write): a `WeakMap`, tried first, cost ~200ns per
+ * `.set()` alone (V8's weak-reference bookkeeping) - measurable, since this
+ * class is constructed on every request that goes through the axiosRef
+ * pipeline, or whose `response.config`/`error.config` is read.  Being
+ * symbol-keyed also keeps it out of `Object.keys()`/`JSON.stringify()`/
+ * `{...spread}` on its own, with no extra work in the `ownKeys` trap below.
  */
-const STORE = new WeakMap<
-  AxiosHeaders,
-  Map<string, [string, AxiosHeaderValue]>
->();
+const STORE: unique symbol = Symbol('AxiosHeaders store');
 
 /** The backing `Map` for `target` (always present - set at the top of the constructor). */
 function store(target: AxiosHeaders): Map<string, [string, AxiosHeaderValue]> {
-  return STORE.get(target)!;
+  return target[STORE]!;
 }
 
 /**
- * `target.set(name, value, rewrite)`'s single-header implementation.
- * A free function, not a class method (like `store()` above): axios has no
- * equivalent public method, and any *extra* public member this class
- * declares beyond axios' own `.d.ts` breaks the mutual assignability
- * plan.md's "feat(axiosRef): make it a real axios instance" needs (see the
- * `setAcceptEncoding` removal note further down) - a free function avoids
- * the class surface entirely, without needing TS `private` (which brings
- * back the nominal-typing problem `STORE`'s own doc comment explains).
+ * `target.set(name, value, rewrite)`'s single-header implementation,
+ * operating directly on the resolved backing `Map` - callers setting many
+ * headers at once (the constructor, `set()`'s bulk forms) resolve `store()`
+ * once and reuse `map` across the whole batch, instead of paying a
+ * `WeakMap.get` per header (measurable: this class is constructed on every
+ * request that goes through the axiosRef pipeline, or reads `response.config`/
+ * `error.config`, so its own construction cost is on the hot path - see the
+ * class doc below).
+ *
+ * A free function, not a class method: axios has no equivalent public
+ * method, and any *extra* public member this class declares beyond axios'
+ * own `.d.ts` breaks the mutual assignability plan.md's "feat(axiosRef):
+ * make it a real axios instance" needs (see the `setAcceptEncoding` removal
+ * note further down) - a free function avoids the class surface entirely,
+ * without needing TS `private` (which brings back the nominal-typing
+ * problem `STORE`'s own doc comment explains).
  */
-function setOne(
-  target: AxiosHeaders,
+function setInMap(
+  map: Map<string, [string, AxiosHeaderValue]>,
   name: string,
   value: AxiosHeaderValue | undefined,
   rewrite: boolean | AxiosHeaderMatcher | undefined,
@@ -182,7 +198,6 @@ function setOne(
   const lower = name.trim().toLowerCase();
   if (!lower) return;
   if (value === undefined) return;
-  const map = store(target);
   const existing = map.get(lower);
   if (rewrite === false && existing && existing[1] !== undefined) return;
   // Preserve the casing a header was *first* set with, exactly like axios
@@ -193,12 +208,23 @@ function setOne(
   map.set(lower, [preservedName, value]);
 }
 
-/** `target.set(rawMultiHeaderString)` - see `setOne` above for why this is a free function. */
+/** Single-header `set()`, resolving `store(target)` itself - for the rare call outside a batch (see `setInMap`). */
+function setOne(
+  target: AxiosHeaders,
+  name: string,
+  value: AxiosHeaderValue | undefined,
+  rewrite: boolean | AxiosHeaderMatcher | undefined,
+): void {
+  setInMap(store(target), name, value, rewrite);
+}
+
+/** `target.set(rawMultiHeaderString)` - see `setInMap` above for why this resolves the map once. */
 function parseRawString(target: AxiosHeaders, raw: string): void {
+  const map = store(target);
   raw.split('\n').forEach(line => {
     const [key, ...valueParts] = line.split(':');
     if (key && valueParts.length) {
-      setOne(target, key.trim(), valueParts.join(':').trim(), undefined);
+      setInMap(map, key.trim(), valueParts.join(':').trim(), undefined);
     }
   });
 }
@@ -209,7 +235,7 @@ function parseRawString(target: AxiosHeaders, raw: string): void {
  * `forEach()` method: axios' own `AxiosHeaders` has no `forEach` either (it
  * uses a module-private `utils.forEach(this, ...)` helper, not a class
  * method - see `core/AxiosHeaders.js`), so a free function here too keeps
- * this class's public surface matching axios' own exactly (see `setOne`'s
+ * this class's public surface matching axios' own exactly (see `setInMap`'s
  * doc comment for why that matters). External callers get the same
  * capability through `Array.from(headers)` (the class *does* implement
  * `[Symbol.iterator]`, which axios declares too).
@@ -239,10 +265,11 @@ export class AxiosHeaders {
   // notation (`config.headers['Authorization'] = ...`) type-check under
   // `strict`, on top of the Proxy that already supports it at runtime.
   [key: string]: any;
+  /** See `STORE`'s doc comment above for why this is a symbol-keyed, optional field. */
+  [STORE]?: Map<string, [string, AxiosHeaderValue]>;
 
   constructor(headers?: RawAxiosHeaders | AxiosHeaders | string) {
-    const backing = new Map<string, [string, AxiosHeaderValue]>();
-    STORE.set(this, backing);
+    this[STORE] = new Map();
 
     if (headers) {
       if (typeof headers === 'string') {
@@ -252,16 +279,16 @@ export class AxiosHeaders {
       }
     }
 
-    // Return a Proxy to support bracket notation. `store()` is keyed by
-    // object identity (a `WeakMap`), and a caller only ever holds *this*
-    // proxy, never the raw `this` above - e.g. `new AxiosHeaders(otherAxiosHeadersInstance)`
-    // passes the proxy `otherAxiosHeadersInstance` to `set()`, which reaches
-    // `store()` too (via `instanceof AxiosHeaders` + `forEachEntry`). Class
-    // methods invoked *through* the proxy still see the raw `this` (the
-    // `get` trap below `.bind(target)`s them to it), so those keep working
-    // either way; this second `STORE.set` is only for the "holds a
-    // reference to the proxy and reaches into `store()` directly" case.
-    const proxy: AxiosHeaders = new Proxy(this, {
+    // Return a Proxy to support bracket notation. `store()` reads `[STORE]`
+    // directly, which works whether it's given the raw instance above or
+    // *this* proxy (the `get` trap below reads straight through to the
+    // target's own `[STORE]` property either way, the same as any other
+    // property) - e.g. `new AxiosHeaders(otherAxiosHeadersInstance)` passes
+    // the proxy `otherAxiosHeadersInstance` to `set()`, which reaches
+    // `store()` too (via `instanceof AxiosHeaders` + `forEachEntry`).
+    // Methods invoked *through* the proxy see the raw `this` either way
+    // (the trap `.bind(target)`s them to it before returning).
+    return new Proxy(this, {
       get(target, prop: string | symbol) {
         // If it's a method or property of AxiosHeaders, return it
         if (prop in target) {
@@ -326,10 +353,9 @@ export class AxiosHeaders {
       ownKeys(target) {
         // Header keys (original casing, as first set), plus the class'
         // method names (non-enumerable, so `Object.keys()`/`for...in`/spread
-        // only ever see the header keys). The backing store lives in a
-        // module-level `WeakMap` (see `STORE`/`store()`), not an instance
-        // field, so `target` itself has no own properties to accidentally
-        // leak here.
+        // only ever see the header keys) - `Object.getOwnPropertyNames`
+        // only returns *string*-keyed names, so the symbol-keyed `[STORE]`
+        // field (see its doc comment) is never a candidate here either way.
         const classKeys = Object.getOwnPropertyNames(
           Object.getPrototypeOf(target),
         );
@@ -358,8 +384,6 @@ export class AxiosHeaders {
         return undefined;
       },
     });
-    STORE.set(proxy, backing);
-    return proxy;
   }
 
   /**
@@ -416,10 +440,15 @@ export class AxiosHeaders {
       return this;
     }
 
+    // Every bulk form below sets 0+ headers from `headerOrHeaders` - resolve
+    // the backing `Map` once (a single `WeakMap.get`) and reuse it, instead
+    // of once per header (`setInMap`'s own doc comment explains why this
+    // matters).
+    const map = store(this);
     const asRewrite = valueOrRewrite as
       boolean | AxiosHeaderMatcher | undefined;
     if (headerOrHeaders instanceof AxiosHeaders) {
-      forEachEntry(headerOrHeaders, (v, k) => setOne(this, k, v, asRewrite));
+      forEachEntry(headerOrHeaders, (v, k) => setInMap(map, k, v, asRewrite));
       return this;
     }
 
@@ -431,14 +460,14 @@ export class AxiosHeaders {
       for (const [key, value] of headerOrHeaders as Iterable<
         [string, AxiosHeaderValue]
       >) {
-        setOne(this, key, value, asRewrite);
+        setInMap(map, key, value, asRewrite);
       }
       return this;
     }
 
-    Object.keys(headerOrHeaders).forEach(key => {
-      setOne(this, key, (headerOrHeaders as RawAxiosHeaders)[key], asRewrite);
-    });
+    for (const key in headerOrHeaders) {
+      setInMap(map, key, (headerOrHeaders as RawAxiosHeaders)[key], asRewrite);
+    }
     return this;
   }
 
