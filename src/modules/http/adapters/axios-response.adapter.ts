@@ -3,12 +3,45 @@ import { createStatusError } from '../errors/axios-error';
 import {
   readBodyAsResponseType,
   readDefaultBody,
+  readText,
 } from './axios-response-type.adapter';
+import { buildLazyAxiosConfig } from './axios-request.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
-  AxiosLikeResponse,
   AxiosLikeRequestConfig,
+  AxiosLikeResponse,
 } from '../interfaces/axios-compatible.interface';
+
+/**
+ * Shared, frozen placeholder for `response.request`: axios sets it to the
+ * underlying `http.ClientRequest`; we don't have an equivalent undici object
+ * worth exposing, so callers get a cheap, always-truthy stand-in (matching
+ * axios on `!!response.request`) instead of `undefined`.
+ */
+const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
+
+/**
+ * `AxiosLikeResponse` with `config` built lazily, from a `config` getter on
+ * the prototype (defined once) rather than a `Object.defineProperty` call
+ * per instance - the getter itself costs nothing until `.config` is read,
+ * unlike installing a per-instance accessor on every response.
+ */
+class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
+  // `config` is a plain own property, as in axios, so it survives
+  // `{ ...response }`, `JSON.stringify` and `structuredClone`.
+  public config: AxiosLikeRequestConfig;
+  public request: any = RESPONSE_REQUEST_PLACEHOLDER;
+
+  constructor(
+    public data: T,
+    public status: number,
+    public statusText: string,
+    public headers: any,
+    configRequest: HttpInterceptorRequest,
+  ) {
+    this.config = buildLazyAxiosConfig(configRequest);
+  }
+}
 
 /**
  * HTTP status text mapping
@@ -101,9 +134,43 @@ export async function toAxiosLikeResponse(
   const contentEncoding = Array.isArray(contentEncodingHeader)
     ? contentEncodingHeader[0]
     : contentEncodingHeader;
+  // A custom `transformResponse` (module- or request-level, only ever set
+  // when the axiosRef pipeline built this request - see `hasAxiosPipeline`)
+  // *replaces* default parsing, same as axios: it gets the raw decoded body
+  // (decompressed, not yet JSON-parsed), not the already-parsed value.
+  const transformResponse = request.axiosConfig?.transformResponse;
 
   try {
-    if (responseType && undiciResponse.body) {
+    if (transformResponse && responseType !== 'stream') {
+      // As in axios: a stream is never transformed, and binary response
+      // types hand the transform the raw bytes rather than decoded text.
+      const raw = !undiciResponse.body
+        ? ''
+        : responseType === 'arraybuffer' || responseType === 'blob'
+          ? await readBodyAsResponseType(
+              undiciResponse.body,
+              responseType,
+              maxContentLength,
+              { contentEncoding, decompress },
+            )
+          : await readText(undiciResponse.body, {
+              contentEncoding,
+              decompress,
+            });
+      const transforms = Array.isArray(transformResponse)
+        ? transformResponse
+        : [transformResponse];
+      parsedData = transforms.reduce(
+        (value: any, fn: any) =>
+          fn.call(
+            request.axiosConfig,
+            value,
+            undiciResponse.headers,
+            undiciResponse.statusCode,
+          ),
+        raw,
+      );
+    } else if (responseType && undiciResponse.body) {
       parsedData = await readBodyAsResponseType(
         undiciResponse.body,
         responseType,
@@ -139,35 +206,29 @@ export async function toAxiosLikeResponse(
     }
   }
 
-  // Create Axios-compatible request config from original request
-  const config: AxiosLikeRequestConfig = {
-    url: typeof request.url === 'string' ? request.url : request.url.toString(),
-    method: request.options.method || 'GET',
-    headers: request.options.headers as Record<string, string | string[]>,
-    timeout: request.options.headersTimeout || request.options.bodyTimeout,
-    validateStatus: request.options.validateStatus,
-  };
-
-  // Transform to Axios-compatible response
-  const axiosLikeResponse: AxiosLikeResponse = {
-    data: parsedData,
-    status: undiciResponse.statusCode,
+  // Transform to Axios-compatible response. `config` is built lazily (see
+  // `AxiosLikeResponseImpl`): `request.axiosConfig` already holds the final,
+  // interceptor-mutated config when the axiosRef pipeline built this
+  // request, and is otherwise built - correctly shaped, but only if/when
+  // read - from the cheap fields `normalizeAxiosRequest` computed.
+  const axiosLikeResponse = new AxiosLikeResponseImpl(
+    parsedData,
+    undiciResponse.statusCode,
     // undici exposes the server's actual reason phrase (matching axios, which
     // reads Node's `res.statusMessage`); the table is only a fallback for a
     // dispatcher that doesn't provide one (e.g. HTTP/2, which has none).
-    statusText:
-      undiciResponse.statusText ||
+    undiciResponse.statusText ||
       STATUS_TEXT_MAP[undiciResponse.statusCode] ||
       'Unknown',
-    headers: undiciResponse.headers as Record<string, string | string[]>,
-    config,
-  };
+    undiciResponse.headers as Record<string, string | string[]>,
+    request,
+  );
 
   // Axios throws errors for 4xx and 5xx status codes by default
   // Unless validateStatus says otherwise
   // Note: Axios also treats 3xx codes as errors by default
   const validateStatus =
-    config.validateStatus ||
+    (request.options as any)?.validateStatus ||
     ((status: number) => {
       // Default axios behavior: only 2xx are valid
       return status >= 200 && status < 300;
@@ -175,7 +236,7 @@ export async function toAxiosLikeResponse(
   const isValidStatus = validateStatus(undiciResponse.statusCode);
 
   if (!isValidStatus) {
-    throw createStatusError(axiosLikeResponse, config);
+    throw createStatusError(axiosLikeResponse, request);
   }
 
   return axiosLikeResponse;

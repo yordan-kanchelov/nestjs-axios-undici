@@ -165,10 +165,15 @@ export class AxiosHeaders {
       },
 
       ownKeys(target) {
-        // Return both class properties and header keys
+        // Header keys, plus the class' method names (non-enumerable, so
+        // `Object.keys()`/`for...in`/spread only ever see the header keys).
+        // Deliberately excludes the instance's own property names (just the
+        // internal `headers` Map) - otherwise `{...axiosHeaders}` leaks it
+        // as an enumerable `headers` "header" (undici then rejects it: a Map
+        // isn't a valid header value).
         const classKeys = Object.getOwnPropertyNames(
           Object.getPrototypeOf(target),
-        ).concat(Object.getOwnPropertyNames(target));
+        );
         const headerKeys = Array.from(target.headers.keys());
         return [...new Set([...classKeys, ...headerKeys])];
       },
@@ -232,6 +237,39 @@ export class AxiosHeaders {
    */
   clear(): void {
     this.headers.clear();
+  }
+
+  /**
+   * Sets (or removes, with `false`) the `Authorization` header. Matches
+   * axios' `AxiosHeaders#setAuthorization`.
+   */
+  setAuthorization(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Authorization');
+    } else {
+      this.set('Authorization', value);
+    }
+    return this;
+  }
+
+  /**
+   * Sets (or removes, with `false`) the `Content-Type` header. Matches
+   * axios' `AxiosHeaders#setContentType`.
+   */
+  setContentType(value: AxiosHeaderValue | false): this {
+    if (value === false) {
+      this.delete('Content-Type');
+    } else {
+      this.set('Content-Type', value);
+    }
+    return this;
+  }
+
+  /**
+   * Reads the `Content-Type` header. Matches axios' `AxiosHeaders#getContentType`.
+   */
+  getContentType(): AxiosHeaderValue {
+    return this.get('Content-Type');
   }
 
   /**

@@ -18,8 +18,6 @@ import {
 } from 'rxjs';
 import { differential, Ctx } from './harness';
 
-const REFACTOR =
-  'plan.md phase 2: refactor(axiosRef): one config object (interceptors/response.config/error.config)';
 const AXIOS_INSTANCE =
   'plan.md phase 2: feat(axiosRef): make it a real axios instance';
 const TYPES = 'plan.md phase 2: types: axios interop';
@@ -68,7 +66,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       return firstValueFrom(s.get(`${ctx.base}/echo`)).then(() => log);
     },
     normalize: (o: any) => o.result,
-    knownDifference: REFACTOR,
   },
   {
     name: 'request interceptor config contents',
@@ -97,7 +94,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       ).then(() => seen);
     },
     normalize: (o: any) => o.result,
-    knownDifference: REFACTOR,
   },
   {
     name: 'request interceptor mutating config.data object',
@@ -108,7 +104,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       return s.post(`${ctx.base}/echo`, { a: 1 });
     },
     normalize: (o: any) => (o.result?.data ?? {}).body,
-    knownDifference: REFACTOR,
   },
   {
     name: 'request interceptor adding params',
@@ -144,7 +139,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       return s.get('/echo/orig', { baseURL: ctx.base });
     },
     normalize: (o: any) => (o.result ? o.result.data.url : o.error?.message),
-    knownDifference: REFACTOR,
   },
   {
     name: 'request interceptor throwing rejects the request (no network call)',
@@ -200,7 +194,6 @@ differential('Differential: axiosRef interceptors and instance API', routes, [
       return firstValueFrom(s.get(`${ctx.base}/echo`)).then(() => log);
     },
     normalize: (o: any) => o.result,
-    knownDifference: REFACTOR,
   },
   {
     name: 'interceptors.request.handlers / forEach exist',

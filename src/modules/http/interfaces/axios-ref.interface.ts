@@ -12,6 +12,16 @@ import type {
 import type { AxiosHeaderValue } from './axios-headers';
 
 /**
+ * Options accepted as the 3rd argument to `interceptors.<request|response>.use()`,
+ * matching axios: `runWhen` skips the interceptor for a given config, and
+ * `synchronous` is a hint that the handler never returns a Promise.
+ */
+export interface AxiosInterceptorOptions {
+  synchronous?: boolean;
+  runWhen?: (config: AxiosLikeRequestConfig) => boolean;
+}
+
+/**
  * Axios-style interceptor manager interface
  */
 export interface AxiosInterceptorManager<T> {
@@ -19,11 +29,13 @@ export interface AxiosInterceptorManager<T> {
    * Add an interceptor
    * @param onFulfilled Success handler
    * @param onRejected Error handler
+   * @param options `runWhen` / `synchronous`, as in axios
    * @returns Interceptor ID for later ejection
    */
   use(
     onFulfilled?: (value: T) => T | Promise<T>,
     onRejected?: (error: any) => any,
+    options?: AxiosInterceptorOptions,
   ): number;
 
   /**

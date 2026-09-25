@@ -24,14 +24,30 @@ export interface AxiosLikeResponse<T = any> {
  */
 export interface AxiosLikeRequestConfig {
   url?: string;
+  baseURL?: string;
   method?: string;
   headers?: AxiosRequestHeaders | AxiosHeaders;
   params?: any;
+  paramsSerializer?: AxiosParamsSerializer;
   data?: any;
   timeout?: number;
   responseType?: 'json' | 'text' | 'stream' | 'arraybuffer' | 'blob';
   maxRedirects?: number;
-  validateStatus?: (status: number) => boolean;
+  validateStatus?: ((status: number) => boolean) | null;
+  auth?: { username: string; password: string };
+  decompress?: boolean;
+  maxContentLength?: number;
+  maxBodyLength?: number;
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
+  transformResponse?:
+    | ((data: any, headers?: any, status?: number) => any)
+    | Array<(data: any, headers?: any, status?: number) => any>;
+  cancelToken?: AxiosCancelTokenLike;
+  signal?: AbortSignal;
+  /** Custom fields set by an interceptor (e.g. a retry flag) survive a round trip through `response.config` / `error.config`. */
+  [key: string]: any;
 }
 
 /**
@@ -95,6 +111,13 @@ export interface AxiosCompatibleRequestOptions extends Omit<
   /** `false` disables response decompression (gzip/br/deflate). Default: decompress. */
   decompress?: boolean;
   cancelToken?: AxiosCancelTokenLike;
+  maxBodyLength?: number;
+  transformRequest?:
+    | ((data: any, headers?: any) => any)
+    | Array<(data: any, headers?: any) => any>;
+  transformResponse?:
+    | ((data: any, headers?: any, status?: number) => any)
+    | Array<(data: any, headers?: any, status?: number) => any>;
 }
 
 /**

@@ -3,15 +3,12 @@ import type { Observable } from 'rxjs';
 import type {
   AxiosCompatibleRequestConfig,
   AxiosCompatibleRequestOptions,
+  AxiosLikeRequestConfig,
   AxiosLikeResponse,
   AxiosRef,
   AxiosRefDefaults,
-  HttpInterceptorFunction,
 } from '../interfaces';
-import {
-  createAxiosRequestInterceptorManager,
-  createAxiosResponseInterceptorManager,
-} from './axios-interceptor.adapter';
+import type { AxiosInterceptorStore } from './axios-interceptor.adapter';
 import { SUPPORTED_CONTENT_ENCODINGS } from './axios-response-type.adapter';
 import { LIBRARY_VERSION } from '../../../version';
 
@@ -113,7 +110,8 @@ export function createAxiosRefDefaults(
  */
 export function createAxiosRef(
   host: AxiosRefHost,
-  addInterceptor: (interceptor: HttpInterceptorFunction) => void,
+  requestInterceptors: AxiosInterceptorStore<AxiosLikeRequestConfig>,
+  responseInterceptors: AxiosInterceptorStore<AxiosLikeResponse>,
   moduleOptions?: Record<string, any>,
 ): AxiosRef {
   const bodyless =
@@ -131,8 +129,8 @@ export function createAxiosRef(
 
   return {
     interceptors: {
-      request: createAxiosRequestInterceptorManager(addInterceptor),
-      response: createAxiosResponseInterceptorManager(addInterceptor),
+      request: requestInterceptors,
+      response: responseInterceptors,
     },
     defaults: createAxiosRefDefaults(moduleOptions),
     request: <T = any>(config: AxiosCompatibleRequestConfig) =>

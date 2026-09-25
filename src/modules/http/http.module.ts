@@ -1,7 +1,6 @@
 import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
-import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
 import {
@@ -191,68 +190,18 @@ export class HttpModule {
       // Map axios config to undici config
       const mappedConfig = mapAxiosConfigToUndici(config);
 
-      // Convert axios transformRequest/transformResponse to interceptors
-      const additionalInterceptors: HttpInterceptorFunction[] = [];
-
-      if (config.transformRequest) {
-        const transforms = Array.isArray(config.transformRequest)
-          ? config.transformRequest
-          : [config.transformRequest];
-        transforms.forEach(transform => {
-          additionalInterceptors.push((request, next) => {
-            // Apply transform to request data
-            if (request.options.body) {
-              const transformedData = transform(
-                request.options.body,
-                request.options.headers,
-              );
-              return next.handle({
-                ...request,
-                options: {
-                  ...request.options,
-                  body: transformedData,
-                },
-              });
-            }
-            return next.handle(request);
-          });
-        });
-      }
-
-      if (config.transformResponse) {
-        const transforms = Array.isArray(config.transformResponse)
-          ? config.transformResponse
-          : [config.transformResponse];
-        transforms.forEach(transform => {
-          additionalInterceptors.push((request, next) => {
-            return next.handle(request).pipe(
-              map(response => {
-                if (
-                  response &&
-                  typeof response === 'object' &&
-                  'data' in response
-                ) {
-                  const transformedData = transform(response.data);
-                  return {
-                    ...response,
-                    data: transformedData,
-                  };
-                }
-                return response;
-              }),
-            );
-          });
-        });
-      }
-
-      // Merge with original config, preserving any undici-specific options
+      // Merge with original config, preserving any undici-specific options.
+      // `transformRequest`/`transformResponse` stay as plain config (from
+      // `...config`) - HttpService's axiosRef pipeline (`buildAxiosConfig`/
+      // `serializeAxiosConfig`) runs them directly against the raw request
+      // data/response body, rather than through an interceptor that only
+      // ever saw the already-serialised/-parsed undici body.
       processedConfig = {
         ...mappedConfig,
         ...config,
-        // Ensure interceptors are preserved and include transform interceptors
+        // Ensure interceptors are preserved
         interceptors: [
           ...(mappedConfig.interceptors || []), // Include interceptors from mapping (e.g., size limit)
-          ...additionalInterceptors, // Include transform interceptors
           ...(config.interceptors || []), // Include user-provided interceptors
         ],
       };

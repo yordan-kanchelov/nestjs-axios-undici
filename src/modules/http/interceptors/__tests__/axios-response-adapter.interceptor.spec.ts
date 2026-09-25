@@ -60,8 +60,9 @@ describe('AxiosResponseAdapterInterceptor', () => {
       expect(result.statusText).toBe('OK');
       expect(result.headers).toBe(mockResponse.headers);
       expect(result.config).toMatchObject({
+        // `config.method` is always lower-case, as in axios.
         url: 'https://api.example.com/data',
-        method: 'GET',
+        method: 'get',
         headers: request.options.headers,
       });
 
