@@ -280,7 +280,9 @@ export class HttpService {
     if (agentOptions.connections !== undefined) {
       poolOptions.connections = agentOptions.connections;
     }
-    if (agentOptions.allowH2) poolOptions.allowH2 = true;
+    // Explicit either way: undici 8 negotiates HTTP/2 by default, undici 7
+    // doesn't. axios only uses HTTP/2 with `httpVersion: 2`.
+    poolOptions.allowH2 = !!agentOptions.allowH2;
 
     if (options.__proxyAgent) {
       // Explicit `proxy: {...}` - highest priority among the auto-built

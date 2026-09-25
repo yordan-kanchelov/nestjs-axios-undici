@@ -5,7 +5,11 @@
  * })` with the same fixture certificate as transport-tls.e2e.spec.ts (ALPN
  * needs a real TLS handshake - undici has no HTTP/2 support over plaintext).
  */
-import { createSecureServer, Http2SecureServer } from 'node:http2';
+import {
+  createSecureServer,
+  Http2SecureServer,
+  Http2Session,
+} from 'node:http2';
 import { AddressInfo } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,9 +26,17 @@ describe('HttpService httpVersion: 2 (HTTP/2 opt-in)', () => {
   let server: Http2SecureServer;
   let baseUrl: string;
   const modules: TestingModule[] = [];
+  const sessions = new Set<Http2Session>();
 
   beforeAll(async () => {
     server = createSecureServer({ cert, key, allowHTTP1: true });
+    // The module doesn't close the dispatchers it builds yet (plan.md phase
+    // 3, OnModuleDestroy), so open HTTP/2 sessions are closed here or
+    // `server.close()` never returns.
+    server.on('session', session => {
+      sessions.add(session);
+      session.on('close', () => sessions.delete(session));
+    });
     // With `allowHTTP1: true`, Node's http2 compatibility layer emits
     // 'request' for both HTTP/2 and HTTP/1.1 clients (not 'stream', which
     // would double-respond alongside it) - `req.httpVersion` tells them
@@ -39,6 +51,7 @@ describe('HttpService httpVersion: 2 (HTTP/2 opt-in)', () => {
 
   afterAll(async () => {
     await Promise.all(modules.map(m => m.close()));
+    for (const session of sessions) session.destroy();
     await new Promise(resolve => server.close(resolve));
   });
 
@@ -60,7 +73,7 @@ describe('HttpService httpVersion: 2 (HTTP/2 opt-in)', () => {
     expect(response.data.httpVersion).toBe('2.0');
   });
 
-  it('without httpVersion: 2, the same server falls back to HTTP/1.1', async () => {
+  it('without httpVersion: 2, the same server uses HTTP/1.1 (undici 7 and 8)', async () => {
     const service = await makeService({
       httpsAgent: new HttpsAgent({ rejectUnauthorized: false }),
     });
