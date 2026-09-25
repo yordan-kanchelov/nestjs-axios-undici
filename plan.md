@@ -134,7 +134,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 - [x] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.** PR #18, merged.
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
-- [~] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19, merged.
+- [x] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.) PR #19, merged.
 - [ ] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in.
 - [ ] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.)
 - [ ] ★ **types: axios interop.**
