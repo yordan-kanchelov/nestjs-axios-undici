@@ -43,7 +43,8 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `signal` (`AbortController`) | ✅ | Rejects with `CanceledError` (`ERR_CANCELED`). |
 | `cancelToken` | ✅ | Rejects with `CanceledError` carrying the cancel message. |
 | `validateStatus` | ⚠️ | Works; `validateStatus: null` is treated as the default (axios accepts every status). |
-| `maxRedirects` | ⚠️ | Honoured when set. Without it redirects are **not** followed (axios follows up to 21). When the limit is exceeded the last 3xx is returned as a status error instead of `ERR_FR_TOO_MANY_REDIRECTS`. |
+| `maxRedirects` | ✅ | Follows up to 21 redirects by default, like axios. `maxRedirects: 0` returns the 3xx response as-is, through `validateStatus` like any other status. 301/302 turn `POST` into `GET`; 303 turns anything but `HEAD` into `GET` (both drop the body and `Content-*` headers); 307/308 keep the method and body. `Authorization`/`Cookie`/`Proxy-Authorization` are dropped across a protocol downgrade or a host (including port) change. Exceeding the limit rejects with `ERR_FR_TOO_MANY_REDIRECTS` ("Maximum number of redirects exceeded"), with no `response` - same as axios. A streamed request body (a `Readable`, not a `Buffer`/string/`FormData`) can't be resent on a redirect that keeps it (307/308, or a non-POST 301/302): that rejects with `ERR_FR_REDIRECTION_FAILURE` instead of sending a broken request; buffer the body yourself first, or use `maxRedirects: 0`. |
+| `beforeRedirect` | ✅ | Called before each hop with `(options, responseDetails, requestDetails)`, like axios; mutating `options.headers`/`.method`/`.protocol`/`.hostname`/`.port`/`.path` changes the next hop. Also settable at module level (`register({ beforeRedirect })`). |
 | `responseType: 'json' \| 'text' \| 'arraybuffer' \| 'blob' \| 'stream'` | ✅ | `arraybuffer` gives a `Buffer`; `blob` gives a UTF-8 string, matching axios in Node.js (no native `Blob` decoding there); `stream` gives the undici body (a Node.js `Readable`, transparently decompressed like axios). |
 | `maxContentLength` | ⚠️ | Enforced, but the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). |
 | `decompress` | ✅ | gzip/br/deflate are decompressed when `Content-Encoding` is set. `decompress: false` returns the raw compressed body, as in axios. |
@@ -64,7 +65,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `Content-Encoding: gzip \| br \| deflate` | ✅ | Decompressed automatically; `decompress: false` opts out. |
 | `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object. |
 | `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers`, `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
-| `response.request` | ❌ | Not set. |
+| `response.request` | ⚠️ | A placeholder object, not the underlying request. `response.request.res.responseUrl` is set to the final hop's URL once a redirect was followed (unset otherwise), matching axios' `responseUrl`. |
 
 ## Errors
 
@@ -100,7 +101,7 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | Option | Status | Notes |
 |--------|:------:|-------|
 | `baseURL`, `headers`, `auth`, `params`, `paramsSerializer`, `timeout`, `validateStatus`, `responseType` | ✅ | Applied to every request; per-request values win (headers and params are merged). `timeout` maps to undici's `headersTimeout`/`bodyTimeout`. `headers` accepts axios' method-keyed shape (`{ common: {...}, post: {...}, 'X-Flat': '...' }`), flattened per method at setup. |
-| `maxRedirects` | ⚠️ | Applied to every request through undici's redirect interceptor. Without it redirects are not followed (see [Request config](#request-config)). |
+| `maxRedirects`, `beforeRedirect` | ✅ | Applied to every request as the default; a per-request value wins. See [Request config](#request-config). |
 | `maxBodyLength` / `maxContentLength` | ⚠️ | Size-limit checks (see error code note above). |
 | `transformRequest` / `transformResponse` | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` receives the raw `data`, `transformResponse` receives the raw response body (not yet JSON-parsed). |
 | `httpAgent` / `httpsAgent` | ⚠️ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts. Other agent options are ignored. |

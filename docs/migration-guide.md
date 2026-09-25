@@ -59,7 +59,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 The `HttpModule.register()` and `HttpModule.registerAsync()` methods automatically detect axios-style configuration options and map them to their undici equivalents. No need for special registration methods!
 
-Most `@nestjs/axios` code works unchanged, but some behaviour differs (redirects are not followed by default, interceptor order, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
+Most `@nestjs/axios` code works unchanged, but some behaviour differs (interceptor order, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
 
 ## Key Features for Migration
 
@@ -324,7 +324,7 @@ In the [benchmarks](/docs/benchmarks.md) (a NestJS endpoint making 5 parallel up
 Migration from `@nestjs/axios` is straightforward:
 
 1. **Change imports** from `@nestjs/axios` to `nestjs-axios-undici`
-2. **Review the [known differences](/docs/axios-supported-options.md)** (redirects, interceptor order, response parsing)
+2. **Review the [known differences](/docs/axios-supported-options.md)** (`response.headers` isn't `AxiosHeaders`, `instanceof AxiosError`, ...)
 3. The `HttpModule.register()` method automatically detects and maps axios options
 4. Existing interceptor code works with `httpService.axiosRef.interceptors`
 5. Response structure and error handling remain the same

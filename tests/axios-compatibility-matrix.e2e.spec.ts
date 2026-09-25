@@ -420,11 +420,11 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: redirects are not followed unless maxRedirects is set (axios default: 21)', async () => {
-      const error = await errorOf(
-        firstValueFrom(undiciService.get(`${base}/redirect`)),
+    it('redirects are followed by default, like axios (up to 21)', async () => {
+      const [a, u] = await both(async s =>
+        echo(await first(s.get(`${base}/redirect`))),
       );
-      expect(error.response.status).toBe(302);
+      expect(u).toEqual(a);
     });
 
     it.each(['text', 'arraybuffer', 'json'] as const)(

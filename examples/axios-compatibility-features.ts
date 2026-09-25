@@ -279,7 +279,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
     HttpModule.register({
       // All these axios options are automatically detected and mapped!
       timeout: 30000, // Mapped to headersTimeout & bodyTimeout (30 seconds)
-      maxRedirects: 5, // Follows up to 5 redirects (undici redirect interceptor)
+      maxRedirects: 5, // Follows up to 5 redirects (default: 21, like axios; 0 disables)
       validateStatus: status => status < 500, // Works exactly like axios
 
       // Request/response size limits (enforced via interceptors)

@@ -25,6 +25,7 @@ export class AxiosError<T = any> extends Error {
   static readonly ECONNREFUSED = 'ECONNREFUSED';
   static readonly ERR_NETWORK = 'ERR_NETWORK';
   static readonly ERR_FR_TOO_MANY_REDIRECTS = 'ERR_FR_TOO_MANY_REDIRECTS';
+  static readonly ERR_FR_REDIRECTION_FAILURE = 'ERR_FR_REDIRECTION_FAILURE';
   static readonly ERR_DEPRECATED = 'ERR_DEPRECATED';
   static readonly ERR_BAD_RESPONSE = 'ERR_BAD_RESPONSE';
   static readonly ERR_BAD_REQUEST = 'ERR_BAD_REQUEST';
