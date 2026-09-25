@@ -1,11 +1,43 @@
 import type { HttpModuleOptions } from '../types';
 import type { Agent } from 'http';
 import type { Agent as HttpsAgent } from 'https';
-import { ProxyAgent } from 'undici';
-import { CookieAgent } from 'http-cookie-agent/undici';
-import { CookieJar } from 'tough-cookie';
 import type { HttpInterceptorFunction } from '../interfaces';
 import { createSizeLimitInterceptor } from '../interceptors/size-limit.interceptor';
+
+/**
+ * TLS/connection options this library reads off a Node.js `https.Agent`
+ * (from `agent.options`, where `new https.Agent(opts)` stores them) and maps
+ * onto undici's `Agent({ connect: {...} })`. This is exactly the subset
+ * axios' own http adapter benefits from: axios never reads these fields off
+ * `config` directly, only through the `Agent` instance it hands to Node's
+ * `http`/`https` module, which applies them during the TLS handshake.
+ */
+export const TLS_AGENT_OPTION_KEYS = [
+  'ca',
+  'cert',
+  'key',
+  'pfx',
+  'passphrase',
+  'rejectUnauthorized',
+  'servername',
+  'ciphers',
+  'minVersion',
+  'maxVersion',
+] as const;
+
+/** Resolved, ready-to-use pieces for the undici `Agent` this module creates. */
+export interface ResolvedAgentOptions {
+  /** `new Agent({ connect: {...} })`'s TLS options, from `httpsAgent.options`. */
+  tls?: Record<string, unknown>;
+  /** `maxSockets` -> undici `connections`. */
+  connections?: number;
+  /** `keepAlive` -> undici `pipelining` (0 or 1). */
+  pipelining?: 0 | 1;
+  /** Agent-level `timeout`, used only when no axios `timeout` was set. */
+  agentTimeout?: number;
+  /** `httpVersion: 2` -> `Agent({ allowH2: true })`. */
+  allowH2?: boolean;
+}
 
 /**
  * Axios configuration options that need to be mapped
@@ -27,15 +59,17 @@ export interface AxiosConfigOptions {
   maxContentLength?: number;
   httpAgent?: Agent;
   httpsAgent?: HttpsAgent;
-  proxy?: {
-    protocol?: string;
-    host: string;
-    port: number;
-    auth?: {
-      username: string;
-      password: string;
-    };
-  };
+  proxy?:
+    | {
+        protocol?: string;
+        host: string;
+        port: number;
+        auth?: {
+          username: string;
+          password: string;
+        };
+      }
+    | false;
   decompress?: boolean;
   validateStatus?: (status: number) => boolean;
   baseURL?: string;
@@ -52,6 +86,60 @@ export interface AxiosConfigOptions {
     username: string;
     password: string;
   };
+  /** axios 1.x: `1` (default) or `2`. Mapped to `Agent({ allowH2: true })`; undici negotiates ALPN itself. */
+  httpVersion?: number | string;
+  /** Accepted for axios compatibility; undici has no per-call HTTP/2 session tuning, so this is unused. */
+  http2Options?: Record<string, unknown>;
+}
+
+/**
+ * Extracts the undici `Agent` options this library can honour from a
+ * Node.js `http.Agent`/`https.Agent` instance (module-level `httpAgent`/
+ * `httpsAgent`) plus axios' `httpVersion`. Setup-time only - never called
+ * per request.
+ */
+export function resolveAgentOptions(
+  axiosConfig: Pick<
+    AxiosConfigOptions,
+    'httpAgent' | 'httpsAgent' | 'timeout' | 'httpVersion'
+  >,
+): ResolvedAgentOptions | undefined {
+  const resolved: ResolvedAgentOptions = {};
+
+  // `httpsAgent` is the one axios actually performs the TLS handshake
+  // through, so it's the only source for TLS options; `httpAgent` (plain
+  // HTTP) only ever carries keep-alive/socket-count/timeout.
+  const source = axiosConfig.httpsAgent || axiosConfig.httpAgent;
+  if (source && typeof source === 'object') {
+    const agentOptions = (
+      source as unknown as { options?: Record<string, any> }
+    ).options;
+    if (agentOptions && typeof agentOptions === 'object') {
+      if (axiosConfig.httpsAgent) {
+        const tls: Record<string, unknown> = {};
+        for (const key of TLS_AGENT_OPTION_KEYS) {
+          if (agentOptions[key] !== undefined) tls[key] = agentOptions[key];
+        }
+        if (Object.keys(tls).length > 0) resolved.tls = tls;
+      }
+      if ('keepAlive' in agentOptions) {
+        resolved.pipelining = agentOptions.keepAlive ? 1 : 0;
+      }
+      if (typeof agentOptions.maxSockets === 'number') {
+        resolved.connections = agentOptions.maxSockets;
+      }
+      if ('timeout' in agentOptions && axiosConfig.timeout === undefined) {
+        resolved.agentTimeout = agentOptions.timeout;
+      }
+    }
+  }
+
+  const httpVersion = axiosConfig.httpVersion;
+  if (httpVersion === 2 || httpVersion === '2') {
+    resolved.allowH2 = true;
+  }
+
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
 /**
@@ -91,43 +179,33 @@ export function mapAxiosConfigToUndici(
     (undiciConfig as any).maxContentLength = axiosConfig.maxContentLength;
   }
 
-  // Handle httpAgent/httpsAgent - map to Undici Agent options
-  if (axiosConfig.httpAgent || axiosConfig.httpsAgent) {
-    const agent = axiosConfig.httpAgent || axiosConfig.httpsAgent;
-
-    // Extract relevant options from Node.js Agent
-    if (agent && typeof agent === 'object') {
-      const agentOptions = agent as any;
-
-      // Map keepAlive settings
-      if ('keepAlive' in agentOptions) {
-        undiciConfig.pipelining = agentOptions.keepAlive ? 1 : 0;
-      }
-
-      // Map timeout settings
-      if ('timeout' in agentOptions && !axiosConfig.timeout) {
-        undiciConfig.headersTimeout = agentOptions.timeout;
-        undiciConfig.bodyTimeout = agentOptions.timeout;
-      }
-
-      // Map maxSockets to connection limits
-      if ('maxSockets' in agentOptions) {
-        // Store for later use when creating dispatcher
-        (undiciConfig as any).__agentOptions = {
-          connections: agentOptions.maxSockets,
-        };
-      }
+  // Handle httpAgent/httpsAgent (TLS + keep-alive + maxSockets) and
+  // httpVersion - resolved once here (setup time) into the exact undici
+  // `Agent` options `setupDispatcher` (http.service.ts) needs; never
+  // recomputed per request.
+  const agentOptions = resolveAgentOptions(axiosConfig);
+  if (agentOptions) {
+    (undiciConfig as any).__agentOptions = agentOptions;
+    if (agentOptions.pipelining !== undefined) {
+      undiciConfig.pipelining = agentOptions.pipelining;
+    }
+    if (agentOptions.agentTimeout !== undefined) {
+      undiciConfig.headersTimeout = agentOptions.agentTimeout;
+      undiciConfig.bodyTimeout = agentOptions.agentTimeout;
     }
   }
 
-  // Handle proxy configuration
+  // Handle proxy configuration (an explicit `proxy: {...}`; `proxy: false`
+  // disables even the HTTP_PROXY/HTTPS_PROXY env vars - see
+  // `HttpService.setupDispatcher`). Undici's `ProxyAgent` is created lazily
+  // there too, so only the resolved `{ uri, token }` is stored here.
   if (axiosConfig.proxy) {
-    // Create ProxyAgent
-    let proxyUrl = '';
-    if (typeof axiosConfig.proxy === 'object') {
-      const protocol = axiosConfig.proxy.protocol || 'http:';
-      proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
-    }
+    // axios accepts the protocol with or without the trailing colon.
+    const rawProtocol = axiosConfig.proxy.protocol || 'http:';
+    const protocol = rawProtocol.endsWith(':')
+      ? rawProtocol
+      : `${rawProtocol}:`;
+    const proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
 
     const proxyOptions: any = {
       uri: proxyUrl,
@@ -162,11 +240,9 @@ export function mapAxiosConfigToUndici(
     undiciConfig.validateStatus = axiosConfig.validateStatus;
   }
 
-  // Socket path
-  if (axiosConfig.socketPath) {
-    // Store for URL transformation
-    (undiciConfig as any).__socketPath = axiosConfig.socketPath;
-  }
+  // `socketPath` needs no mapping here: it's read directly off the raw
+  // module/request options at dispatch time (`HttpService.getSocketPathDispatcher`),
+  // module-level and per-request, and cached per path - see http.service.ts.
 
   // Auth
   if (axiosConfig.auth) {
@@ -180,37 +256,13 @@ export function mapAxiosConfigToUndici(
     };
   }
 
-  // Store axios-specific options for later processing
-  const axiosSpecificOptions: any = {};
-
-  if (axiosConfig.baseURL) {
-    axiosSpecificOptions.baseURL = axiosConfig.baseURL;
-  }
-
-  if (axiosConfig.transformRequest) {
-    axiosSpecificOptions.transformRequest = axiosConfig.transformRequest;
-  }
-
-  if (axiosConfig.transformResponse) {
-    axiosSpecificOptions.transformResponse = axiosConfig.transformResponse;
-  }
-
-  if (axiosConfig.paramsSerializer) {
-    axiosSpecificOptions.paramsSerializer = axiosConfig.paramsSerializer;
-  }
-
-  if (axiosConfig.responseType) {
-    axiosSpecificOptions.responseType = axiosConfig.responseType;
-  }
-
-  if (axiosConfig.responseEncoding) {
-    axiosSpecificOptions.responseEncoding = axiosConfig.responseEncoding;
-  }
-
-  // Store axios-specific options in metadata
-  if (Object.keys(axiosSpecificOptions).length > 0) {
-    (undiciConfig as any).__axiosCompat = axiosSpecificOptions;
-  }
+  // `baseURL`, `transformRequest`/`transformResponse`, `paramsSerializer`,
+  // `responseType` and `responseEncoding` need no mapping: they pass through
+  // unchanged (module.ts spreads the original `config` over this function's
+  // result) and are read directly off `moduleOptions`/`instanceOptions` by
+  // `normalizeAxiosRequest`/the axios pipeline. There used to be a dead
+  // `__axiosCompat.baseURL` branch here that duplicated (and, for a
+  // `UrlObject` URL, broke) that handling - removed.
 
   // Add interceptors if any were created
   if (interceptors.length > 0) {
@@ -230,12 +282,6 @@ export function getAxiosCompatibilityWarnings(
 
   // These are now supported but with different implementation
   // Keeping warnings for features that still need manual handling
-
-  if (axiosConfig.socketPath) {
-    warnings.push(
-      'socketPath: Unix sockets require using unix:// protocol in URL',
-    );
-  }
 
   if (axiosConfig.xsrfCookieName || axiosConfig.xsrfHeaderName) {
     warnings.push(

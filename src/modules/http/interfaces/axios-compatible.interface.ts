@@ -62,6 +62,12 @@ export interface AxiosLikeRequestConfig {
     | Array<(data: any, headers?: any, status?: number) => any>;
   cancelToken?: AxiosCancelTokenLike;
   signal?: AbortSignal;
+  /**
+   * Unix domain socket path (module- or request-level). Applied to the
+   * dispatcher (`Agent({ connect: { socketPath } })`, cached per path); the
+   * URL's host is still used for the `Host` header, as in axios.
+   */
+  socketPath?: string;
   /** Custom fields set by an interceptor (e.g. a retry flag) survive a round trip through `response.config` / `error.config`. */
   [key: string]: any;
 }
@@ -144,6 +150,12 @@ export interface AxiosCompatibleRequestOptions extends Omit<
   transformResponse?:
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
+  /**
+   * Unix domain socket path. Applied to the dispatcher (`Agent({ connect: {
+   * socketPath } })`, cached per path); the URL's host is still used for
+   * the `Host` header, as in axios.
+   */
+  socketPath?: string;
 }
 
 /**

@@ -1013,6 +1013,7 @@ export function buildAxiosConfig(
     maxBodyLength: input.maxBodyLength ?? instance.maxBodyLength,
     transformRequest: input.transformRequest ?? instance.transformRequest,
     transformResponse: input.transformResponse ?? instance.transformResponse,
+    socketPath: input.socketPath ?? instance.socketPath,
   };
 
   return config;
@@ -1109,6 +1110,9 @@ export function serializeAxiosConfig(
   }
   if ((config as any).dispatcher !== undefined) {
     options.dispatcher = (config as any).dispatcher;
+  }
+  if (config.socketPath !== undefined) {
+    options.socketPath = config.socketPath;
   }
 
   const signal = resolveSignal(

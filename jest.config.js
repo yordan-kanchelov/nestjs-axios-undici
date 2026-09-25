@@ -12,5 +12,6 @@ module.exports = {
   // into lcov.info with ts-jest + TypeScript 6, which Codecov can't match.
   coverageProvider: 'v8',
   testEnvironment: 'node',
+  setupFiles: ['<rootDir>/tests/setup-env.js'],
   testTimeout: 10000,
 };

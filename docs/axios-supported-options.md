@@ -49,6 +49,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `maxContentLength` | ⚠️ | Enforced, but the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). |
 | `decompress` | ✅ | gzip/br/deflate are decompressed when `Content-Encoding` is set. `decompress: false` returns the raw compressed body, as in axios. |
 | `transformRequest` / `transformResponse` per request | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` gets the raw `data`; `transformResponse` gets the raw response body (not yet JSON-parsed). |
+| `socketPath` per request | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Overrides a module-level `socketPath`. |
 | `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength` per request | ❌ | Module-level only (see below). |
 | `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress`, `adapter` | ❌ | |
 
@@ -104,24 +105,62 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 | `maxRedirects`, `beforeRedirect` | ✅ | Applied to every request as the default; a per-request value wins. See [Request config](#request-config). |
 | `maxBodyLength` / `maxContentLength` | ⚠️ | Size-limit checks (see error code note above). |
 | `transformRequest` / `transformResponse` | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` receives the raw `data`, `transformResponse` receives the raw response body (not yet JSON-parsed). |
-| `httpAgent` / `httpsAgent` | ⚠️ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts. Other agent options are ignored. |
-| `proxy` | ⚠️ | Creates an undici `ProxyAgent` (with basic auth). `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables are not read. |
+| `httpAgent` / `httpsAgent` | ✅ | `maxSockets` → undici `connections`, `keepAlive` → `pipelining`, `timeout` → header/body timeouts (only when no module/request `timeout` is set). `httpsAgent`'s TLS options (`ca`, `cert`, `key`, `pfx`, `passphrase`, `rejectUnauthorized`, `servername`, `ciphers`, `minVersion`, `maxVersion`) map onto undici's `Agent({ connect: {...} })`. Module-level only - a per-request `httpAgent`/`httpsAgent` is ignored. |
+| `proxy` | ✅ | An explicit `proxy: { host, port, protocol?, auth? }` creates an undici `ProxyAgent`. `proxy: false` disables proxying entirely, including the environment variables below. |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (and lower-case) | ✅ | Read once at module setup via undici's `EnvHttpProxyAgent`, matching axios' own default (`proxy-from-env`) - **only** when no `dispatcher`, `proxy` or `socketPath` is configured. As in axios, a custom `httpAgent`/`httpsAgent` doesn't turn this off; its TLS options still apply, including to targets reached through the proxy. This is a behaviour change from earlier versions, which never read these variables: with `HTTP_PROXY` set in the environment, a request to `http://127.0.0.1:...` now goes through that proxy by default unless `NO_PROXY` covers it or `proxy: false` is passed. See the note below. |
 | `withCredentials` | ⚠️ | Enables a cookie jar (`http-cookie-agent` + `tough-cookie`) that stores and resends cookies, which axios does not do in Node.js. |
-| `socketPath` | ❌ | Currently fails with `Invalid URL protocol`. Use `dispatcher: new Agent({ connect: { socketPath } })` from undici instead. |
+| `socketPath` | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Works at module level and per request; the request URL's host is still used for the `Host` header, as in axios. |
+| `httpVersion` | ✅ | `httpVersion: 2` → `Agent({ allowH2: true })`. Module-level only; needs a target that speaks HTTP/2 over TLS (undici has no plaintext HTTP/2). `http2Options` is accepted but has no effect (undici has no per-session HTTP/2 tuning). |
 | `decompress` | ✅ | Applied as the default for every request; a per-request `decompress` overrides it. |
 | `xsrfCookieName`, `xsrfHeaderName` | ❌ | Ignored (a warning is logged). |
 
-### Connection pooling: `httpAgent` / `httpsAgent`
+### Precedence: an explicit `dispatcher` always wins
+
+A `dispatcher` passed directly in module options (`register({ dispatcher })`) is never overridden by `httpAgent`/`httpsAgent`, `socketPath`, `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY` environment variables - none of that mapping runs once a `dispatcher` is set. A per-request `dispatcher` wins over all of those too, including a per-request `socketPath`. Use this to configure undici directly when the axios-shaped options above aren't expressive enough (see [Performance Note](#performance-note)).
+
+A request-level `socketPath` gets its own cached `Agent` per path (at most 32 paths; the oldest is closed to make room), so use a small, fixed set of socket paths.
+
+Dispatchers this module creates (from `httpAgent`/`httpsAgent`/`socketPath`/`proxy`/env-proxy/`httpVersion`) are not yet closed on `app.close()` - see `OnModuleDestroy` in the migration guide's known gaps.
+
+### Connection pooling and TLS: `httpAgent` / `httpsAgent`
 
 ```typescript
 import { Agent } from 'http';
+import { Agent as HttpsAgent } from 'https';
 
 HttpModule.register({
   httpAgent: new Agent({ keepAlive: true, maxSockets: 10 }),
 });
+
+// TLS options (module-level only)
+HttpModule.register({
+  httpsAgent: new HttpsAgent({
+    ca: fs.readFileSync('ca.pem'),
+    rejectUnauthorized: true, // false to trust any certificate (e.g. local dev)
+  }),
+});
+```
+
+### Unix domain sockets: `socketPath`
+
+```typescript
+HttpModule.register({ socketPath: '/var/run/docker.sock' });
+// or per request:
+httpService.get('http://localhost/containers/json', { socketPath: '/var/run/docker.sock' });
+```
+
+### HTTP/2
+
+```typescript
+HttpModule.register({
+  httpVersion: 2,
+  httpsAgent: new HttpsAgent({ rejectUnauthorized: false }), // if needed for the target's cert
+});
 ```
 
 ### Proxy
+
+An explicit `proxy` always wins over the environment variables below:
 
 ```typescript
 HttpModule.register({
@@ -132,6 +171,19 @@ HttpModule.register({
   },
 });
 ```
+
+With no `proxy` (and no `dispatcher`/`socketPath`), `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` (case-insensitive) are read once at module setup, matching axios:
+
+```bash
+HTTP_PROXY=http://proxy.example.com:8080 NO_PROXY=localhost,127.0.0.1,.internal node app.js
+```
+
+```typescript
+// Opt out entirely, even with HTTP_PROXY/HTTPS_PROXY set in the environment:
+HttpModule.register({ proxy: false });
+```
+
+**Behaviour change / risk:** earlier versions of this library never read `HTTP_PROXY`/`HTTPS_PROXY`. If your environment sets them (common in corporate networks and some CI runners) and you don't pass `proxy: false`, requests - including ones to `localhost`/`127.0.0.1` - now go through that proxy by default unless `NO_PROXY` covers the target. This matches axios, but if you rely on `HttpModule.register({})` never proxying, either set `proxy: false` or add your local hosts to `NO_PROXY`.
 
 ### Size limits
 

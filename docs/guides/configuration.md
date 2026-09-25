@@ -93,7 +93,9 @@ export class AppModule {}
 
 ## Advanced Configuration (Dispatchers)
 
-To configure advanced behavior like connection pooling, proxies, or mocks, you should use a custom `Dispatcher`. The `dispatcher` property can be passed in the configuration object.
+To configure advanced behavior like connection pooling, proxies, or mocks, you should use a custom `Dispatcher`. The `dispatcher` property can be passed in the configuration object, and always wins over any of the axios-style options below (`httpAgent`/`httpsAgent`, `socketPath`, `proxy`, `httpVersion`) - see [axios-supported-options.md](/docs/axios-supported-options.md#precedence-an-explicit-dispatcher-always-wins).
+
+For the common axios-style cases - TLS options via `httpsAgent`, `socketPath`, an explicit `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables, and `httpVersion: 2` - you don't need a `Dispatcher` at all; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options).
 
 ```typescript
 import { Module } from '@nestjs/common';

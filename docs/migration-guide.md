@@ -122,7 +122,9 @@ headers.forEach((value, key) => console.log(key, value));
 
 ### 3. Automatic Configuration Mapping
 
-`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `decompress`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. `socketPath` is not supported. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped.
+`baseURL`, `headers`, `params`, `auth`, `timeout`, `maxRedirects`, `validateStatus`, `httpAgent`/`httpsAgent` (including TLS options - `ca`, `cert`, `key`, `rejectUnauthorized`, ...), `proxy` (an explicit object, or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables when `proxy` is unset), `socketPath`, `httpVersion`, `withCredentials`, `decompress`, `maxBodyLength`/`maxContentLength` and `transformRequest`/`transformResponse` are detected in `register()` and `registerAsync()` and mapped to undici. See [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for how each one is mapped, and the precedence note there if you also pass an explicit `dispatcher`.
+
+**Reading `HTTP_PROXY`/`HTTPS_PROXY` by default is new** and matches axios; if your environment sets these and you don't want requests (including to `localhost`) proxied, pass `proxy: false`.
 
 ### 4. Axios-Compatible Responses
 
@@ -257,7 +259,7 @@ HttpModule.register({
 
 ### Proxy Support
 
-For advanced proxy configurations:
+The axios-style `proxy: { host, port, auth? }` option (and the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables) are mapped automatically - see [Proxy](/docs/axios-supported-options.md#proxy). For anything more advanced, configure undici's `ProxyAgent` directly as a `dispatcher` (this always wins over the options above):
 
 ```typescript
 import { ProxyAgent } from 'undici';
