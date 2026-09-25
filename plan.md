@@ -39,6 +39,8 @@ Release 1.0.0 as a drop-in replacement for `@nestjs/axios`:
 
 ## Status
 
+Master PR: #8 (`claude/v1.0.0` → `main`, draft).
+
 Released so far:
 
 - 0.6.0 was published by hand on 2026-09-25 (git tag / GitHub release still missing).
@@ -66,7 +68,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - It runs weekly, so new upstream releases within the peer ranges get tested.
   - `engines` changes, and the README gets a supported-versions table.
   - Prototypes: `plan/prototypes/automation/consumer/`, `plan/prototypes/quality/scripts/check-deps.js`.
-- [~] **B. test: suite on NestJS 12 / @nestjs/axios 12, Nest 10/11 on Node 22** (`claude/nest12-test-matrix`, pushed at 2238160)
+- [~] **B. test: suite on NestJS 12 / @nestjs/axios 12, Nest 10/11 on Node 22** (`claude/nest12-test-matrix`, PR #9, in review)
   - devDeps move to Nest 12, and Jest runs with `--experimental-vm-modules`.
   - The CI matrix is: Node 24 Nest 12 (full checks + coverage), Node 26 Nest 12, Node 24 undici 8, Node 22 Nest 11, Node 22 Nest 10.
   - Coverage uses the v8 provider (fixes the Codecov paths), `forceExit` is removed, and `form-data` becomes a devDependency.
