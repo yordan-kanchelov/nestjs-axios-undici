@@ -73,7 +73,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - The CI matrix is: Node 24 Nest 12 (full checks + coverage), Node 26 Nest 12, Node 24 undici 8, Node 22 Nest 11, Node 22 Nest 10.
   - Coverage uses the v8 provider (fixes the Codecov paths), `forceExit` is removed, and `form-data` becomes a devDependency.
   - Note: the required status check names change.
-- [~] **C. test: API-surface parity and type-level drop-in checks** (`claude/api-parity-checks`, PR open)
+- [x] **C. test: API-surface parity and type-level drop-in checks** (`claude/api-parity-checks`, PR open)
   - Compare the members of `@nestjs/axios` HttpService, axiosRef and AxiosHeaders against ours, with an allowlist.
   - Compile-only drop-in tests: `AxiosRequestConfig` / `AxiosResponse` / `AxiosInstance` assignability, plus the 16 typecompat usage cases.
   - Prototypes: `plan/prototypes/automation/api-surface-parity.cjs`, `.../differential/drop-in.types.ts`, `plan/prototypes/quality/typecompat/`.
@@ -190,3 +190,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: Explorations done for automation, package quality, axios compatibility and docs (reports in `plan/reports/`). Performance exploration done too. Workers A and B started. Created `claude/v1.0.0` and this plan.
 - 2026-09-25: PR #9 merged. PR #10 approved; fixed the CI pack step and formatting, waiting for green.
 - 2026-09-25: PR #10 merged (consumer matrix green on Node 22.17.0/22.19.0/22/24/26). Worker C started (`claude/api-parity-checks`).
+- 2026-09-25: PR #11 (C) merged. PR #12 (D, 183 differential scenarios, 77 known differences) open, in review.
