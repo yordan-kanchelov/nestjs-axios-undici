@@ -85,7 +85,9 @@ for (const name of declared) {
   }
 }
 if (!scanned) {
-  console.error(`No .js or .d.ts files found in ${libDir}; is the build complete?`);
+  console.error(
+    `No .js or .d.ts files found in ${libDir}; is the build complete?`,
+  );
   process.exit(1);
 }
 if (problems.length) {

@@ -44,6 +44,7 @@ jobs:
       - name: Build and pack
         id: pack
         run: |
+          mkdir -p dist
           npm pack --pack-destination dist
           echo "tarball=$(ls dist/*.tgz)" >> "$GITHUB_OUTPUT"
 
