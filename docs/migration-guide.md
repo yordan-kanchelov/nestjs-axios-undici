@@ -59,7 +59,7 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 The `HttpModule.register()` and `HttpModule.registerAsync()` methods automatically detect axios-style configuration options and map them to their undici equivalents. No need for special registration methods!
 
-Most `@nestjs/axios` code works unchanged, but some behaviour differs (interceptor order, `instanceof AxiosError`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
+Most `@nestjs/axios` code works unchanged, but some behaviour differs (interceptor order, `response.headers` not being `AxiosHeaders`, ...). Check the [compatibility matrix](/docs/axios-supported-options.md) before migrating.
 
 ## Key Features for Migration
 
@@ -143,7 +143,7 @@ response.config     // Request configuration
 
 ### 5. Axios-Compatible Errors
 
-Errors are also axios-compatible, including network errors, timeouts (`ECONNABORTED`) and cancellations (`ERR_CANCELED`). `axios.isAxiosError(error)` works; `error instanceof AxiosError` only works with the `AxiosError` class exported by `nestjs-axios-undici`:
+Errors are also axios-compatible, including network errors, timeouts (`ECONNABORTED`) and cancellations (`ERR_CANCELED`). `axios.isAxiosError(error)` works; `error instanceof AxiosError` works with the `AxiosError` class exported by `nestjs-axios-undici`, and also with the `axios` package's own `AxiosError` class when `axios` is installed (an optional peer, [see below](/docs/axios-supported-options.md#errors)):
 
 ```typescript
 try {
@@ -281,6 +281,19 @@ HttpModule.register({ cookieJar: new CookieJar() });
 
 `http-cookie-agent` and `tough-cookie` are optional peer dependencies - install them (`npm i http-cookie-agent tough-cookie`) to use `cookieJar`; a project that never sets it pays nothing for them.
 
+### Types
+
+**Breaking changes**, if you reference this package's own types by name (most code using plain object literals for options/config is unaffected):
+
+- **`HttpModuleOptions` is strictly typed** - no more `& any`/`Partial<any>`. A typo in `register()`/`registerAsync()` options (e.g. `{ timeuot: 5 }`) is now a compile error, the way it always was against `@nestjs/axios`' own types. If you were relying on an undocumented, unsupported field going through unchecked, add it explicitly or use `as any` at the call site.
+- **Four overlapping request-config types are now one.** `AxiosLikeRequestConfig`, `AxiosCompatibleRequestOptions`, `AxiosCompatibleRequestConfig` and `HttpRequestOptions` are gone; everywhere they were used (`request()`, `get`/`post`/etc.'s `config` argument, `axiosRef`'s promise methods) now takes `AxiosLikeRequestConfig<D = any>`. Replace any of the four names in your own code with `AxiosLikeRequestConfig`.
+- **`post`/`put`/`patch` have a real body type parameter**: `post<T, D>(url, data?: D, config?: AxiosLikeRequestConfig<D>)`, matching `@nestjs/axios`. `data`'s type is now checked against `D` instead of accepted as `any`.
+- **`HttpServiceOverloads`** (an unused, unimplemented type) is removed.
+- **`response.headers` stays a plain object**, not an `AxiosHeaders` instance (measured too expensive to build on every response - see [Response](/docs/axios-supported-options.md#response)); its type is now `Record<string, any>`, replacing the narrower `IncomingHttpHeaders`-based type.
+- **`AxiosHeaders` gained methods**: `concat`, `toString`, `normalize`, `getSetCookie`, and the `get`/`set`/`has` shorthand accessors (`ContentType`, `ContentLength`, `Accept`, `AcceptEncoding`, `ContentEncoding`, `UserAgent`, `Authorization`) - purely additive, nothing removed.
+- **`error instanceof AxiosError` now also holds for `axios.AxiosError`** when the optional `axios` peer is installed (`npm i axios`) - see [Errors](/docs/axios-supported-options.md#errors). `error instanceof axios.CanceledError` specifically does not; use `isCancel()`.
+- **`HttpModule.registerAsync({})`** (none of `useFactory`/`useClass`/`useExisting`) now throws a clear error at setup, instead of silently registering a broken provider.
+
 ### Request/Response Transforms
 
 Use interceptors for transforms:
@@ -338,7 +351,7 @@ In the [benchmarks](/docs/benchmarks.md) (a NestJS endpoint making 5 parallel up
 Migration from `@nestjs/axios` is straightforward:
 
 1. **Change imports** from `@nestjs/axios` to `nestjs-axios-undici`
-2. **Review the [known differences](/docs/axios-supported-options.md)** (`response.headers` isn't `AxiosHeaders`, `instanceof AxiosError`, ...)
+2. **Review the [known differences](/docs/axios-supported-options.md)** (`response.headers` isn't `AxiosHeaders`, `instanceof axios.CanceledError`, ...)
 3. The `HttpModule.register()` method automatically detects and maps axios options
 4. Existing interceptor code works with `httpService.axiosRef.interceptors`
 5. Response structure and error handling remain the same
