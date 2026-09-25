@@ -20,3 +20,6 @@ examples/dist
 # environment
 .env
 *.env*
+
+# npm pack output
+*.tgz
