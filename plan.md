@@ -81,19 +81,35 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
 - [ ] **E. perf: wider micro-benchmark scenarios, and make the regression check a required check.** Waiting on `plan/reports/performance.md`.
 
-### Phase 2: compatibility fixes (one small PR each; each one flips a differential case and passes the perf check)
+### Phase 2: compatibility fixes (one small PR each; each flips differential cases and passes the perf check)
 
-- [ ] Default `Accept: application/json, text/plain, */*` and `User-Agent` headers.
-- [ ] `query()` on HttpService and axiosRef (new in @nestjs/axios 12).
-- [ ] A total request `timeout`, plus `timeoutErrorMessage` and `transitional.clarifyTimeoutError`.
-- [ ] `validateStatus: null`.
-- [ ] axios error codes for `maxContentLength` / `maxBodyLength`. Enforce `maxContentLength` while streaming.
-- [ ] Abort the request when the Observable is unsubscribed (rxjs `timeout`, `switchMap`, `takeUntil`).
-- [ ] Types: `post<T, D>`, and assignability to `AxiosRequestConfig`, `AxiosResponse` and `AxiosInstance`; typed `HttpModuleOptions` (no `any`).
-- [ ] Redirects: a 302 after POST drops the body headers; `ERR_FR_TOO_MANY_REDIRECTS`; the default depends on the decision above.
-- [ ] axiosRef: `getUri`, `postForm`/`putForm`/`patchForm`, calling it directly as a function, `create`; the `AxiosHeaders` helpers.
-- [ ] `response.request` / `error.request`, and the progress callbacks.
-- [ ] More items from `plan/reports/axios-compat.md` (pending).
+Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
+
+- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`.
+- [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
+- [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
+- [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
+  - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
+  - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.
+- [ ] ★ **fix: follow redirects by default (21)** using manual 3xx handling with no cost on other responses. Also `ERR_FR_TOO_MANY_REDIRECTS`, dropping body headers after 301/302, and `beforeRedirect`. (Owner decision.)
+- [ ] ★ **fix(config): transport options.** `httpsAgent` TLS (`ca` / `cert` / `rejectUnauthorized`), `socketPath`, proxy env vars, HTTP/2 opt-in.
+- [ ] ★ **breaking: `withCredentials` becomes a no-op; add an explicit `cookieJar` option.** (Owner decision.)
+- [ ] ★ **types: axios interop.**
+  - `AxiosRequestConfig` / `AxiosResponse` / `AxiosInstance` assignability and `post<T, D>`.
+  - Typed `HttpModuleOptions`.
+  - Optional `axios` peer so `instanceof axios.AxiosError` works.
+  - Full `AxiosHeaders`, with `response.headers` as `AxiosHeaders`.
+- [ ] **feat(axiosRef): make it a real axios instance.**
+  - Callable, `getUri`, `create`, `*Form`, `query`.
+  - A function `adapter` (so axios-mock-adapter works) and the full `defaults`.
+  - `HttpService.query()`.
+- [ ] **fix(errors): match axios errors.**
+  - Wrap synchronous undici errors and set `request`.
+  - Total (deadline) timeout, `timeoutErrorMessage`, `clarifyTimeoutError`.
+  - Size-limit codes and precedence.
+  - `validateStatus: null`, URL credentials, `allowAbsoluteUrls`.
+- [ ] Progress callbacks (`onUploadProgress` / `onDownloadProgress`), `maxRate`, `formSerializer`.
+- [ ] docs: update the compatibility page and the migration guide to match whatever differences remain.
 
 ### Phase 3: package quality and API (see `plan/reports/package-quality.md`)
 
@@ -129,4 +145,4 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 ## Log
 
-- 2026-09-25: Explorations done for automation, package quality and docs (reports in `plan/reports/`). Axios compatibility and performance explorations are still running. Workers A and B started. Created `claude/v1.0.0` and this plan.
+- 2026-09-25: Explorations done for automation, package quality, axios compatibility and docs (reports in `plan/reports/`). Performance exploration still running. Workers A and B started. Created `claude/v1.0.0` and this plan.
