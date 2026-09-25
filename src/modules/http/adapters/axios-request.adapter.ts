@@ -502,76 +502,150 @@ function flatDefaultHeaders(
 }
 
 // ---------------------------------------------------------------------------
-// Per-method default/module header cache (perf item 1)
+// Per-method default/module header cache
 //
-// `defaults.headers.common` (and friends) never change on most requests, and
-// module (`register()`/`registerAsync()`) headers never change at all after
-// setup, so the 6-source merge below (default common/method/flat + module
-// common/method/flat) is wasted work on every single request. It's cached
-// per `defaults` object (one per HttpService, via `createAxiosRefDefaults`)
-// and per HTTP method, and only recomputed when `HEADERS_VERSION` (bumped by
-// `trackHeaders` on any write to `defaults.headers`) changes - so mutating
-// `axiosRef.defaults.headers.common[...]` at runtime still takes effect on
-// the next request. `defaults` objects not built by `createAxiosRefDefaults`
-// (e.g. plain object literals in unit tests) have no version counter and are
-// simply never cached - `normalizeAxiosRequest` falls back to the uncached
-// per-source merge for those, unchanged from before this cache existed.
+// The default + module headers for a method (`defaults.headers` common /
+// method / flat, then module `headers` common / method / flat) rarely change,
+// so their 6-source merge is cached per `defaults` object and method. Rather
+// than tracking writes (which can't see every mutation path), each request
+// re-checks the sources: the same objects, holding the same keys in the same
+// order with identical primitive values, merge to the same result. Anything
+// else, including a source that isn't a plain object or a header value that
+// isn't a primitive, skips the cache and merges as before.
 // ---------------------------------------------------------------------------
 
-/**
- * Non-enumerable key holding a `{ v: number }` counter on a `defaults` object
- * created by `createAxiosRefDefaults` (axios-ref.factory.ts), bumped there on
- * every mutation of `defaults.headers`. Defined here (rather than in
- * axios-ref.factory.ts, which already depends on this module transitively
- * through axios-interceptor.adapter.ts) to avoid a module cycle.
- */
-export const HEADERS_VERSION = Symbol('headersVersion');
+interface HeaderSourceSnapshot {
+  source: unknown;
+  keys: string[];
+  values: unknown[];
+}
 
-interface MethodHeaderCache {
+interface HeaderBaseCache {
+  sources: HeaderSourceSnapshot[];
   /** Merged default + module headers for this method, excluding per-request headers. */
   base: HeaderRecord;
   hasWork: boolean;
 }
 
-interface DefaultsHeaderCache {
-  version: number;
-  byMethod: Map<string, MethodHeaderCache>;
+const headerBaseCaches = new WeakMap<object, Map<string, HeaderBaseCache>>();
+
+function headerSources(
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
+  lowerMethod: string,
+): unknown[] {
+  return [
+    defaultHeaders,
+    defaultHeaders?.common,
+    defaultHeaders?.[lowerMethod],
+    instanceHeaders,
+    instanceHeaders?.common,
+    instanceHeaders?.[lowerMethod],
+  ];
 }
 
-const defaultsHeaderCaches = new WeakMap<object, DefaultsHeaderCache>();
+/** `container` sources (`headers` itself) may hold method buckets by reference. */
+function snapshotHeaderSource(
+  source: unknown,
+  container: boolean,
+): HeaderSourceSnapshot | undefined {
+  if (source === undefined || source === null) {
+    return { source, keys: [], values: [] };
+  }
+  if (!isPlainObject(source)) return undefined;
+  const keys: string[] = [];
+  const values: unknown[] = [];
+  for (const key in source) {
+    const value = source[key];
+    if (
+      value !== null &&
+      (typeof value === 'object' || typeof value === 'function') &&
+      !(container && METHOD_HEADER_KEYS.has(key))
+    ) {
+      return undefined;
+    }
+    keys.push(key);
+    values.push(value);
+  }
+  return { source, keys, values };
+}
 
-function getMethodHeaderCache(
-  defaults: AxiosRefDefaults | undefined,
-  instance: Record<string, any>,
+function matchesHeaderSnapshot(
+  source: any,
+  snapshot: HeaderSourceSnapshot,
+): boolean {
+  if (source !== snapshot.source) return false;
+  if (source === undefined || source === null) return true;
+  const { keys, values } = snapshot;
+  let i = 0;
+  for (const key in source) {
+    if (i >= keys.length || keys[i] !== key || source[key] !== values[i]) {
+      return false;
+    }
+    i++;
+  }
+  return i === keys.length;
+}
+
+function getHeaderBase(
+  owner: object,
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
   lowerMethod: string,
-): MethodHeaderCache | undefined {
-  if (!defaults) return undefined;
-  const versionRef = (defaults as any)[HEADERS_VERSION] as
-    { v: number } | undefined;
-  if (!versionRef) return undefined;
+): HeaderBaseCache | undefined {
+  const sources = headerSources(defaultHeaders, instanceHeaders, lowerMethod);
 
-  let entry = defaultsHeaderCaches.get(defaults);
-  if (!entry || entry.version !== versionRef.v) {
-    entry = { version: versionRef.v, byMethod: new Map() };
-    defaultsHeaderCaches.set(defaults, entry);
+  let byMethod = headerBaseCaches.get(owner);
+  const cached = byMethod?.get(lowerMethod);
+  if (cached) {
+    let valid = true;
+    for (let i = 0; i < sources.length && valid; i++) {
+      valid = matchesHeaderSnapshot(sources[i], cached.sources[i]);
+    }
+    if (valid) return cached;
   }
 
-  let cached = entry.byMethod.get(lowerMethod);
-  if (!cached) {
-    const defaultHeaders = defaults.headers;
-    const instanceHeaders = instance.headers as Record<string, any> | undefined;
-    const base = mergeHeaders(
+  const snapshots: HeaderSourceSnapshot[] = [];
+  for (let i = 0; i < sources.length; i++) {
+    const snapshot = snapshotHeaderSource(sources[i], i === 0 || i === 3);
+    if (!snapshot) {
+      byMethod?.delete(lowerMethod);
+      return undefined;
+    }
+    snapshots.push(snapshot);
+  }
+
+  const entry: HeaderBaseCache = {
+    sources: snapshots,
+    base: mergeHeaders(
       defaultHeaders?.common,
-      (defaultHeaders as any)?.[lowerMethod],
+      defaultHeaders?.[lowerMethod],
       flatDefaultHeaders(defaultHeaders),
       instanceHeaders?.common,
       instanceHeaders?.[lowerMethod],
       flatDefaultHeaders(instanceHeaders),
-    );
-    cached = { base, hasWork: Object.keys(base).length > 0 };
-    entry.byMethod.set(lowerMethod, cached);
+    ),
+    hasWork: headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod),
+  };
+  if (!byMethod) {
+    byMethod = new Map();
+    headerBaseCaches.set(owner, byMethod);
   }
-  return cached;
+  byMethod.set(lowerMethod, entry);
+  return entry;
+}
+
+function headersHaveWork(
+  defaultHeaders: Record<string, any> | undefined,
+  instanceHeaders: Record<string, any> | undefined,
+  lowerMethod: string,
+): boolean {
+  return (
+    hasOwnKeys(defaultHeaders?.common) ||
+    hasOwnKeys(defaultHeaders?.[lowerMethod]) ||
+    flatDefaultHeaders(defaultHeaders) !== undefined ||
+    hasOwnKeys(instanceHeaders)
+  );
 }
 
 /**
@@ -619,15 +693,15 @@ export function normalizeAxiosRequest(
   const method = String(input.method || 'GET').toUpperCase();
   const lowerMethod = method.toLowerCase() as 'get';
 
-  // Perf item 1: the default + module headers for this method (everything
-  // except per-request headers) are the same on every request until
-  // `axiosRef.defaults.headers` is written, so they're merged once per
-  // method and cached (see `getMethodHeaderCache`) rather than re-merged
-  // from 6 sources on every call. `methodCache` is only set for `defaults`
-  // objects built by `createAxiosRefDefaults` (real HttpService usage);
-  // hand-built `defaults` in tests fall back to the uncached path below,
-  // unchanged from before this cache existed.
-  const methodCache = getMethodHeaderCache(defaults, instance, lowerMethod);
+  const defaultHeaders = defaults?.headers as Record<string, any> | undefined;
+  const instanceHeaders = instance.headers as Record<string, any> | undefined;
+  // See "Per-method default/module header cache" above.
+  const headerBase = getHeaderBase(
+    defaults ?? instance,
+    defaultHeaders,
+    instanceHeaders,
+    lowerMethod,
+  );
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
   const auth = input.auth ?? instance.auth;
@@ -635,20 +709,6 @@ export function normalizeAxiosRequest(
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects = input.maxRedirects ?? instance.maxRedirects;
-
-  const headersHaveWork = methodCache
-    ? methodCache.hasWork
-    : (() => {
-        const defaultHeaders = defaults?.headers;
-        const instanceHeaders = instance.headers as
-          Record<string, any> | undefined;
-        return (
-          hasOwnKeys(defaultHeaders?.common) ||
-          hasOwnKeys(defaultHeaders?.[lowerMethod]) ||
-          flatDefaultHeaders(defaultHeaders) !== undefined ||
-          hasOwnKeys(instanceHeaders)
-        );
-      })();
 
   // Fast path: nothing axios-specific to do for this request. In practice
   // this only triggers for calls that bypass HttpService's axiosRef defaults
@@ -663,7 +723,9 @@ export function normalizeAxiosRequest(
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
-    headersHaveWork;
+    (headerBase
+      ? headerBase.hasWork
+      : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
   if (!needsWork) {
     return { url, options: input };
   }
@@ -703,15 +765,19 @@ export function normalizeAxiosRequest(
   // Each axios-style source is itself `common` -> `<method>` -> flat, so a
   // header set for one method (or unqualified) is overridden by a more
   // specific one from the same source before the next source is applied.
-  const headers = methodCache
-    ? mergeHeaders(methodCache.base, options.headers)
+  // `base` is already merged (one casing per header, string values), so
+  // with no per-request headers a shallow copy gives the same result.
+  const headers = headerBase
+    ? options.headers === undefined
+      ? { ...headerBase.base }
+      : mergeHeaders(headerBase.base, options.headers)
     : mergeHeaders(
-        defaults?.headers?.common,
-        defaults?.headers?.[lowerMethod],
-        flatDefaultHeaders(defaults?.headers),
-        instance.headers?.common,
-        instance.headers?.[lowerMethod],
-        flatDefaultHeaders(instance.headers),
+        defaultHeaders?.common,
+        defaultHeaders?.[lowerMethod],
+        flatDefaultHeaders(defaultHeaders),
+        instanceHeaders?.common,
+        instanceHeaders?.[lowerMethod],
+        flatDefaultHeaders(instanceHeaders),
         options.headers,
       );
 

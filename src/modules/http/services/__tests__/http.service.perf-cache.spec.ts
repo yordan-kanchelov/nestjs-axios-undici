@@ -55,8 +55,7 @@ describe('HttpService - request-path caches stay live', () => {
     expect(before.data.headers['x-runtime']).toBeUndefined();
 
     // Populate the per-method header cache with the first request above,
-    // then mutate a bucket that isn't `common` (get) directly - covers both
-    // the outer `headers` proxy and a method bucket's Proxy.
+    // then mutate both `common` and a method bucket (get) directly.
     service.axiosRef.defaults.headers.common['X-Runtime'] = 'common-value';
     service.axiosRef.defaults.headers.get['X-Runtime-Get'] = 'get-value';
 
@@ -77,6 +76,68 @@ describe('HttpService - request-path caches stay live', () => {
     (service.axiosRef.defaults.headers as any)['X-Flat'] = 'flat-value';
     const after = await firstValueFrom(service.get(`${serverUrl}/x`));
     expect(after.data.headers['x-flat']).toBe('flat-value');
+  });
+
+  it('replacing axiosRef.defaults.headers wholesale after the first request still applies', async () => {
+    await firstValueFrom(service.get(`${serverUrl}/x`));
+
+    const replacement = { common: { 'X-Replaced': 'r1' } };
+    (service.axiosRef.defaults as any).headers = replacement;
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-replaced']).toBe('r1');
+    expect(after.data.headers['user-agent'] ?? '').not.toMatch(
+      /nestjs-axios-undici/,
+    );
+
+    replacement.common['X-Replaced'] = 'r2';
+    const again = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(again.data.headers['x-replaced']).toBe('r2');
+  });
+
+  it('mutating a held reference to a replaced bucket still applies', async () => {
+    const bucket: Record<string, string> = { 'X-Held': 'h1' };
+    service.axiosRef.defaults.headers.common = bucket;
+    const first = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(first.data.headers['x-held']).toBe('h1');
+
+    bucket['X-Held'] = 'h2';
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-held']).toBe('h2');
+  });
+
+  it('a header added with Object.defineProperty after the first request still applies', async () => {
+    await firstValueFrom(service.get(`${serverUrl}/x`));
+
+    Object.defineProperty(
+      service.axiosRef.defaults.headers.common,
+      'X-Defined',
+      {
+        value: 'd',
+        enumerable: true,
+        configurable: true,
+      },
+    );
+    const after = await firstValueFrom(service.get(`${serverUrl}/x`));
+    expect(after.data.headers['x-defined']).toBe('d');
+  });
+
+  it('module headers changed through undiciRef after the first request still apply', async () => {
+    const moduleWithHeaders = await Test.createTestingModule({
+      imports: [
+        HttpModule.register({ headers: { common: { 'X-Module': 'v1' } } }),
+      ],
+    }).compile();
+    try {
+      const svc = moduleWithHeaders.get<HttpService>(HttpService);
+      const first = await firstValueFrom(svc.get(`${serverUrl}/x`));
+      expect(first.data.headers['x-module']).toBe('v1');
+
+      (svc.undiciRef as any).headers.common['X-Module'] = 'v2';
+      const after = await firstValueFrom(svc.get(`${serverUrl}/x`));
+      expect(after.data.headers['x-module']).toBe('v2');
+    } finally {
+      await moduleWithHeaders.close();
+    }
   });
 
   it('adding an axiosRef request interceptor after the first request still applies', async () => {
