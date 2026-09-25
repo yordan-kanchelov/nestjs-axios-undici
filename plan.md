@@ -127,6 +127,10 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 - [x] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase. (PR #14, merged; also rejects on corrupt compressed bodies)
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
 - [~] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors. PR open (`claude/fix-observable-abort`).
+  - Follow-ups from the PR #15 review (not blocking):
+    - `resolveSignal` in axios-request.adapter.ts leaves a listener on `signal` when combined with a legacy `cancelToken`.
+    - `toAxiosError` checks `options.signal` (the user's) instead of the per-request signal; it works only via the AbortError/UND_ERR_ABORTED fallback.
+    - Performance: cache the interceptor handler chain until interceptors change; skip the `defer()` config re-normalisation when no interceptors are registered; merge the two `.then()` calls.
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
   - Fixes retry-once loops, empty POST replays, axios-retry and axios-auth-refresh.
   - Covers axios interceptor order, `runWhen` / `synchronous`, and per-request transforms.

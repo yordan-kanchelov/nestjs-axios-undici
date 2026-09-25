@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { createServer, Server } from 'node:http';
+import { getEventListeners } from 'node:events';
 import { AddressInfo } from 'node:net';
 import { firstValueFrom, Subject } from 'rxjs';
 import { retry, takeUntil, timeout as rxTimeout } from 'rxjs/operators';
@@ -143,6 +144,18 @@ describe('HttpService Observable semantics: abort on unsubscribe', () => {
     expect(isCancel(caught)).toBe(true);
     expect((caught as { code?: string }).code).toBe('ERR_CANCELED');
     await closed;
+  });
+
+  it('leaves no abort listeners on a user signal reused across requests', async () => {
+    const controller = new AbortController();
+    for (let i = 0; i < 3; i++) {
+      const response = await firstValueFrom(
+        service.get(`${baseUrl}/ok`, { signal: controller.signal }),
+      );
+      expect(response.data).toEqual({ ok: true });
+    }
+
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
   it('rxjs retry() re-runs the axiosRef request interceptors, with fresh headers each attempt', async () => {

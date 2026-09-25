@@ -58,6 +58,34 @@ function compatibleGlobalDispatcher(): Dispatcher {
   return fallbackAgent;
 }
 
+/**
+ * The per-request abort signal passed to undici. undici only needs `aborted`,
+ * `reason` and a single 'abort' listener, so this is cheaper than an
+ * AbortController (no EventTarget) on every request.
+ */
+class RequestAbortSignal {
+  aborted = false;
+  reason: unknown = undefined;
+  private listener: (() => void) | undefined;
+
+  addEventListener(_type: 'abort', listener: () => void): void {
+    this.listener = listener;
+  }
+
+  removeEventListener(): void {
+    this.listener = undefined;
+  }
+
+  abort(reason?: unknown): void {
+    if (this.aborted) return;
+    this.aborted = true;
+    this.reason = reason;
+    const listener = this.listener;
+    this.listener = undefined;
+    listener?.();
+  }
+}
+
 @Injectable()
 export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
@@ -256,33 +284,32 @@ export class HttpService {
 
       // Abort the undici request when the Observable is unsubscribed before
       // it settles (rxjs `timeout()`, `switchMap`, `takeUntil`, `race`, ...),
-      // matching `@nestjs/axios`' `makeObservable` teardown. A fresh
-      // AbortController is created per subscription (so `defer()`/`retry()`
-      // attempts don't share one), and combined with any user-supplied
-      // signal (already merged with `cancelToken` by `normalizeAxiosRequest`)
-      // via a plain listener rather than `AbortSignal.any`, which is slower.
-      // `settled` flips to true once the response (or, for a `stream`
-      // response, the headers) has been handed to the subscriber, at which
-      // point rxjs's own teardown runs but must no longer abort.
+      // matching `@nestjs/axios`' `makeObservable` teardown. Each subscription
+      // gets its own signal (so `defer()`/`retry()` attempts don't share one),
+      // combined with any user-supplied signal (already merged with
+      // `cancelToken` by `normalizeAxiosRequest`). `settled` flips to true once
+      // the response (or, for a `stream` response, the headers) has been handed
+      // to the subscriber; after that neither the teardown nor the user signal
+      // may abort, or a stream body the caller is still reading would break.
       const userSignal = requestOptions.signal as AbortSignal | undefined;
-      const controller = new AbortController();
+      const abortSignal = new RequestAbortSignal();
       let settled = false;
+      let onUserAbort: (() => void) | undefined;
       if (userSignal) {
         if (userSignal.aborted) {
-          controller.abort(userSignal.reason);
+          abortSignal.abort(userSignal.reason);
         } else {
-          userSignal.addEventListener(
-            'abort',
-            () => controller.abort(userSignal.reason),
-            { once: true },
-          );
+          onUserAbort = () => {
+            if (!settled) abortSignal.abort(userSignal.reason);
+          };
+          userSignal.addEventListener('abort', onUserAbort, { once: true });
         }
       }
 
       const options = {
         ...requestOptions,
         ...this.resolveRedirectOptions(dispatcher, maxRedirections),
-        signal: controller.signal,
+        signal: abortSignal as any,
       };
 
       request(interceptorRequest.url, options)
@@ -298,7 +325,9 @@ export class HttpService {
         });
 
       return () => {
-        if (!settled) controller.abort();
+        if (!settled) abortSignal.abort();
+        // Don't leave a listener on a long-lived user signal for every request
+        if (onUserAbort) userSignal!.removeEventListener('abort', onUserAbort);
       };
     });
   }
