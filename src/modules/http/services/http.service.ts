@@ -363,6 +363,15 @@ export class HttpService {
     // a `CookieAgent` (wrapping `baseDispatcher`) for it, which only happens
     // once here, in the constructor - never on the request path.
     if (options.cookieJar) {
+      const jar = options.cookieJar;
+      if (
+        typeof jar.setCookie !== 'function' ||
+        typeof jar.getCookieString !== 'function'
+      ) {
+        throw new TypeError(
+          'cookieJar must be a tough-cookie CookieJar instance (e.g. `new CookieJar()` from tough-cookie)',
+        );
+      }
       const CookieAgent = loadCookieAgent();
       const cookieAgentOptions: any = {
         cookies: { jar: options.cookieJar },

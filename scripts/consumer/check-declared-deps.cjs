@@ -157,10 +157,16 @@ function runtimeSpecs(file, text) {
   const visit = node => {
     if (
       ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'require' &&
-      node.arguments.length === 1 &&
-      ts.isStringLiteralLike(node.arguments[0])
+      node.arguments.length >= 1 &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      // require('x'), import('x') and require.resolve('x')
+      ((ts.isIdentifier(node.expression) &&
+        node.expression.text === 'require') ||
+        node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === 'resolve' &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === 'require'))
     ) {
       specs.push({ spec: node.arguments[0].text, topLevel: isTopLevel(node) });
     } else if (

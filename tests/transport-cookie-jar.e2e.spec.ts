@@ -118,6 +118,28 @@ describe('HttpService cookieJar', () => {
     expect(whoami.data.cookie).toBe('sid=abc123');
   });
 
+  it('registerAsync: a jar from a factory works', async () => {
+    const module = await Test.createTestingModule({
+      imports: [
+        HttpModule.registerAsync({
+          useFactory: async () => ({ cookieJar: new CookieJar() }),
+        }),
+      ],
+    }).compile();
+    modules.push(module);
+    const service = module.get(HttpService);
+
+    await firstValueFrom(service.get(`${base}/login`));
+    const whoami: any = await firstValueFrom(service.get(`${base}/whoami`));
+    expect(whoami.data.cookie).toBe('sid=abc123');
+  });
+
+  it('rejects a cookieJar that is not a CookieJar at setup', async () => {
+    await expect(makeService({ cookieJar: { notAJar: true } })).rejects.toThrow(
+      'cookieJar must be a tough-cookie CookieJar instance',
+    );
+  });
+
   it('throws a clear error when the optional peers are not installed', () => {
     try {
       jest.isolateModules(() => {
