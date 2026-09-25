@@ -349,7 +349,7 @@ describe('Axios Real-World Scenarios', () => {
       });
 
       const response: any = await firstValueFrom(
-        httpService.request(serverUrl),
+        httpService.request(serverUrl, { responseType: 'arraybuffer' }),
       );
 
       expect(Buffer.isBuffer(response.data)).toBe(true);

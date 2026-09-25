@@ -167,12 +167,14 @@ describe('Axios Full Compatibility E2E Tests', () => {
         });
       });
 
-      it('should handle binary responses as Buffer', async () => {
+      it('should handle binary responses as Buffer with responseType: arraybuffer', async () => {
         const [axiosRes, undiciRes] = await Promise.all([
           firstValueFrom(
             axiosService.get(serverUrl, { responseType: 'arraybuffer' }),
           ),
-          firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+          firstValueFrom(
+            undiciService.request(serverUrl, { responseType: 'arraybuffer' }),
+          ) as Promise<any>,
         ]);
 
         // Axios returns ArrayBuffer for responseType: 'arraybuffer'
@@ -183,6 +185,16 @@ describe('Axios Full Compatibility E2E Tests', () => {
         // Compare the actual bytes
         const axiosBuffer = Buffer.from(axiosRes.data);
         expect(undiciRes.data.equals(axiosBuffer)).toBe(true);
+      });
+
+      it('should decode octet-stream as a UTF-8 string by default, like axios', async () => {
+        const [axiosRes, undiciRes] = await Promise.all([
+          firstValueFrom(axiosService.get(serverUrl)),
+          firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+        ]);
+
+        expect(typeof undiciRes.data).toBe('string');
+        expect(undiciRes.data).toBe(axiosRes.data);
       });
     });
 

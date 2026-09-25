@@ -527,24 +527,28 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: JSON is only parsed for JSON content types (axios parses any string)', async () => {
-      const { data } = await firstValueFrom(
-        undiciService.get(`${base}/text-json`),
+    it('JSON-looking strings are parsed regardless of content type, like axios', async () => {
+      const [a, u] = await both(
+        async s => (await first(s.get(`${base}/text-json`))).data,
       );
-      expect(data).toBe('{"a":1}');
+      expect(u).toEqual(a);
+      expect(u).toEqual({ a: 1 });
     });
 
-    it('documented difference: unknown binary content types are Buffers (axios: utf8 string)', async () => {
-      const { data } = await firstValueFrom(undiciService.get(`${base}/octet`));
-      expect(Buffer.isBuffer(data)).toBe(true);
+    it('unknown/text-ish content types decode to a UTF-8 string, like axios', async () => {
+      const [a, u] = await both(
+        async s => (await first(s.get(`${base}/octet`))).data,
+      );
+      expect(u).toEqual(a);
+      expect(u).toBe('hello');
     });
 
-    it('documented difference: gzip responses are not decompressed', async () => {
-      const [{ data: axiosData }, { data: undiciData }] = await both(s =>
-        first(s.get(`${base}/gzip`)),
+    it('gzip responses are decompressed, like axios', async () => {
+      const [a, u] = await both(s =>
+        first(s.get(`${base}/gzip`)).then(r => r.data),
       );
-      expect(axiosData).toEqual({ zipped: true });
-      expect(undiciData).not.toEqual({ zipped: true });
+      expect(u).toEqual(a);
+      expect(u).toEqual({ zipped: true });
     });
 
     it('documented difference: response.headers is a plain object (no .get())', async () => {

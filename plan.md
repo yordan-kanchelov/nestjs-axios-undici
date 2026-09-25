@@ -96,8 +96,8 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
   - Prototypes: `plan/prototypes/automation/differential/`, plus the compat report's probe tests.
-  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 183 scenarios, 77 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
-    - fix(response): decode bodies like axios: 19
+  - `tests/compat/differential/` (Jest, runs in `test:jest`): `harness.ts` plus `response.diff.spec.ts`, `request.diff.spec.ts`, `errors.diff.spec.ts`, `interceptors.diff.spec.ts`, `module.diff.spec.ts` — 183 scenarios, 58 with `knownDifference`, each pointing at one phase 2 item below. Runs in about 8s. Known-difference count per item (a case can only carry one item, so an item that touches several code paths, like the errors item, collects more):
+    - fix(response): decode bodies like axios: 0 (fixed by `claude/fix-response-decoding`)
     - feat: axios default headers: 11
     - fix(observable): abort on unsubscribe and run request interceptors per subscription: 4
     - refactor(axiosRef): one config object from interceptors to response.config / error.config: 11
@@ -123,7 +123,7 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
 
 Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/compat/`. ★ = must-fix for 1.0.
 
-- [ ] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase.
+- [~] ★ **fix(response): decode bodies like axios.** `+json` types, strings for non-binary responses, gzip/br/deflate with `decompress`, `blob`, and `statusText` taken from the server's reason phrase. (`claude/fix-response-decoding`, PR open)
 - [ ] ★ **feat: axios default headers.** `Accept`, `User-Agent`, `Accept-Encoding`; flatten `headers.common` / `headers.post` in module options.
 - [ ] ★ **fix(observable): abort on unsubscribe and run request interceptors per subscription.** Use `defer()` so `retry()` re-runs interceptors.
 - [ ] ★ **refactor(axiosRef): one config object from interceptors to `response.config` / `error.config`.**
@@ -197,3 +197,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 - 2026-09-25: PR #10 merged (consumer matrix green on Node 22.17.0/22.19.0/22/24/26). Worker C started (`claude/api-parity-checks`).
 - 2026-09-25: PR #11 (C) merged. PR #12 (D, 183 differential scenarios, 77 known differences) open, in review.
 - 2026-09-25: PR #12 (D) merged; the differential tests pass on Nest 10/11/12. Worker E (perf check) next.
+- 2026-09-25: `claude/fix-response-decoding` (phase 2 fix(response)) open: `+json` content types, JSON-looking text/no-content-type/octet-stream/javascript/x-www-form-urlencoded/svg decode like axios, gzip/br/deflate decompression honouring `decompress`, `blob` as a string, `statusText` from the real reason phrase. Fixes all 19 tracked `knownDifference` cases in `response.diff.spec.ts`.

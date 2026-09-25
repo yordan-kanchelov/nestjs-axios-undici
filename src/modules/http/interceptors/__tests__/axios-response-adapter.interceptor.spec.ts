@@ -95,12 +95,12 @@ describe('AxiosResponseAdapterInterceptor', () => {
       expect(mockResponse.body.text).toHaveBeenCalled();
     });
 
-    it('should transform binary response to Buffer', async () => {
+    it('should transform an unrecognised binary response to Buffer', async () => {
       const binaryData = new ArrayBuffer(8);
       const mockResponse: Partial<Dispatcher.ResponseData> = {
         statusCode: 200,
         headers: {
-          'content-type': 'application/octet-stream',
+          'content-type': 'image/png',
         },
         body: {
           json: jest.fn(),
@@ -119,6 +119,53 @@ describe('AxiosResponseAdapterInterceptor', () => {
       expect(result.data).toBeInstanceOf(Buffer);
       expect(result.data.length).toBe(8);
       expect(mockResponse.body.arrayBuffer).toHaveBeenCalled();
+    });
+
+    it('should decode application/octet-stream as a UTF-8 string, like axios', async () => {
+      const mockResponse: Partial<Dispatcher.ResponseData> = {
+        statusCode: 200,
+        headers: {
+          'content-type': 'application/octet-stream',
+        },
+        body: {
+          json: jest.fn(),
+          text: jest.fn().mockResolvedValue('plain bytes'),
+          arrayBuffer: jest.fn(),
+        } as any,
+      };
+
+      const request = createMockRequest();
+      const next = createMockNext(mockResponse);
+
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
+      expect(result.data).toBe('plain bytes');
+      expect(mockResponse.body.text).toHaveBeenCalled();
+    });
+
+    it('should JSON-parse a `+json` suffix content type', async () => {
+      const mockResponse: Partial<Dispatcher.ResponseData> = {
+        statusCode: 200,
+        headers: {
+          'content-type': 'application/problem+json',
+        },
+        body: {
+          json: jest.fn(),
+          text: jest.fn().mockResolvedValue('{"title":"Bad Request"}'),
+          arrayBuffer: jest.fn(),
+        } as any,
+      };
+
+      const request = createMockRequest();
+      const next = createMockNext(mockResponse);
+
+      const result: any = await firstValueFrom(
+        interceptor.intercept(request, next),
+      );
+
+      expect(result.data).toEqual({ title: 'Bad Request' });
     });
 
     it('should handle null body', async () => {
