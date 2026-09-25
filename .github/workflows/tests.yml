@@ -65,6 +65,10 @@ jobs:
         if: matrix.full
         run: npm run lint && npm run typecheck && npm run format:check
 
+      - name: Type-check drop-in compatibility with @nestjs/axios
+        if: matrix.full
+        run: npm run typecheck:compat
+
       - name: Unit and e2e tests with coverage
         if: matrix.full
         run: npm run test:cov

@@ -73,10 +73,25 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - The CI matrix is: Node 24 Nest 12 (full checks + coverage), Node 26 Nest 12, Node 24 undici 8, Node 22 Nest 11, Node 22 Nest 10.
   - Coverage uses the v8 provider (fixes the Codecov paths), `forceExit` is removed, and `form-data` becomes a devDependency.
   - Note: the required status check names change.
-- [ ] **C. test: API-surface parity and type-level drop-in checks**
+- [~] **C. test: API-surface parity and type-level drop-in checks** (`claude/api-parity-checks`, PR open)
   - Compare the members of `@nestjs/axios` HttpService, axiosRef and AxiosHeaders against ours, with an allowlist.
   - Compile-only drop-in tests: `AxiosRequestConfig` / `AxiosResponse` / `AxiosInstance` assignability, plus the 16 typecompat usage cases.
   - Prototypes: `plan/prototypes/automation/api-surface-parity.cjs`, `.../differential/drop-in.types.ts`, `plan/prototypes/quality/typecompat/`.
+  - `tests/compat/api-surface.spec.ts` (Jest, runs in `test:jest`): fails on any un-allowlisted missing member, and on any allowlisted member that starts to exist (stale allowlist). Allowlisted gaps, all tracked to phase 2 items above:
+    - `HttpService`: `instance`, `makeObservable` (protected @nestjs/axios internals, still enumerable at runtime); `query` (new in @nestjs/axios 12, not implemented).
+    - `axiosRef`: not callable, and missing `getUri`, `create`, `postForm`, `putForm`, `patchForm`, `query` (needs "make axiosRef a real axios instance"); the allowlist also has the function artifacts `length`, `name`, `prototype`.
+    - `axiosRef.defaults`: `transitional`, `adapter`, `transformRequest`, `transformResponse`, `timeout`, `xsrfCookieName`, `xsrfHeaderName`, `maxContentLength`, `maxBodyLength`, `env`, `validateStatus` not populated (same item); `hasOwnProperty` is allowlisted too.
+    - `axiosRef.interceptors.request`: `handlers`, `forEach` internals (same item).
+    - `AxiosHeaders` instance: no `concat`, `getSetCookie`, `normalize`, `toString`, and the `get/set/has*` shorthands (needs "full AxiosHeaders").
+  - `tests/types/` (compile-only, `npm run typecheck:compat` = `tsc -p tests/types/tsconfig.json`, `--strict`, added to the Node 24 full-checks CI row): `drop-in.ts` (HttpService/axiosRef/HttpModuleOptions assignability against `@nestjs/axios`) and `usage.ts` (the 16 typecompat cases). Both compile against the **built** package (`../../lib`, so `typecheck:compat` runs `npm run build` first) to keep the existing "strict TypeScript in tsconfig.build.json (7 errors)" gap (phase 3) out of this check. `tests/types` is excluded from `tsconfig.json` (so it isn't loosely re-typechecked) and isn't matched by Jest's `testRegex`. Known gaps, each pinned with `// @ts-expect-error` (tracked: plan.md phase 2 "types: axios interop", except axiosRef callability which is "feat(axiosRef): make it a real axios instance"):
+    - `HttpService` isn't fully assignable to `@nestjs/axios`' (its `request()` config type rejects axios' `AxiosRequestConfig`).
+    - `axiosRef` isn't assignable to `AxiosInstance`.
+    - `get()` doesn't accept an axios `AxiosRequestConfig` / return `Observable<AxiosResponse<T>>`.
+    - `@nestjs/axios`' `HttpModuleAsyncOptions` isn't accepted by `registerAsync` (`register` with `HttpModuleOptions` already works).
+    - `post<T, D>()` has no second (body) type parameter.
+    - axiosRef interceptor configs: `config.headers['Authorization'] = ...` and `config.headers.set(...)` don't type-check; a callback typed `InternalAxiosRequestConfig` doesn't fit.
+    - A response mock typed `Observable<AxiosResponse<T>>` doesn't fit `HttpService['get']`'s return type.
+    - Not expressible as `@ts-expect-error` (no error is raised, so nothing to pin): `HttpModuleOptions` accepts typos (e.g. `{ timeuot: 5 }`) because it's effectively `& any`.
 - [ ] **D. test: table-driven differential harness**
   - Each scenario runs through `@nestjs/axios` and this package against one local server, and the results are compared.
   - `knownDifference` cases are cross-checked against the docs.
