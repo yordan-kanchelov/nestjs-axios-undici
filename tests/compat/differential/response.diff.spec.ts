@@ -4,7 +4,12 @@
  * and plan.md phase 1 item D / plan/reports/axios-compat.md for the source
  * audit these cases are ported from.
  */
-import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
+import {
+  brotliCompressSync,
+  deflateSync,
+  gzipSync,
+  zstdCompressSync,
+} from 'node:zlib';
 import { differential, normData, normHeaders, Ctx } from './harness';
 
 const TYPES = 'plan.md phase 2: types: axios interop';
@@ -58,6 +63,17 @@ const routes = {
       'Content-Encoding': 'deflate',
     });
     res.end(deflateSync('{"z":"deflate"}'));
+  },
+  '/zstd': (_req: any, res: any) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Encoding': 'zstd',
+    });
+    res.end(zstdCompressSync('{"z":"zstd"}'));
+  },
+  '/reviver': (_req: any, res: any) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{"a":1,"b":2}');
   },
   '/negotiate-gzip': (req: any, res: any) => {
     if (String(req.headers['accept-encoding'] || '').includes('gzip')) {
@@ -263,11 +279,45 @@ differential('Differential: response decoding', routes, [
     },
   },
   // ---- decompression
-  ...['/gzip', '/br', '/deflate'].map(path => ({
+  ...['/gzip', '/br', '/deflate', '/zstd'].map(path => ({
     name: `compressed ${path}`,
     run: (s: any, ctx: Ctx) => s.get(`${ctx.base}${path}`),
     normalize: async (o: any) => resultShape(o.result),
   })),
+  {
+    name: 'zstd: responseType stream decompresses too',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/zstd`, { responseType: 'stream' }),
+    normalize: async (o: any) => (await normData(o.result?.data)) ?? null,
+  },
+  {
+    name: 'zstd: decompress: false leaves the raw compressed bytes',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/zstd`, {
+        decompress: false,
+        responseType: 'arraybuffer',
+      }),
+    normalize: (o: any) => ({ ok: !!o.result, status: o.result?.status }),
+  },
+  // ---- parseReviver
+  {
+    name: 'parseReviver (request-level) transforms the default-parsed JSON',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/reviver`, {
+        parseReviver: (key: string, value: any) =>
+          typeof value === 'number' ? value * 10 : value,
+      }),
+    normalize: (o: any) => o.result?.data,
+  },
+  {
+    name: 'parseReviver (axiosRef.defaults) applies the same way as request-level',
+    run: (s: any, ctx: Ctx) => {
+      s.axiosRef.defaults.parseReviver = (key: string, value: any) =>
+        typeof value === 'number' ? value + 1 : value;
+      return s.get(`${ctx.base}/reviver`);
+    },
+    normalize: (o: any) => o.result?.data,
+  },
   {
     name: 'server gzips when Accept-Encoding allows (typical CDN)',
     run: (s, ctx) => s.get(`${ctx.base}/negotiate-gzip`),

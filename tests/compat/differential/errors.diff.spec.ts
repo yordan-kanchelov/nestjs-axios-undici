@@ -295,6 +295,30 @@ differential('Differential: errors, timeouts, cancellation', routes, [
       ),
   },
   {
+    name: 'redirect: sensitiveHeaders drops a custom header cross-host too',
+    run: (s: any, ctx: Ctx) =>
+      s.get(
+        `${ctx.base}/redirect?to=${encodeURIComponent(`${ctx.other}/echo`)}`,
+        { headers: { 'X-A': 'secret' }, sensitiveHeaders: ['X-A'] },
+      ),
+  },
+  {
+    name: 'redirect: sensitiveHeaders keeps a custom header on a same-host redirect',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=/echo`, {
+        headers: { 'X-A': 'kept' },
+        sensitiveHeaders: ['X-A'],
+      }),
+  },
+  {
+    name: 'redirect: an invalid sensitiveHeaders rejects with ERR_BAD_OPTION_VALUE',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=/echo`, {
+        sensitiveHeaders: 'not-an-array' as any,
+      }),
+    normalize: (o: any) => ({ code: o.error?.code, name: o.error?.name }),
+  },
+  {
     name: 'redirect: beforeRedirect can rewrite headers for the next hop',
     run: (s, ctx) =>
       s.get(`${ctx.base}/redirect?code=302&to=/echo`, {

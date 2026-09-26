@@ -377,6 +377,25 @@ export function createUnparsableTimeoutError(
 }
 
 /**
+ * The error axios gives for a `sensitiveHeaders` that isn't an array of
+ * strings (`normalizeSensitiveHeaders`'s validation, `redirect.adapter.ts`):
+ * `ERR_BAD_OPTION_VALUE`, axios' exact message - checked against real axios
+ * 1.20 (`lib/adapters/http.js`). Like `createUnparsableTimeoutError`, this
+ * library checks it up front, before ever dispatching, so no `.request` is
+ * set.
+ */
+export function createInvalidSensitiveHeadersError(
+  request: HttpInterceptorRequest,
+): AxiosError {
+  const error = new AxiosError(
+    'sensitiveHeaders must be an array of strings',
+    AxiosError.ERR_BAD_OPTION_VALUE,
+  );
+  error._setLazyConfig(request);
+  return error;
+}
+
+/**
  * Undici's own argument-validation failures (an invalid header value, an
  * invalid method, ...): axios' Node `http`/`https` transport is far more
  * permissive about some of these (e.g. it silently strips a bare `\n` from a

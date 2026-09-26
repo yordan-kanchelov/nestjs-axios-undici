@@ -106,6 +106,18 @@ export interface AxiosLikeRequestConfig<D = any> {
       headers: Record<string, any>;
     },
   ) => void;
+  /**
+   * Extra header names (case-insensitive) stripped on a redirect alongside
+   * the built-in `Authorization`/`Cookie`/`Proxy-Authorization`, as in axios.
+   * Unlike the built-in 3 (dropped only on a protocol downgrade or a
+   * cross-host redirect that isn't to a subdomain), a header named here is
+   * dropped on *any* change of origin, including a subdomain redirect or an
+   * http-to-https upgrade - see `shouldStripSensitiveHeaders`/`isSameOrigin`
+   * in `redirect.adapter.ts`. Must be an array of strings, or rejects with
+   * `ERR_BAD_OPTION_VALUE`, as in axios. Read only while redirects are
+   * actually followed (`maxRedirects` isn't `0`).
+   */
+  sensitiveHeaders?: string[];
   validateStatus?: ((status: number) => boolean) | null;
   auth?: { username: string; password: string };
   decompress?: boolean;
@@ -117,6 +129,19 @@ export interface AxiosLikeRequestConfig<D = any> {
   transformResponse?:
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
+  /**
+   * axios' reviver for the default `transformResponse`'s `JSON.parse` call
+   * (`lib/defaults/index.js`: `JSON.parse(data, own(this, 'parseReviver'))`).
+   * Only reaches this library's own default JSON parsing - a custom
+   * `transformResponse` replaces default parsing entirely (same as axios: it
+   * would have to read `this.parseReviver` itself to honour it).
+   */
+  parseReviver?: (
+    this: any,
+    key: string,
+    value: any,
+    context?: { source?: string },
+  ) => any;
   /**
    * axios' `CancelToken` is deprecated in favour of `signal`. Typed `any`
    * (rather than `AxiosCancelTokenLike`, still exported and used at

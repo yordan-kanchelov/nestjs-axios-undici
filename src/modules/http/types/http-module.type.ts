@@ -85,6 +85,8 @@ export interface HttpModuleOptions {
    */
   allowAbsoluteUrls?: boolean;
   beforeRedirect?: BeforeRedirectFn;
+  /** Extra header names dropped on a redirect alongside `Authorization`/`Cookie`/`Proxy-Authorization`, as in axios; see `AxiosLikeRequestConfig.sensitiveHeaders`. */
+  sensitiveHeaders?: string[];
   validateStatus?: ((status: number) => boolean) | null;
   /** `'document'` is accepted for axios type compatibility (browser-only; not implemented on Node.js). */
   responseType?: AxiosResponseType;
@@ -136,6 +138,17 @@ export interface HttpModuleOptions {
   maxRate?: number | [number, number];
   /** Seeded into `axiosRef.defaults.formSerializer`. */
   formSerializer?: FormSerializerOptions;
+  /**
+   * Reviver passed to `JSON.parse` by the default (no custom
+   * `transformResponse`) JSON decoding, as in axios. Seeded into
+   * `axiosRef.defaults.parseReviver`; a per-request value wins.
+   */
+  parseReviver?: (
+    this: any,
+    key: string,
+    value: any,
+    context?: { source?: string },
+  ) => any;
 
   // --- not an axios option: opt-in cookie storage/replay ---
   /**
