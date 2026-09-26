@@ -76,7 +76,7 @@ describe('axios request adapter', () => {
         'x-module': 'overridden',
         Accept: 'application/json, text/plain, */*',
         'User-Agent': expect.stringMatching(/^nestjs-axios-undici\/\d/),
-        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Encoding': 'gzip, compress, deflate, br',
         'X-Common': 'c',
         'X-Get': 'g',
         'X-Flat': 'f',

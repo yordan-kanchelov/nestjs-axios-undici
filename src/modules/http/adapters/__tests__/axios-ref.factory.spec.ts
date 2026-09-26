@@ -7,7 +7,7 @@ describe('createAxiosRefDefaults', () => {
     expect(defaults.headers.common).toEqual({
       Accept: 'application/json, text/plain, */*',
       'User-Agent': `nestjs-axios-undici/${LIBRARY_VERSION}`,
-      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept-Encoding': 'gzip, compress, deflate, br',
     });
     // per-method buckets start empty, as axios'
     expect(defaults.headers.get).toEqual({});
@@ -25,7 +25,7 @@ describe('createAxiosRefDefaults', () => {
   it('still seeds Accept-Encoding when decompress is left unset', () => {
     const defaults = createAxiosRefDefaults({});
     expect(defaults.headers.common['Accept-Encoding']).toBe(
-      'gzip, deflate, br',
+      'gzip, compress, deflate, br',
     );
   });
 

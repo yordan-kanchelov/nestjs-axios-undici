@@ -1196,7 +1196,8 @@ export function normalizeAxiosRequest(
       input.maxBodyLength === undefined) ||
     (instance.timeoutErrorMessage !== undefined &&
       input.timeoutErrorMessage === undefined) ||
-    (instance.transitional !== undefined && input.transitional === undefined) ||
+    (defaults?.transitional !== undefined &&
+      input.transitional === undefined) ||
     (defaults?.onUploadProgress !== undefined &&
       input.onUploadProgress === undefined) ||
     (defaults?.onDownloadProgress !== undefined &&
@@ -1439,11 +1440,15 @@ export function normalizeAxiosRequest(
   ) {
     options.timeoutErrorMessage = instance.timeoutErrorMessage;
   }
+  // Precedence: request > axiosRef.defaults - module options are already
+  // folded into `defaults` at setup (`DEFAULTS_PASSTHROUGH_KEYS`), matching
+  // `parseReviver`/`sensitiveHeaders` above (no separate `instance.
+  // transitional` fallback needed).
   if (
     options.transitional === undefined &&
-    instance.transitional !== undefined
+    defaults?.transitional !== undefined
   ) {
-    options.transitional = instance.transitional;
+    options.transitional = defaults.transitional;
   }
 
   const signal = resolveSignal(options.signal, cancelToken);
@@ -1650,6 +1655,13 @@ export function buildAxiosConfig(
     maxRate: input.maxRate ?? defaults?.maxRate,
     formSerializer: input.formSerializer ?? defaults?.formSerializer,
     parseReviver: input.parseReviver ?? defaults?.parseReviver,
+    // plan.md phase 2 "transitional.silentJSONParsing": request >
+    // axiosRef.defaults, the same precedence as every other passthrough
+    // default above - module options are already folded into `defaults` at
+    // setup (`DEFAULTS_PASSTHROUGH_KEYS`), so no separate `instance.
+    // transitional` fallback is needed here, matching `parseReviver`/
+    // `formSerializer` just above.
+    transitional: input.transitional ?? defaults?.transitional,
   };
 
   return config;

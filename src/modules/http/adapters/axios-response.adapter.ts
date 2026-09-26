@@ -1,12 +1,18 @@
 import type { UrlObject } from 'node:url';
-import { Readable } from 'node:stream';
+import { Readable, PassThrough } from 'node:stream';
 import type { Dispatcher } from 'undici';
-import { AxiosError, createStatusError } from '../errors/axios-error';
+import {
+  AxiosError,
+  CanceledError,
+  createStatusError,
+} from '../errors/axios-error';
 import {
   hasContentLengthLimit,
+  isDecodableEncoding,
   readBodyAsResponseType,
   readDefaultBody,
   readText,
+  STRICT_JSON_RAW_TEXT,
 } from './axios-response-type.adapter';
 import { buildLazyAxiosConfig } from './axios-request.adapter';
 import type { AbortableSignal } from './axios-progress.adapter';
@@ -23,6 +29,24 @@ type ParsedRequestUrl = {
   host: string | undefined;
   path: string | undefined;
 };
+
+/**
+ * True for a zlib decode failure (`Z_BUF_ERROR`, `Z_DATA_ERROR`, ...) -
+ * every zlib error code Node's `zlib` module raises is prefixed `Z_`
+ * (checked against `node:zlib`'s own source). Used to scope the
+ * corrupt-compressed-body wrapping (both the buffered catch block and
+ * `wrapStreamCancellation` below) to genuine decode failures only - a
+ * network-level error (a dropped socket, `UND_ERR_SOCKET`, ...) that
+ * happens to occur while decompression was configured must still reach
+ * `fail()`/`toAxiosError`'s own, more specific shaping (e.g. `UND_ERR_SOCKET`
+ * -> `ECONNRESET`) unwrapped, exactly as it would for an uncompressed
+ * response - wrapping it here first would short-circuit that mapping
+ * (`toAxiosError`'s very first check returns an already-`isAxiosError`
+ * value unchanged).
+ */
+function isZlibErrorCode(code: unknown): boolean {
+  return typeof code === 'string' && code.startsWith('Z_');
+}
 
 /**
  * A lightweight stand-in for axios' `response.request`/`error.request` (the
@@ -306,6 +330,120 @@ function guardStreamMaxContentLength(
 }
 
 /**
+ * Matches axios' own `responseType: 'stream'` cancellation exactly (checked
+ * against real axios 1.20, `lib/adapters/http.js`): an abort-shaped error
+ * (undici's `RequestAbortedError`, `code: 'UND_ERR_ABORTED'`/`name:
+ * 'AbortError'`) reaching the response stream *after* it was already handed
+ * back to the caller surfaces as a proper `CanceledError`/`ERR_CANCELED`,
+ * not the raw undici error - covering both of plan.md's phase 2 stream-abort
+ * items:
+ *
+ * - **the caller's own upload body stream (`config.data`) is destroyed
+ *   mid-request.** Confirmed directly (a real server + a real undici
+ *   `request()` call, no code of this library's own in the loop at all):
+ *   undici *itself* already reacts to that by erroring the in-flight
+ *   response body with exactly this shape - axios' own upload-side
+ *   `data.on('close', ...)` watcher (`lib/adapters/http.js`) exists only to
+ *   *trigger* the same abort Node's `http`/its own `RedirectableRequest`
+ *   otherwise wouldn't raise on its own; undici already raises it as part
+ *   of the *response* body's own lifecycle, so this library needs no
+ *   matching upload-side watcher of its own - only this translation.
+ * - **the caller's own `config.signal` fires after the stream was already
+ *   emitted.** `HttpService.executeRequest` (`http.service.ts`) now keeps
+ *   reacting to it for as long as this stream stays open (mirroring axios'
+ *   own `config.signal.addEventListener('abort', abort)`, removed only once
+ *   `stream.finished(data, ...)` fires - checked against real axios 1.20)
+ *   instead of only up to the point the stream was handed back, and calls
+ *   `abortSignal.abort(...)` - the same per-request signal already passed to
+ *   undici's `request()` - which is what actually produces the
+ *   `UND_ERR_ABORTED` this function then translates.
+ *
+ * Implemented as a `PassThrough` wrapper, not a listener added directly to
+ * `source`: once undici (or anything else) has already called
+ * `source.destroy(err)`, `source` is already `destroyed` by the time its
+ * `'error'` listeners run, so there's no way to swap the error object
+ * in place for whichever listener - the caller's own - reads it. Bidirectional
+ * destroy propagation (`wrapper.once('close', ...)`) matches
+ * `decompressStream`'s own pattern, so a caller that stops reading the
+ * wrapper early still releases the raw undici body/socket behind it.
+ *
+ * `wrapDecodeErrors` additionally covers plan.md's "corrupt/truncated
+ * compressed body" item's streamed half: when the response is actually
+ * being decompressed, any *other* error reaching this stream (a zlib
+ * `Z_BUF_ERROR`/`Z_DATA_ERROR` from `decompressStream`'s decompressor, its
+ * own bidirectional-destroy propagation from the raw body, ...) becomes a
+ * real `AxiosError` too - `AxiosError.from(err, undefined, ..., requestInfo)`
+ * (`code` falling back to `err.code`, e.g. `'Z_BUF_ERROR'`), matching axios'
+ * own buffered-path shape (`AxiosError.from(err, null, config, lastRequest,
+ * response)` in `lib/adapters/http.js`'s `handleStreamError`) applied to the
+ * stream path too, so a caller's own `data.on('error', ...)` sees
+ * `isAxiosError`/`.config`/`.request` there exactly as it would for the
+ * buffered case's rejection. An error that's already axios-shaped (e.g.
+ * `guardStreamMaxContentLength`'s own `AxiosError`, above) passes through
+ * unchanged either way.
+ *
+ * Only ever applied when at least one of the two triggers above, or an
+ * active decompression, is actually possible for this request (see the call
+ * site in `toAxiosLikeResponse`, below) - an ordinary, uncompressed streamed
+ * download with no signal and no streamed upload body is untouched and pays
+ * nothing extra.
+ */
+function wrapStreamCancellation(
+  source: Readable,
+  request: HttpInterceptorRequest,
+  requestInfo: RequestInfo | Record<string, any>,
+  wrapDecodeErrors: boolean,
+): Readable {
+  const wrapper = new PassThrough();
+  source.pipe(wrapper);
+  source.once('error', (err: any) => {
+    if (wrapper.destroyed) return;
+    if (err?.code === 'UND_ERR_ABORTED' || err?.name === 'AbortError') {
+      const canceled = new CanceledError(undefined, undefined, requestInfo);
+      canceled._setLazyConfig(request);
+      wrapper.destroy(canceled);
+      return;
+    }
+    if (wrapDecodeErrors && isZlibErrorCode(err?.code) && !err.isAxiosError) {
+      const axiosError = AxiosError.from(err, undefined, undefined, requestInfo);
+      axiosError._setLazyConfig(request);
+      wrapper.destroy(axiosError);
+      return;
+    }
+    wrapper.destroy(err);
+  });
+  wrapper.once('close', () => {
+    if (!source.destroyed) source.destroy();
+  });
+  return wrapper;
+}
+
+/**
+ * True when `wrapStreamCancellation` above is needed for one of its two
+ * cancellation triggers: the caller's own `config.signal`, or a streamed
+ * upload body (`config.data`, normalized onto `options.body` by the time
+ * this reads it), checked off `request.options` directly: still the
+ * caller's *own* `AbortSignal`/`Readable` there, never this library's
+ * internal `RequestAbortSignal` or a re-wrapped upload-meter stream
+ * (`HttpService.executeRequest` mutates only its own local copy of these
+ * options, never `request.options` itself - see that method's doc comments
+ * on `options`/`uploadMeterConfig`). The call site below also wraps
+ * whenever decompression is active, independent of this check - see
+ * `wrapStreamCancellation`'s `wrapDecodeErrors` doc comment.
+ */
+function needsStreamCancellationWrap(request: HttpInterceptorRequest): boolean {
+  const options = request.options as Record<string, any> | undefined;
+  const rawSignal = options?.signal;
+  const rawBody = options?.body;
+  return (
+    (!!rawSignal && typeof rawSignal.addEventListener === 'function') ||
+    (!!rawBody &&
+      typeof rawBody.pipe === 'function' &&
+      typeof rawBody.on === 'function')
+  );
+}
+
+/**
  * The header names Node's `IncomingMessage.headers` getter keeps only the
  * FIRST occurrence of when the same name arrives more than once (all other
  * repeats are silently dropped) - ported from `_http_incoming.js`'s
@@ -428,10 +566,45 @@ export async function toAxiosLikeResponse(
   // axios (`parseReviver` is read by axios' own default `transformResponse`
   // only; a fully custom one would have to read `this.parseReviver` itself).
   const parseReviver = (request.options as any)?.parseReviver;
+  // axios' `transitional.silentJSONParsing === false` (plan.md phase 2
+  // "transitional.silentJSONParsing"): only ever matters for `responseType:
+  // 'json'` (see `parseJsonStrict`'s doc comment) - a plain property read
+  // otherwise, no cost for the default (silent) path.
+  const strictJsonParsing =
+    responseType === 'json' &&
+    (request.options as any)?.transitional?.silentJSONParsing === false;
   const contentEncodingHeader = headers['content-encoding'];
   const contentEncoding = Array.isArray(contentEncodingHeader)
     ? contentEncodingHeader[0]
     : contentEncodingHeader;
+  // plan.md phase 2 "delete Content-Encoding from response.headers after a
+  // successful decode": matches axios' own timing and conditions exactly
+  // (`lib/adapters/http.js`, checked against real axios 1.20) - deleted only
+  // when `decompress !== false` and the header is actually present, and
+  // then: unconditionally for a `HEAD` request or a `204` (no body to
+  // decode either way, but axios still clears a stale header that would
+  // otherwise "confuse downstream operations" - its own comment), or when
+  // the encoding is one this library (like axios) actually decodes
+  // (`isDecodableEncoding` - never for an unrecognized encoding, which is
+  // passed through undecoded and must keep its header). Applied to every
+  // `responseType`, including `'stream'`: axios does this synchronously,
+  // before ever branching on `responseType`, based only on the encoding
+  // being a decodable one - not on whether the (for `'stream'`, still
+  // in-flight) decode has actually finished. axios doesn't otherwise touch
+  // `content-length` on decode (checked: no such line in `http.js`), so
+  // this library doesn't either - a decoded body's `Content-Length` header
+  // is left as the server sent it (the *compressed* size), exactly like
+  // axios.
+  if (
+    contentEncoding &&
+    decompress !== false &&
+    (String((request.options as any)?.method || 'GET').toUpperCase() ===
+      'HEAD' ||
+      undiciResponse.statusCode === 204 ||
+      isDecodableEncoding(contentEncoding))
+  ) {
+    delete headers['content-encoding'];
+  }
   // A custom `transformResponse` (module- or request-level, only ever set
   // when the axiosRef pipeline built this request - see `hasAxiosPipeline`)
   // *replaces* default parsing, same as axios: it gets the raw decoded body
@@ -519,20 +692,37 @@ export async function toAxiosLikeResponse(
         body as Dispatcher.ResponseData['body'],
         responseType,
         maxContentLength,
-        { contentEncoding, decompress, parseReviver },
+        { contentEncoding, decompress, parseReviver, strictJsonParsing },
       );
       if (
         responseType === 'stream' &&
-        hasContentLengthLimit(maxContentLength) &&
         parsedData &&
         typeof (parsedData as any).pipe === 'function'
       ) {
-        parsedData = guardStreamMaxContentLength(
-          parsedData as Readable,
-          maxContentLength!,
-          request,
-          requestInfo,
-        );
+        if (hasContentLengthLimit(maxContentLength)) {
+          parsedData = guardStreamMaxContentLength(
+            parsedData as Readable,
+            maxContentLength!,
+            request,
+            requestInfo,
+          );
+        }
+        // plan.md phase 2 "cancel a responseType: 'stream' response when its
+        // request stream is destroyed" / "abort a responseType: 'stream'
+        // response when the caller's AbortSignal fires after emission" /
+        // "decode Content-Encoding: compress"'s corrupt/truncated-body
+        // half - see `wrapStreamCancellation`'s doc comment. Gated so an
+        // ordinary, uncompressed streamed download with no signal and no
+        // streamed upload body pays nothing extra.
+        const isCompressedStream = !!contentEncoding && decompress !== false;
+        if (needsStreamCancellationWrap(request) || isCompressedStream) {
+          parsedData = wrapStreamCancellation(
+            parsedData as Readable,
+            request,
+            requestInfo,
+            isCompressedStream,
+          );
+        }
       }
     } else if (body) {
       parsedData = await readDefaultBody(
@@ -545,6 +735,38 @@ export async function toAxiosLikeResponse(
       parsedData = '';
     }
   } catch (error) {
+    // axios' `transitional.silentJSONParsing: false` + `responseType:
+    // 'json'` (plan.md phase 2 "transitional.silentJSONParsing" -
+    // `parseJsonStrict`'s doc comment): a JSON parse failure tagged with the
+    // raw text it failed to parse. Matches axios' own shape exactly
+    // (`AxiosError.from(e, ERR_BAD_RESPONSE, this, null, own(this,
+    // 'response'))` in `lib/defaults/index.js`): `response.data` is the raw,
+    // un-parsed string (checked against real axios 1.20 - the parsed value
+    // is never assigned when `transformResponse` itself throws), and
+    // `.request` stays unset (axios passes `request: null` there too).
+    // Takes priority over every other branch below: this is always our own
+    // marker, set nowhere else.
+    if (Object.prototype.hasOwnProperty.call(error, STRICT_JSON_RAW_TEXT)) {
+      const partialResponse = new AxiosLikeResponseImpl(
+        (error as any)[STRICT_JSON_RAW_TEXT],
+        undiciResponse.statusCode,
+        undiciResponse.statusText ||
+          STATUS_TEXT_MAP[undiciResponse.statusCode] ||
+          'Unknown',
+        headers,
+        request,
+        requestInfo,
+      );
+      const axiosError = AxiosError.from(
+        error,
+        AxiosError.ERR_BAD_RESPONSE,
+        undefined,
+        undefined,
+        partialResponse,
+      );
+      axiosError._setLazyConfig(request);
+      throw axiosError;
+    }
     // `maxContentLength` exceeded: a well-formed AxiosError (`name` stays
     // `'AxiosError'`, not the plain internal `Error`'s own `'Error'`), not
     // the plain, internal `Error` `assertMaxContentLength` throws to keep
@@ -559,12 +781,45 @@ export async function toAxiosLikeResponse(
       axiosError._setLazyConfig(request);
       throw axiosError;
     }
-    // Failures after the body was read (for example corrupt gzip/br/deflate
-    // data), reject like axios does: the body can't be read again, so
-    // falling back would silently return empty data. A metered body (see
-    // `isMetered` above) is never given a second read either - it has no
-    // `.bodyUsed`/`.text()` of its own to recover through, and any error on
-    // it (abort, destroy, a throwing progress callback) is real.
+    // Corrupt/truncated compressed data (plan.md phase 2 "decode
+    // Content-Encoding: compress"'s buffered half): axios wraps this via
+    // `AxiosError.from(err, null, config, lastRequest, response)` - checked
+    // against real axios 1.20 (`lib/adapters/http.js`'s buffered
+    // `handleStreamError`) - `code` falling back to the raw zlib code (e.g.
+    // `'Z_BUF_ERROR'`/`'Z_DATA_ERROR'`), `response.data` never assigned
+    // (matching axios: the buffered read failed before any value could be).
+    // Scoped to an actual zlib decode failure (`isZlibErrorCode`): a
+    // network-level error (a dropped socket, an abort, ...) that happens to
+    // occur while decompression was configured must still reach
+    // `fail()`/`toAxiosError`'s own, more specific shaping unwrapped - see
+    // that helper's doc comment.
+    if (isZlibErrorCode((error as any)?.code)) {
+      const partialResponse = new AxiosLikeResponseImpl(
+        undefined,
+        undiciResponse.statusCode,
+        undiciResponse.statusText ||
+          STATUS_TEXT_MAP[undiciResponse.statusCode] ||
+          'Unknown',
+        headers,
+        request,
+        requestInfo,
+      );
+      const axiosError = AxiosError.from(
+        error,
+        undefined,
+        undefined,
+        requestInfo,
+        partialResponse,
+      );
+      axiosError._setLazyConfig(request);
+      throw axiosError;
+    }
+    // Failures after the body was read (for example a metered download's
+    // real failure - an abort, destroy, or a throwing progress callback),
+    // reject like axios does: the body can't be read again, so falling back
+    // would silently return empty data. A metered body (see `isMetered`
+    // above) is never given a second read either - it has no
+    // `.bodyUsed`/`.text()` of its own to recover through.
     if (isMetered || (body as any)?.bodyUsed) {
       throw error;
     }

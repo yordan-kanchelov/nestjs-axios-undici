@@ -70,7 +70,12 @@ export interface HttpModuleOptions {
   timeout?: number;
   /** Message used instead of the default `timeout of ${timeout}ms exceeded`, as in axios. */
   timeoutErrorMessage?: string;
-  /** `transitional.clarifyTimeoutError: true` reports a timeout as `ETIMEDOUT` instead of `ECONNABORTED`, as in axios. */
+  /**
+   * `clarifyTimeoutError: true` reports a timeout as `ETIMEDOUT` instead of
+   * `ECONNABORTED`; `silentJSONParsing: false` (with `responseType: 'json'`)
+   * throws on invalid JSON instead of returning the raw text - both as in
+   * axios. Request > `axiosRef.defaults.transitional` > this module option.
+   */
   transitional?: {
     clarifyTimeoutError?: boolean;
     silentJSONParsing?: boolean;

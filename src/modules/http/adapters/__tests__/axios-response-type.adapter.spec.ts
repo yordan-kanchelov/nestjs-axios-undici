@@ -1,12 +1,15 @@
 import { Readable } from 'node:stream';
 import { gzipSync, zstdCompressSync } from 'node:zlib';
 import {
+  isDecodableEncoding,
   isZstdSupported,
   parseJsonOrText,
+  parseJsonStrict,
   parseTextMaybeJson,
   readBodyAsResponseType,
   readDefaultBody,
   readText,
+  STRICT_JSON_RAW_TEXT,
   SUPPORTED_CONTENT_ENCODINGS,
 } from '../axios-response-type.adapter';
 
@@ -151,6 +154,96 @@ describe('axios-response-type adapter: gzip + maxContentLength', () => {
   });
 });
 
+/**
+ * plan.md phase 2 "fix: decode Content-Encoding: compress". axios' Node
+ * `http` transport aliases `compress`/`x-compress` onto its gzip decoder
+ * (`zlib.createUnzip()`/`gunzipSync` - checked against real axios 1.20,
+ * `lib/adapters/http.js`); before this fix, this library didn't recognize
+ * either name at all and returned the raw (still-compressed) bytes
+ * unchanged, for every path (buffered, streamed, `decompress: false`,
+ * streamed `maxContentLength`) - fails without `GZIP_ENCODINGS` including
+ * `compress`/`x-compress`.
+ */
+describe('axios-response-type adapter: Content-Encoding: compress / x-compress', () => {
+  it.each(['compress', 'x-compress', 'COMPRESS'])(
+    'decodes %s like gzip (buffered, fast path)',
+    async encoding => {
+      const raw = Buffer.from('x'.repeat(5000));
+      const body = bodyFromBuffer(gzipSync(raw));
+
+      const result = await readBodyAsResponseType(
+        body,
+        'arraybuffer',
+        undefined,
+        { contentEncoding: encoding },
+      );
+
+      expect(Buffer.from(result).toString()).toBe(raw.toString());
+    },
+  );
+
+  it('decodes compress via readDefaultBody (no explicit responseType)', async () => {
+    const raw = Buffer.from(JSON.stringify({ z: 'compress' }));
+    const body = bodyFromBuffer(gzipSync(raw));
+
+    const result = await readDefaultBody(body, 'application/json', {
+      contentEncoding: 'compress',
+    });
+
+    expect(result).toEqual({ z: 'compress' });
+  });
+
+  it('honours the streamed maxContentLength check against the DECOMPRESSED size, like gzip', async () => {
+    const raw = Buffer.alloc(100_000, 'x');
+    const compressed = gzipSync(raw);
+    expect(compressed.length).toBeLessThan(1000);
+    const body = bodyFromBuffer(compressed);
+
+    await expect(
+      readBodyAsResponseType(body, 'arraybuffer', 1000, {
+        contentEncoding: 'compress',
+      }),
+    ).rejects.toMatchObject({
+      code: 'ERR_BAD_RESPONSE',
+      message: 'maxContentLength size of 1000 exceeded',
+    });
+  });
+
+  it('decompress: false returns the raw, still-compressed bytes', async () => {
+    const raw = Buffer.alloc(1000, 'x');
+    const compressed = gzipSync(raw);
+    const body = bodyFromBuffer(compressed);
+
+    const result = await readBodyAsResponseType(
+      body,
+      'arraybuffer',
+      1_000_000,
+      { contentEncoding: 'x-compress', decompress: false },
+    );
+
+    expect(Buffer.compare(Buffer.from(result), compressed)).toBe(0);
+  });
+
+  it('decodes for responseType: "stream" too', async () => {
+    const raw = Buffer.from('hello compress');
+    const body = Readable.from([gzipSync(raw)]) as any;
+
+    const result = await readBodyAsResponseType(body, 'stream', undefined, {
+      contentEncoding: 'compress',
+    });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of result as Readable) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    expect(Buffer.concat(chunks).toString()).toBe(raw.toString());
+  });
+
+  it('SUPPORTED_CONTENT_ENCODINGS advertises compress, matching axios’ own default Accept-Encoding', () => {
+    expect(SUPPORTED_CONTENT_ENCODINGS).toBe('gzip, compress, deflate, br');
+  });
+});
+
 describe('axios-response-type adapter: zstd decompression', () => {
   it('this Node build supports zstd (sanity check for the rest of this block)', () => {
     // Every Node this package's `engines.node` (`>=22.17.0`) allows has zstd
@@ -249,7 +342,7 @@ describe('axios-response-type adapter: zstd decompression', () => {
     // its own out-of-the-box default (`ACCEPT_ENCODING`, not
     // `ACCEPT_ENCODING_WITH_ZSTD`) leaves it out - see the doc comment on
     // `SUPPORTED_CONTENT_ENCODINGS`.
-    expect(SUPPORTED_CONTENT_ENCODINGS).toBe('gzip, deflate, br');
+    expect(SUPPORTED_CONTENT_ENCODINGS).toBe('gzip, compress, deflate, br');
     expect(SUPPORTED_CONTENT_ENCODINGS).not.toContain('zstd');
   });
 });
@@ -324,5 +417,97 @@ describe('axios-response-type adapter: parseReviver', () => {
       parseReviver: reviver,
     });
     expect(asText).toBe('{"n":5}');
+  });
+});
+
+/**
+ * plan.md phase 2 "transitional.silentJSONParsing". axios' own condition
+ * (`strictJSONParsing = !silentJSONParsing && JSONRequested`, checked
+ * against real axios 1.20's `lib/defaults/index.js`): only ever `true` for
+ * `responseType: 'json'` with `transitional.silentJSONParsing === false`
+ * explicitly set - every other combination (default/silent, or any other
+ * `responseType`) must behave exactly as before.
+ */
+describe('axios-response-type adapter: parseJsonStrict (transitional.silentJSONParsing)', () => {
+  it('parses valid JSON exactly like the silent path', () => {
+    expect(parseJsonStrict('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  it('applies the reviver, like the silent path', () => {
+    const reviver = (key: string, value: any) =>
+      typeof value === 'number' ? value * 2 : value;
+    expect(parseJsonStrict('{"a":1}', reviver)).toEqual({ a: 2 });
+  });
+
+  it('returns an empty string unchanged, never attempting to parse it (matches axios: falsy data skips the whole branch)', () => {
+    expect(parseJsonStrict('')).toBe('');
+  });
+
+  it('throws the native SyntaxError, tagged with the raw text, instead of falling back to it', () => {
+    let caught: any;
+    try {
+      parseJsonStrict('not json{');
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(SyntaxError);
+    expect(caught[STRICT_JSON_RAW_TEXT]).toBe('not json{');
+  });
+
+  it('readBodyAsResponseType (responseType: "json", strictJsonParsing) rejects on invalid JSON instead of returning the raw text', async () => {
+    const body = bodyFromBuffer(Buffer.from('not json{'));
+
+    await expect(
+      readBodyAsResponseType(body, 'json', undefined, {
+        strictJsonParsing: true,
+      }),
+    ).rejects.toBeInstanceOf(SyntaxError);
+  });
+
+  it('readBodyAsResponseType (responseType: "json", strictJsonParsing false/unset) stays silent - the default behaviour is unchanged', async () => {
+    const body = bodyFromBuffer(Buffer.from('not json{'));
+
+    const result = await readBodyAsResponseType(body, 'json', undefined, {});
+    expect(result).toBe('not json{');
+  });
+
+  it('never reaches responseType: "text" - strictJsonParsing is only read for "json"', async () => {
+    const body = bodyFromBuffer(Buffer.from('not json{'));
+
+    const result = await readBodyAsResponseType(body, 'text', undefined, {
+      strictJsonParsing: true,
+    });
+    expect(result).toBe('not json{');
+  });
+});
+
+/**
+ * plan.md phase 2 "delete Content-Encoding from response.headers after a
+ * successful decode": `isDecodableEncoding` is the predicate
+ * `axios-response.adapter.ts` uses to decide whether an encoding was
+ * actually decoded (as opposed to passed through untouched) - checked
+ * against `decompressBuffer`/`decompressStream` above, which this must stay
+ * in lockstep with.
+ */
+describe('axios-response-type adapter: isDecodableEncoding', () => {
+  it.each(['gzip', 'x-gzip', 'compress', 'x-compress', 'deflate', 'br'])(
+    '%s is decodable',
+    encoding => {
+      expect(isDecodableEncoding(encoding)).toBe(true);
+    },
+  );
+
+  it('is case-insensitive and trims whitespace, matching axios’ own header read', () => {
+    expect(isDecodableEncoding(' GZIP ')).toBe(true);
+    expect(isDecodableEncoding('X-Compress')).toBe(true);
+  });
+
+  it('zstd is decodable exactly when this Node build supports it', () => {
+    expect(isDecodableEncoding('zstd')).toBe(isZstdSupported);
+  });
+
+  it('an unrecognized encoding is not decodable', () => {
+    expect(isDecodableEncoding('identity')).toBe(false);
+    expect(isDecodableEncoding('bogus')).toBe(false);
   });
 });

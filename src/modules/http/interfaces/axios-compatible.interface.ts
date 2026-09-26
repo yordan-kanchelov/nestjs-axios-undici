@@ -76,10 +76,15 @@ export interface AxiosLikeRequestConfig<D = any> {
   timeoutErrorMessage?: string;
   /**
    * axios' escape hatch for behaviour that will change in a future major.
-   * Only `clarifyTimeoutError` (code `ETIMEDOUT` instead of `ECONNABORTED`
-   * on a timeout) is honoured; `silentJSONParsing`/`forcedJSONParsing` are
-   * accepted for type compatibility but describe the default parsing this
-   * library already does unconditionally.
+   * `clarifyTimeoutError` (code `ETIMEDOUT` instead of `ECONNABORTED` on a
+   * timeout) is honoured, as is `silentJSONParsing: false` combined with
+   * `responseType: 'json'`: a `JSON.parse` failure then throws
+   * (`ERR_BAD_RESPONSE`, `response.data` the raw text) instead of silently
+   * falling back to it - matching axios' own `strictJSONParsing` exactly
+   * (only ever true for `responseType: 'json'`; every other, default
+   * parsing path stays silent regardless of this flag, same as axios).
+   * `forcedJSONParsing` is accepted for type compatibility but describes the
+   * default parsing this library already does unconditionally.
    */
   transitional?: {
     clarifyTimeoutError?: boolean;

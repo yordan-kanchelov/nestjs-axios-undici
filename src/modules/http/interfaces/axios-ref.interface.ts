@@ -135,6 +135,12 @@ export interface AxiosRefDefaults<D = any> {
   ) => any;
   /** See `AxiosLikeRequestConfig.sensitiveHeaders`. */
   sensitiveHeaders?: string[];
+  /** See `AxiosLikeRequestConfig.transitional`. */
+  transitional?: {
+    clarifyTimeoutError?: boolean;
+    silentJSONParsing?: boolean;
+    forcedJSONParsing?: boolean;
+  };
 }
 
 /**

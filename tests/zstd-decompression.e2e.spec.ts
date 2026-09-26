@@ -53,11 +53,10 @@ describe('zstd decompression (real server)', () => {
     const response = await firstValueFrom(service.request(baseUrl));
 
     expect(response.data).toEqual(PAYLOAD);
-    // Note: this library doesn't strip the `content-encoding` response
-    // header after decompressing, for zstd or for gzip/br/deflate - a
-    // pre-existing behaviour this feature doesn't change either way (see
-    // `axios-response.adapter.ts`; axios itself deletes it after decoding).
-    expect(response.headers['content-encoding']).toBe('zstd');
+    // plan.md phase 2 "delete Content-Encoding from response.headers after
+    // a successful decode": zstd is actually decoded here, so the header is
+    // removed, matching axios exactly (see `axios-response.adapter.ts`).
+    expect(response.headers['content-encoding']).toBeUndefined();
   });
 
   it('decompresses a zstd response for responseType: "stream"', async () => {
@@ -129,7 +128,7 @@ describe('zstd decompression (real server)', () => {
     try {
       const echoUrl = `http://127.0.0.1:${(echoServer.address() as AddressInfo).port}`;
       await firstValueFrom(service.request(echoUrl));
-      expect(seenAcceptEncoding).toBe('gzip, deflate, br');
+      expect(seenAcceptEncoding).toBe('gzip, compress, deflate, br');
     } finally {
       await new Promise<void>(resolve => echoServer.close(() => resolve()));
     }

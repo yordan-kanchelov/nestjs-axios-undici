@@ -10,6 +10,7 @@ import {
   gzipSync,
   zstdCompressSync,
 } from 'node:zlib';
+import axios from 'axios';
 import { differential, normData, normHeaders, Ctx } from './harness';
 
 const TYPES = 'plan.md phase 2: types: axios interop';
@@ -95,6 +96,27 @@ const routes = {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html>html</html>');
     }
+  },
+  // plan.md phase 2 "fix: decode Content-Encoding: compress": axios
+  // aliases `compress` onto its gzip decoder, so the fixture is
+  // genuinely gzip-compressed bytes under that label.
+  '/compress': (_req: any, res: any) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Encoding': 'compress',
+    });
+    res.end(gzipSync('{"z":"compress"}'));
+  },
+  // plan.md phase 2 "corrupt/truncated compressed body": claims gzip, but
+  // isn't.
+  '/corrupt-gzip': (_req: any, res: any) => {
+    res.writeHead(200, { 'Content-Encoding': 'gzip' });
+    res.end('not actually gzip data');
+  },
+  // plan.md phase 2 "transitional.silentJSONParsing".
+  '/invalid-json': (_req: any, res: any) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('not valid json{');
   },
 };
 
@@ -279,7 +301,7 @@ differential('Differential: response decoding', routes, [
     },
   },
   // ---- decompression
-  ...['/gzip', '/br', '/deflate', '/zstd'].map(path => ({
+  ...['/gzip', '/br', '/deflate', '/zstd', '/compress'].map(path => ({
     name: `compressed ${path}`,
     run: (s: any, ctx: Ctx) => s.get(`${ctx.base}${path}`),
     normalize: async (o: any) => resultShape(o.result),
@@ -298,6 +320,93 @@ differential('Differential: response decoding', routes, [
         responseType: 'arraybuffer',
       }),
     normalize: (o: any) => ({ ok: !!o.result, status: o.result?.status }),
+  },
+  {
+    // plan.md phase 2 "fix: decode Content-Encoding: compress" - decoded
+    // via the same path as gzip, on both sides.
+    name: 'compress: responseType stream decompresses too',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/compress`, { responseType: 'stream' }),
+    normalize: async (o: any) => (await normData(o.result?.data)) ?? null,
+  },
+  {
+    // plan.md phase 2 "delete Content-Encoding from response.headers after
+    // a successful decode": once actually decoded, the header is gone on
+    // both sides.
+    name: 'delete Content-Encoding after a successful decode (gzip)',
+    run: (s: any, ctx: Ctx) => s.get(`${ctx.base}/gzip`),
+    normalize: (o: any) => ({
+      hasContentEncoding: Object.prototype.hasOwnProperty.call(
+        o.result?.headers?.toJSON?.() ?? o.result?.headers ?? {},
+        'content-encoding',
+      ),
+    }),
+  },
+  {
+    // plan.md phase 2 "corrupt/truncated compressed body": axios wraps it
+    // via `AxiosError.from` - same shape on both sides (isAxiosError,
+    // .config, .request all populated; the exact zlib error code/message
+    // is Node-version-sensitive, so this only compares the shape, not the
+    // literal code/message - the unit/e2e tests above pin those exactly).
+    name: 'corrupt gzip body (buffered) rejects as a real AxiosError on both sides',
+    run: (s: any, ctx: Ctx) => s.get(`${ctx.base}/corrupt-gzip`),
+    normalize: (o: any) => ({
+      isAxiosError: axios.isAxiosError(o.error),
+      hasConfig: !!o.error?.config,
+      hasRequest: !!o.error?.request,
+    }),
+  },
+  {
+    // Deliberate improvement over axios, not a bug: real axios never wraps
+    // a `responseType: 'stream'` decompression error at all (checked
+    // against real axios 1.20 - `lib/adapters/http.js` only registers a
+    // `handleStreamError` listener on the *buffered* branch; the stream
+    // branch just hands `responseStream` back with no error-shaping
+    // listener of its own). This library wraps it as a real AxiosError
+    // anyway (`wrapStreamCancellation`'s `wrapDecodeErrors`), matching the
+    // shape a caller already gets on the buffered path.
+    name: 'corrupt gzip body (responseType: stream) rejects as a real AxiosError (this library only - axios leaves it raw)',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/corrupt-gzip`, { responseType: 'stream' }),
+    normalize: async (o: any) => {
+      if (!o.result) {
+        return { resolved: false, isAxiosError: axios.isAxiosError(o.error) };
+      }
+      try {
+        for await (const _chunk of o.result.data) {
+          // drain
+        }
+        return { resolved: true, streamed: true };
+      } catch (streamError: any) {
+        return {
+          resolved: true,
+          isAxiosError: axios.isAxiosError(streamError),
+          hasConfig: !!streamError?.config,
+        };
+      }
+    },
+    knownDifference:
+      'plan.md phase 2: corrupt/truncated compressed body (deliberate improvement: stream errors are wrapped as AxiosError here, unlike real axios)',
+  },
+  // ---- transitional.silentJSONParsing
+  {
+    name: 'silentJSONParsing: false + responseType json rejects invalid JSON as a real AxiosError on both sides',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/invalid-json`, {
+        responseType: 'json',
+        transitional: { silentJSONParsing: false },
+      }),
+    normalize: (o: any) => ({
+      isAxiosError: axios.isAxiosError(o.error),
+      code: o.error?.code,
+      responseData: o.error?.response?.data,
+    }),
+  },
+  {
+    name: 'silentJSONParsing default (silent) stays silent on both sides',
+    run: (s: any, ctx: Ctx) =>
+      s.get(`${ctx.base}/invalid-json`, { responseType: 'json' }),
+    normalize: (o: any) => ({ data: o.result?.data }),
   },
   // ---- parseReviver
   {

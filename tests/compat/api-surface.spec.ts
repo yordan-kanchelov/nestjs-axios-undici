@@ -66,7 +66,6 @@ allow(
   'axiosRef.defaults',
   [
     'hasOwnProperty',
-    'transitional',
     'xsrfCookieName',
     'xsrfHeaderName',
     'maxContentLength',
@@ -75,7 +74,7 @@ allow(
   ],
   {
     reason:
-      'not part of this item: axios options this library never maps at module level either (xsrfCookieName/xsrfHeaderName are a documented no-op; maxContentLength/maxBodyLength are read straight off module/request options, not defaults; transitional/env/hasOwnProperty are axios internals with no equivalent here)',
+      'not part of this item: axios options this library never maps at module level either (xsrfCookieName/xsrfHeaderName are a documented no-op; maxContentLength/maxBodyLength are read straight off module/request options, not defaults; env/hasOwnProperty are axios internals with no equivalent here). `transitional` is now populated - see plan.md phase 2 "transitional.silentJSONParsing".',
     tracked: 'docs/axios-supported-options.md',
   },
 );

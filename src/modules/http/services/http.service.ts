@@ -4,7 +4,7 @@ import {
   Optional,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { Transform } from 'node:stream';
+import { Transform, type Readable } from 'node:stream';
 import {
   request,
   ProxyAgent,
@@ -1364,13 +1364,30 @@ export class HttpService implements OnModuleDestroy {
       // combined with any user-supplied signal (already merged with
       // `cancelToken` by `normalizeAxiosRequest`). `settled` flips to true once
       // the response (or, for a `stream` response, the headers) has been handed
-      // to the subscriber; after that neither the teardown nor the user signal
-      // may abort, or a stream body the caller is still reading would break.
-      // It also gates redirect-hop teardown: unsubscribing mid-redirect must
-      // abort the *current* hop, not one already superseded.
+      // to the subscriber; after that the teardown itself may no longer abort
+      // (a stream body the caller is still reading would break), but the
+      // *user's own* signal still may (plan.md phase 2 "abort a
+      // responseType: 'stream' response when the caller's AbortSignal fires
+      // after emission" - matches axios' own `config.signal
+      // .addEventListener('abort', abort)`, which it keeps live for exactly
+      // as long as a `responseType: 'stream'` body stays open, checked
+      // against real axios 1.20's `lib/adapters/http.js`). For anything
+      // other than a still-open stream, aborting `abortSignal` post-settle is
+      // a harmless no-op (undici's own dispatch has already fully finished
+      // by then, so nothing is still listening on it) - see `openStream`
+      // below, which tracks exactly when that isn't true. It also gates
+      // redirect-hop teardown: unsubscribing mid-redirect must abort the
+      // *current* hop, not one already superseded.
       const userSignal = requestOptions.signal as AbortSignal | undefined;
       const abortSignal = new RequestAbortSignal();
       let settled = false;
+      // The still-open `responseType: 'stream'` body, once handed to the
+      // subscriber, whose own close/end/error keeps `onUserAbort`'s listener
+      // alive past `settled` (see `onResponse` below) - mirrors axios' own
+      // `stream.finished(data, onFinished)`. `undefined` for every other
+      // response shape, and for a stream response with no `userSignal` at
+      // all (nothing to keep listening for).
+      let openStream: Readable | undefined;
       // axios never sets `error.request` for a signal that was already
       // aborted *before* the request was ever dispatched (checked against
       // real axios 1.20: no request object exists yet at that point) -
@@ -1383,7 +1400,7 @@ export class HttpService implements OnModuleDestroy {
           abortSignal.abort(userSignal.reason);
         } else {
           onUserAbort = () => {
-            if (!settled) abortSignal.abort(userSignal.reason);
+            abortSignal.abort(userSignal.reason);
           };
           userSignal.addEventListener('abort', onUserAbort, { once: true });
         }
@@ -1672,6 +1689,38 @@ export class HttpService implements OnModuleDestroy {
         ).then(axiosRes => {
           settled = true;
           clearDeadline();
+          // plan.md phase 2 "abort a responseType: 'stream' response when
+          // the caller's AbortSignal fires after emission": keep
+          // `onUserAbort` live for as long as this stream stays open
+          // (mirrors axios' own `stream.finished(data, onFinished)`,
+          // `lib/adapters/http.js`) instead of letting the teardown below
+          // remove it the instant this subscription completes - RxJS
+          // auto-unsubscribes right after `subscriber.complete()`, which
+          // would otherwise detach it before the caller ever gets a chance
+          // to abort a still-flowing stream. `wrapStreamCancellation`
+          // (`axios-response.adapter.ts`) is what actually turns the
+          // `abortSignal.abort()` this then triggers into the `CanceledError`
+          // the caller's own `data.on('error', ...)` sees.
+          const data = (axiosRes as any).data;
+          if (
+            onUserAbort &&
+            data &&
+            typeof data.pipe === 'function' &&
+            typeof data.once === 'function'
+          ) {
+            openStream = data as Readable;
+            openStream.once('close', () => {
+              openStream = undefined;
+              if (onUserAbort) {
+                userSignal!.removeEventListener('abort', onUserAbort);
+                onUserAbort = undefined;
+              }
+              (userSignal as any)?.[SIGNAL_CLEANUP]?.();
+            });
+          } else if (onUserAbort) {
+            userSignal!.removeEventListener('abort', onUserAbort);
+            onUserAbort = undefined;
+          }
           subscriber.next(axiosRes);
           subscriber.complete();
         }, fail);
@@ -1694,13 +1743,28 @@ export class HttpService implements OnModuleDestroy {
       return () => {
         clearDeadline();
         if (!settled) abortSignal.abort();
-        // Don't leave a listener on a long-lived user signal for every request
-        if (onUserAbort) userSignal!.removeEventListener('abort', onUserAbort);
-        // Review follow-up (PR #15): also remove the listener `resolveSignal`
-        // (axios-request.adapter.ts) may have added directly on the
-        // *caller's* signal when combining it with a legacy `cancelToken` -
-        // see `SIGNAL_CLEANUP`'s doc comment.
-        (userSignal as any)?.[SIGNAL_CLEANUP]?.();
+        // Don't leave a listener on a long-lived user signal for every
+        // request - except while `openStream` (above) is still open: that
+        // listener is this stream's *only* remaining way to react to a later
+        // `userSignal.abort()`, so removing it here (RxJS auto-unsubscribes
+        // right after `subscriber.complete()`, i.e. immediately after this
+        // stream was first handed back) would silently reintroduce the very
+        // gap this fixes. `openStream`'s own `'close'` listener removes it
+        // once the stream itself is done.
+        if (!openStream) {
+          if (onUserAbort) {
+            userSignal!.removeEventListener('abort', onUserAbort);
+            onUserAbort = undefined;
+          }
+          // Review follow-up (PR #15): also remove the listener
+          // `resolveSignal` (axios-request.adapter.ts) may have added
+          // directly on the *caller's* signal when combining it with a
+          // legacy `cancelToken` - see `SIGNAL_CLEANUP`'s doc comment.
+          // Deferred alongside `onUserAbort` above: while `openStream` is
+          // still open, a cancelToken this combined with must still be able
+          // to reach `userSignal` (and so `onUserAbort`) too.
+          (userSignal as any)?.[SIGNAL_CLEANUP]?.();
+        }
       };
     });
   }
