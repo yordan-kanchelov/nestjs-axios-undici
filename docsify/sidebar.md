@@ -2,7 +2,6 @@
 
 * Getting Started
   * [Introduction](/)
-  * [Features](/docs/features.md)
   * [Migration from @nestjs/axios](/docs/migration-guide.md)
 
 * Guides
@@ -11,11 +10,11 @@
   * [Interceptors](/docs/guides/interceptors.md)
   * [Error Handling](/docs/guides/error-handling.md)
   * [Testing](/docs/guides/testing.md)
-  * [Supported Axios Options](/docs/axios-supported-options.md)
+
+* Reference
+  * [Axios Compatibility](/docs/axios-supported-options.md)
+  * [HttpModule](/docs/http/http.module.md)
+  * [HttpService](/docs/http/http.service.md)
 
 * Performance
   * [Benchmarks](/docs/benchmarks.md)
-
-* API Reference
-  * [HttpModule](/docs/http/http.module.md)
-  * [HttpService](/docs/http/http.service.md)

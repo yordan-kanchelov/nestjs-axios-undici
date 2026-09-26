@@ -59,7 +59,7 @@ this.httpService.request({
 });
 ```
 
-See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for every option and its differences from axios.
+See [Axios Compatibility](/docs/axios-supported-options.md#request-config) for every option and its differences from axios.
 
 ## Undici-style `request`
 

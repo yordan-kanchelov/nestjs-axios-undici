@@ -1,6 +1,6 @@
 # Testing
 
-You can test services that use `nestjs-axios-undici` either by mocking the `HttpService` directly or by using Undici's `MockAgent`.
+You can test services that use `nestjs-axios-undici` either by mocking the `HttpService` directly or by using undici's `MockAgent`.
 
 ## Mocking HttpService
 
@@ -38,7 +38,7 @@ describe('CatsService', () => {
 
 ## Using Undici MockAgent
 
-`MockAgent` intercepts requests inside the Node.js process, so the real `HttpService` logic (interceptors, axios adapter) is exercised.
+`MockAgent` intercepts requests inside the Node.js process, so the real `HttpService` logic (interceptors, response and error handling) is exercised.
 
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
@@ -100,20 +100,32 @@ describe('authInterceptor', () => {
 });
 ```
 
-Class interceptors with dependencies can be created through a testing module:
+Class interceptors with dependencies can be created through a testing module. Here, `LoggingInterceptor` injects Nest's own `Logger`:
 
 ```typescript
+import { Logger } from '@nestjs/common';
+
+@Injectable()
+class LoggingInterceptor implements HttpInterceptor {
+  constructor(private readonly logger: Logger) {}
+
+  intercept(request: HttpInterceptorRequest, next: HttpInterceptorHandler) {
+    this.logger.log(`Request to ${request.url}`);
+    return next.handle(request);
+  }
+}
+
 describe('LoggingInterceptor', () => {
   let interceptor: LoggingInterceptor;
-  let logger: LoggerService;
+  let logger: Logger;
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
-      providers: [LoggingInterceptor, LoggerService],
+      providers: [LoggingInterceptor, Logger],
     }).compile();
 
     interceptor = module.get(LoggingInterceptor);
-    logger = module.get(LoggerService);
+    logger = module.get(Logger);
   });
 
   it('logs requests', async () => {

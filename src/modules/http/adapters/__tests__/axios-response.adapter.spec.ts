@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import {
+  joinDuplicateHeaders,
   RequestInfo,
   resolveIsValidStatus,
   toAxiosLikeResponse,
@@ -431,5 +432,130 @@ describe('resolveIsValidStatus', () => {
   it('validateStatus present as an own key (even null/undefined) always resolves, matching axios settle()', () => {
     expect(resolveIsValidStatus({ validateStatus: null }, 500)).toBe(true);
     expect(resolveIsValidStatus({ validateStatus: undefined }, 500)).toBe(true);
+  });
+});
+
+/**
+ * plan.md phase 2 "fix: join duplicate response headers like axios/Node".
+ * undici's own header parser accumulates every repeated header name into an
+ * array uniformly; Node's `IncomingMessage.headers` getter - and so axios,
+ * which runs on it - applies a per-name rule instead (ported from
+ * `_http_incoming.js`'s `matchKnownFields`/`_addHeaderLine`). Each case here
+ * would fail without `joinDuplicateHeaders`: the pre-fix code just handed
+ * `undiciResponse.headers` through untouched.
+ */
+describe('joinDuplicateHeaders (plan.md phase 2: join duplicate response headers like axios/Node)', () => {
+  it('returns the same object reference when nothing is duplicated (no allocation on the common path)', () => {
+    const headers = { 'content-type': 'application/json', 'x-req-id': 'abc' };
+    expect(joinDuplicateHeaders(headers)).toBe(headers);
+  });
+
+  it('joins a duplicated generic header with ", "', () => {
+    expect(joinDuplicateHeaders({ 'x-foo': ['one', 'two'] })).toEqual({
+      'x-foo': 'one, two',
+    });
+  });
+
+  it('joins a duplicated, Node-known "comma" header (e.g. accept-encoding) with ", " too', () => {
+    expect(joinDuplicateHeaders({ 'accept-encoding': ['gzip', 'br'] })).toEqual(
+      { 'accept-encoding': 'gzip, br' },
+    );
+  });
+
+  it('keeps only the first value of a "no duplicates" header and drops the rest', () => {
+    expect(
+      joinDuplicateHeaders({
+        'content-type': ['text/plain', 'text/html'],
+      }),
+    ).toEqual({ 'content-type': 'text/plain' });
+    for (const name of [
+      'age',
+      'authorization',
+      'content-length',
+      'etag',
+      'expires',
+      'from',
+      'host',
+      'if-modified-since',
+      'if-unmodified-since',
+      'last-modified',
+      'location',
+      'max-forwards',
+      'proxy-authorization',
+      'referer',
+      'retry-after',
+      'server',
+      'user-agent',
+    ]) {
+      expect(joinDuplicateHeaders({ [name]: ['first', 'second'] })).toEqual({
+        [name]: 'first',
+      });
+    }
+  });
+
+  it('always keeps set-cookie as an array, never joining it', () => {
+    const headers = { 'set-cookie': ['a=1', 'b=2'] };
+    expect(joinDuplicateHeaders(headers)).toEqual({
+      'set-cookie': ['a=1', 'b=2'],
+    });
+  });
+
+  it('joins a duplicated cookie header with "; " (not ", ")', () => {
+    expect(joinDuplicateHeaders({ cookie: ['a=1', 'b=2'] })).toEqual({
+      cookie: 'a=1; b=2',
+    });
+  });
+
+  it('leaves every other header untouched alongside a duplicated one', () => {
+    expect(
+      joinDuplicateHeaders({
+        'x-foo': ['one', 'two'],
+        date: 'Mon, 01 Jan 2024 00:00:00 GMT',
+        'content-length': '2',
+      }),
+    ).toEqual({
+      'x-foo': 'one, two',
+      date: 'Mon, 01 Jan 2024 00:00:00 GMT',
+      'content-length': '2',
+    });
+  });
+});
+
+describe('toAxiosLikeResponse: duplicate response headers (plan.md phase 2: join duplicate response headers like axios/Node)', () => {
+  const fakeRequest = (
+    options: Record<string, any> = {},
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', ...options },
+  });
+
+  it("exposes duplicate headers on response.headers the way axios/Node would, not undici's raw arrays", async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {
+        'x-foo': ['one', 'two'],
+        'content-type': ['text/plain', 'text/html'],
+        'set-cookie': ['a=1', 'b=2'],
+        cookie: ['c=1', 'd=2'],
+      },
+      body: Readable.from([Buffer.from('ok')]),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.headers['x-foo']).toBe('one, two');
+    expect(response.headers['content-type']).toBe('text/plain');
+    expect(response.headers['set-cookie']).toEqual(['a=1', 'b=2']);
+    expect(response.headers['cookie']).toBe('c=1; d=2');
+  });
+
+  it('parses the body using the singleton content-type, not the raw duplicated array (would otherwise crash: array has no .trim())', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': ['application/json', 'text/html'] },
+      body: Readable.from([Buffer.from('{"ok":true}')]),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.data).toEqual({ ok: true });
   });
 });
