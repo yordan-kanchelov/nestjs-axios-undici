@@ -143,7 +143,16 @@ export function readJsonReport(file) {
   for (const suite of raw.testResults ?? []) {
     for (const a of suite.assertionResults ?? []) {
       if (a.status !== 'passed' && a.status !== 'failed') continue;
-      out.push({ fullName: normalizeTestName(a.fullName), status: a.status });
+      const entry = { fullName: normalizeTestName(a.fullName), status: a.status };
+      // Both Jest's `--json` and Vitest's `--reporter=json` put each
+      // failure's message+stack as one string in `failureMessages`; keeping
+      // just the first line of the first one is enough to make a *new*
+      // failure diagnosable from the job summary alone, without pulling up
+      // the full (often huge) job log.
+      if (a.status === 'failed' && a.failureMessages?.[0]) {
+        entry.failureMessage = a.failureMessages[0].split('\n', 1)[0];
+      }
+      out.push(entry);
     }
   }
   return out;
@@ -251,7 +260,10 @@ export function printSummary(suiteName, diff) {
   if (diff.newFailures.length) {
     lines.push('');
     lines.push('New failures (not in expected-failures.json):');
-    for (const r of diff.newFailures) lines.push(`  - ${r.fullName}`);
+    for (const r of diff.newFailures) {
+      lines.push(`  - ${r.fullName}`);
+      if (r.failureMessage) lines.push(`      ${r.failureMessage}`);
+    }
   }
   if (diff.fixed.length) {
     lines.push('');

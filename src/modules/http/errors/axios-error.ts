@@ -342,6 +342,29 @@ export function createUnsupportedProtocolError(
 }
 
 /**
+ * The error axios gives for a malformed `http(s):` URL (an embedded null
+ * byte, a bare `\n`, ...) - `ERR_INVALID_URL`, `Invalid URL "<normalized
+ * url>": missing "//" after protocol` - checked against real axios 1.20
+ * (`lib/core/buildFullPath.js`'s `assertValidHttpProtocolURL`). `normalized`
+ * is axios' own normalised form of the URL (`malformedHttpProtocolUrl`,
+ * `http.service.ts`), used only for the message; `request.url` (the
+ * original, un-normalised string) still becomes `error.config.url`, matching
+ * axios exactly. Like `createUnsupportedProtocolError`, checked up front,
+ * before ever dispatching, so no `.request` is set.
+ */
+export function createInvalidUrlError(
+  normalized: string,
+  request: HttpInterceptorRequest,
+): AxiosError {
+  const error = new AxiosError(
+    `Invalid URL ${JSON.stringify(normalized)}: missing "//" after protocol`,
+    AxiosError.ERR_INVALID_URL,
+  );
+  error._setLazyConfig(request);
+  return error;
+}
+
+/**
  * True when `value` is the kind of `timeout` axios itself rejects before
  * ever using it: a *truthy* value (axios' own check is `if (own('timeout'))`
  * - `0`/`''`/`null`/`undefined`/`NaN` all skip validation entirely, same as

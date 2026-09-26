@@ -198,7 +198,8 @@ describe('Axios Real-World Scenarios', () => {
       expect(logs[0].method).toBe('GET');
       expect(logs[1].type).toBe('response');
       expect(logs[1].status).toBe(200);
-      expect(logs[1].duration).toBeGreaterThan(0);
+      // A loopback request can complete within the same Date.now() millisecond.
+      expect(logs[1].duration).toBeGreaterThanOrEqual(0);
       expect(logs[1].requestId).toBe('12345');
 
       await module.close();

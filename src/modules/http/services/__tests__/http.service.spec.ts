@@ -295,6 +295,85 @@ describe('HttpService', () => {
   });
 
   /**
+   * plan.md phase 2 "fix: parse a numeric-string timeout like axios": axios
+   * accepts `timeout: '250'` via `parseInt(config.timeout, 10)`. Without the
+   * fix, the raw string reaches undici's own `headersTimeout`/`bodyTimeout`
+   * unparsed - this test would fail without it (either the mocked `request`
+   * receives a string `headersTimeout`/`bodyTimeout`, which the real undici
+   * rejects with `ERR_BAD_REQUEST`, or - with the mock in place - the
+   * assertion on the parsed number below fails outright).
+   */
+  describe('a numeric-string timeout', () => {
+    it('is parsed like axios (parseInt), not left as a string', async () => {
+      await expect(
+        lastValueFrom(service.request(baseURL, { timeout: '250' as any })),
+      ).resolves.toBeDefined();
+      expect(requestMock).toHaveBeenCalled();
+      const [, options] = requestMock.mock.calls[0];
+      expect((options as any).headersTimeout).toBe(250);
+      expect((options as any).bodyTimeout).toBe(250);
+    });
+
+    it('an unparsable string still rejects with ERR_BAD_OPTION_VALUE', async () => {
+      await expect(
+        lastValueFrom(service.request(baseURL, { timeout: 'abc' as any })),
+      ).rejects.toMatchObject({
+        code: 'ERR_BAD_OPTION_VALUE',
+        message: 'error trying to parse `config.timeout` to int',
+      });
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: reject a malformed URL like axios instead of
+   * silently dispatching it": a URL with an embedded null byte or a bare
+   * `\n` isn't rejected synchronously today - the characters are silently
+   * dropped (WHATWG URL parsing is forgiving about them) and the request is
+   * dispatched anyway. This test would fail without the fix: `requestMock`
+   * would have been called instead of the request rejecting up front.
+   */
+  describe('a malformed http(s) URL', () => {
+    it.each([
+      ['\u0000https:example.com/users', 'https:example.com/users'],
+      ['h\nttp:example.com/users', 'http:example.com/users'],
+    ])(
+      'rejects %j with ERR_INVALID_URL before ever dispatching',
+      async (url, normalized) => {
+        await expect(
+          lastValueFrom(service.request(url, { headers: { 'X-Test': 'yes' } })),
+        ).rejects.toMatchObject({
+          code: 'ERR_INVALID_URL',
+          message: `Invalid URL ${JSON.stringify(normalized)}: missing "//" after protocol`,
+        });
+        expect(requestMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('preserves the original url and headers on error.config', async () => {
+      const url = '\u0000https:example.com/users';
+      let caught: any;
+      try {
+        await lastValueFrom(
+          service.request(url, { headers: { 'X-Test': 'yes' } }),
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeDefined();
+      expect(caught.config.url).toBe(url);
+      expect(caught.config.headers.get('X-Test')).toBe('yes');
+    });
+
+    it('a well-formed URL is unaffected', async () => {
+      await expect(
+        lastValueFrom(service.request(baseURL)),
+      ).resolves.toBeDefined();
+      expect(requestMock).toHaveBeenCalled();
+    });
+  });
+
+  /**
    * plan.md phase 2 "fix: redirect sensitiveHeaders option" - axios' own
    * validation for `config.sensitiveHeaders` (`lib/adapters/http.js`),
    * checked up front, before ever calling undici's `request()` - the same

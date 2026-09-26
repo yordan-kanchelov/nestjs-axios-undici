@@ -1,5 +1,6 @@
 import {
   buildRedirectHop,
+  createRedirectionFailureError,
   normalizeSensitiveHeaders,
 } from '../redirect.adapter';
 
@@ -131,5 +132,83 @@ describe('buildRedirectHop: sensitiveHeaders', () => {
     // Authorization on its own.
     expect(hop.headers.Authorization).toBeUndefined();
     expect(hop.headers['X-Api-Key']).toBe('secret');
+  });
+});
+
+/**
+ * plan.md phase 2 "fix: wrap a throwing beforeRedirect like axios" -
+ * follow-redirects' own wrapping (`createErrorType`, `index.js`), checked
+ * against real axios 1.20's "should support beforeRedirect" /
+ * "should pass requestDetails to beforeRedirect with the original URL"
+ * tests. Without the fix, `buildRedirectHop` lets the raw, unwrapped error
+ * a throwing `beforeRedirect` raises propagate straight through - these
+ * tests fail without it (either `buildRedirectHop` doesn't throw at all
+ * where expected, or it throws the plain, un-wrapped `Error`).
+ */
+describe('buildRedirectHop: a throwing beforeRedirect', () => {
+  const baseInput = {
+    currentUrl: 'https://example.com/start',
+    location: '/next',
+    statusCode: 302,
+    method: 'GET',
+    body: undefined,
+    headers: {},
+    responseHeaders: {},
+  };
+
+  it("wraps the thrown error as axios/follow-redirects' RedirectionError", () => {
+    expect(() =>
+      buildRedirectHop({
+        ...baseInput,
+        beforeRedirect: () => {
+          throw new Error('Provided path is not allowed');
+        },
+      }),
+    ).toThrow('Redirected request failed: Provided path is not allowed');
+  });
+
+  it('gives the exact code and a two-level cause chain', () => {
+    let caught: any;
+    try {
+      buildRedirectHop({
+        ...baseInput,
+        beforeRedirect: () => {
+          throw new Error('Provided path is not allowed');
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught.code).toBe('ERR_FR_REDIRECTION_FAILURE');
+    expect(caught.message).toBe(
+      'Redirected request failed: Provided path is not allowed',
+    );
+    expect(caught.cause).toBeInstanceOf(Error);
+    expect(caught.cause.message).toBe('Provided path is not allowed');
+  });
+
+  it('a non-throwing beforeRedirect is unaffected', () => {
+    const seen: any[] = [];
+    const hop = buildRedirectHop({
+      ...baseInput,
+      beforeRedirect: options => seen.push(options.hostname),
+    });
+    expect(hop.url.hostname).toBe('example.com');
+    expect(seen).toEqual(['example.com']);
+  });
+});
+
+describe('createRedirectionFailureError', () => {
+  it("builds axios/follow-redirects' exact error shape", () => {
+    const cause = new Error('boom');
+    const error = createRedirectionFailureError(cause);
+    expect(error.code).toBe('ERR_FR_REDIRECTION_FAILURE');
+    expect(error.message).toBe('Redirected request failed: boom');
+    expect(error.cause).toBe(cause);
+  });
+
+  it('leaves an already-wrapped RedirectionError unchanged, like follow-redirects', () => {
+    const already = createRedirectionFailureError(new Error('boom'));
+    expect(createRedirectionFailureError(already)).toBe(already);
   });
 });

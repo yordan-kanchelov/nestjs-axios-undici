@@ -1,6 +1,7 @@
 import {
   AxiosError,
   CanceledError,
+  createInvalidUrlError,
   createStatusError,
   createTimeoutError,
   createUnparsableTimeoutError,
@@ -140,6 +141,30 @@ describe('axios errors', () => {
       isAxiosError: true,
     });
     expect(error.request).toBeUndefined();
+    expect(error.config?.url).toBe('http://api/x');
+  });
+
+  /**
+   * plan.md phase 2 "fix: reject a malformed URL like axios instead of
+   * silently dispatching it" - checked against real axios 1.20's own
+   * "rejects malformed HTTP URLs before Node URL normalization and
+   * preserves config" test: `ERR_INVALID_URL`, the exact `missing "//"
+   * after protocol` message, and `config.url` set from the *original*
+   * (un-normalised) request URL, not the normalised string the message
+   * quotes.
+   */
+  it('createInvalidUrlError matches axios: ERR_INVALID_URL, no request, original config.url preserved', () => {
+    const error = createInvalidUrlError('https:example.com/users', request);
+    expect(error).toMatchObject({
+      message:
+        'Invalid URL "https:example.com/users": missing "//" after protocol',
+      code: 'ERR_INVALID_URL',
+      name: 'AxiosError',
+      isAxiosError: true,
+    });
+    expect(error.request).toBeUndefined();
+    // `request.url` (the un-normalised original), not the normalised
+    // string passed for the message.
     expect(error.config?.url).toBe('http://api/x');
   });
 

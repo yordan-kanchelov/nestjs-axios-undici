@@ -71,6 +71,7 @@ import {
 } from '../adapters/axios-data-url.adapter';
 import {
   createInvalidSensitiveHeadersError,
+  createInvalidUrlError,
   createStatusError,
   createTimeoutError,
   createUnparsableTimeoutError,
@@ -391,6 +392,37 @@ function unsupportedProtocol(
   return protocol !== undefined && !SUPPORTED_PROTOCOLS.has(protocol)
     ? protocol
     : undefined;
+}
+
+/** axios' `buildFullPath.js`: an `http(s):` URL missing the `//` after its
+ * protocol, once its own leading-whitespace/embedded-control-character
+ * normalisation is applied (`normalizeURLForProtocolCheck`) - e.g. an
+ * embedded null byte (`'\u0000https:example.com'`) or a bare `\n`
+ * (`'h\nttp:example.com'`). undici (like Node's own `new URL()`, which is
+ * WHATWG-forgiving about a missing `//` for a special scheme) silently
+ * "fixes" and dispatches these instead of rejecting them, unlike axios -
+ * checked against real axios 1.20's own "rejects malformed HTTP URLs before
+ * Node URL normalization and preserves config" test.
+ */
+const MALFORMED_HTTP_PROTOCOL_RE = /^https?:(?!\/\/)/i;
+// eslint-disable-next-line no-control-regex -- intentionally targets C0 controls/space, matching axios' own `normalizeURLForProtocolCheck`.
+const LEADING_C0_OR_SPACE_RE = /^[\x00-\x20]+/;
+const EMBEDDED_TAB_NEWLINE_CR_RE = /[\t\n\r]/g;
+
+/**
+ * Returns axios' own normalised form of `url` (`Invalid URL "..."` quotes
+ * this, not the original string) when it's a malformed `http(s):` URL,
+ * `undefined` otherwise. Guarded by `isHttpOrHttpsPrefix` first - the same
+ * fast, allocation-free prefix check `unsupportedProtocol` above already
+ * uses - so a clean `http://`/`https://` URL (the overwhelming majority)
+ * never reaches the two `.replace()` calls or the regex test below.
+ */
+function malformedHttpProtocolUrl(url: string): string | undefined {
+  if (isHttpOrHttpsPrefix(url)) return undefined;
+  const normalized = url
+    .replace(LEADING_C0_OR_SPACE_RE, '')
+    .replace(EMBEDDED_TAB_NEWLINE_CR_RE, '');
+  return MALFORMED_HTTP_PROTOCOL_RE.test(normalized) ? normalized : undefined;
 }
 
 /**
@@ -1264,8 +1296,10 @@ export class HttpService implements OnModuleDestroy {
         // method's own timer below - not undici's own `headersTimeout`/
         // `bodyTimeout` (still set alongside it, as a backstop; see
         // `dispatchFastPath`/`serializeAxiosConfig`). Stripped here so it
-        // never reaches undici's own request options.
-        timeout: deadlineMs,
+        // never reaches undici's own request options. May still be the raw,
+        // unparsed config value here (a numeric string included) - see
+        // `deadlineMs`, just below, which normalises it.
+        timeout: rawTimeout,
         timeoutErrorMessage,
         transitional,
         maxBodyLength,
@@ -1295,9 +1329,26 @@ export class HttpService implements OnModuleDestroy {
       // `InvalidArgumentError` ("invalid headersTimeout") to further down -
       // checked up front, before ever resolving a dispatcher or dispatching,
       // so an invalid config never reaches undici at all.
-      if (isUnparsableTimeout(deadlineMs)) {
+      if (isUnparsableTimeout(rawTimeout)) {
         subscriber.error(createUnparsableTimeoutError(interceptorRequest));
         return;
+      }
+      // A numeric-string `timeout` (`timeout: '250'`), like axios' own
+      // `parseInt(config.timeout, 10)` (plan.md phase 2: "fix: parse a
+      // numeric-string timeout like axios") - `isUnparsableTimeout` above
+      // already rejected anything `parseInt` can't turn into a number, so
+      // this can only turn a valid numeric string into its number (never
+      // `NaN`). Only pays the `parseInt` cost for a string; the overwhelming
+      // majority (an already-numeric `timeout`, or none at all) takes zero
+      // extra cost beyond this one `typeof` check. `headersTimeout`/
+      // `bodyTimeout` (set to the same raw string by `dispatchFastPath`,
+      // still present in `requestOptions` below) are normalised alongside it
+      // so undici's own argument validation never sees a string.
+      let deadlineMs: number | undefined = rawTimeout;
+      if (typeof rawTimeout === 'string') {
+        deadlineMs = parseInt(rawTimeout, 10);
+        requestOptions.headersTimeout = deadlineMs;
+        requestOptions.bodyTimeout = deadlineMs;
       }
 
       // `sensitiveHeaders` (plan.md "fix: redirect sensitiveHeaders option"):
@@ -1582,6 +1633,22 @@ export class HttpService implements OnModuleDestroy {
           createUnsupportedProtocolError(badProtocol, interceptorRequest),
         );
         return;
+      }
+      // A malformed `http(s):` URL (plan.md phase 2 "fix: reject a
+      // malformed URL like axios instead of silently dispatching it"):
+      // rejected synchronously, before ever resolving a dispatcher or
+      // dispatching - string URLs only, matching axios' own check (a `URL`/
+      // `UrlObject` request URL can't carry this kind of malformation).
+      if (typeof interceptorRequest.url === 'string') {
+        const malformedUrl = malformedHttpProtocolUrl(interceptorRequest.url);
+        if (malformedUrl !== undefined) {
+          settled = true;
+          clearDeadline();
+          subscriber.error(
+            createInvalidUrlError(malformedUrl, interceptorRequest),
+          );
+          return;
+        }
       }
 
       const onResponse = (res: UndiciResponse): void => {

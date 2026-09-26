@@ -193,6 +193,37 @@ describe('HttpService redirects', () => {
     expect(seen).toEqual([{ statusCode: 302, hostname: '127.0.0.1' }]);
   });
 
+  /**
+   * plan.md phase 2 "fix: wrap a throwing beforeRedirect like axios" -
+   * checked against real axios 1.20's own "should support beforeRedirect"
+   * test (`tests/unit/adapters/http.test.js`): a throwing `beforeRedirect`
+   * propagates axios'/follow-redirects' own wrapped error shape, not the
+   * raw, unwrapped `Error` this library used to let through. Fails without
+   * the fix: `error.code` is `undefined` and the message is the bare
+   * "Provided path is not allowed", not the "Redirected request failed: "
+   * wrapping asserted below.
+   */
+  it('wraps a throwing beforeRedirect like axios/follow-redirects', async () => {
+    let caught: any;
+    try {
+      await firstValueFrom(
+        service.request(`${baseUrl}/before-redirect`, {
+          beforeRedirect: () => {
+            throw new Error('Provided path is not allowed');
+          },
+        }),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught.code).toBe('ERR_FR_REDIRECTION_FAILURE');
+    expect(caught.message).toBe(
+      'Redirected request failed: Provided path is not allowed',
+    );
+    expect(caught.cause?.cause?.message).toBe('Provided path is not allowed');
+  });
+
   it('runs beforeRedirect (module-level) before each hop', async () => {
     const seen: number[] = [];
     const module: TestingModule = await Test.createTestingModule({
