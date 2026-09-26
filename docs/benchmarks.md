@@ -2,11 +2,11 @@
 
 > Generated from [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.
 
-Same NestJS app, only the import changed: **nestjs-axios-undici served 4.0-4.2x the requests/s of @nestjs/axios, with 77% lower p95 latency** (Express and Fastify, Node.js 24). Preliminary: from a short local run; the full Docker + k6 benchmark replaces these numbers on the next release.
+In the same NestJS app, with only the import changed, **nestjs-axios-undici served 4.0-4.2x the requests per second of @nestjs/axios, with 77% lower p95 latency**, on Express and Fastify with Node.js 24. These numbers are preliminary, from a short local run. The full Docker and k6 benchmark replaces them on the next release.
 
 ## Throughput and latency ratios
 
-nestjs-axios-undici against `@nestjs/axios`, same platform, same app, only the import changed. Lower latency is better; a throughput ratio above 1x means more requests/s.
+Each row compares nestjs-axios-undici with `@nestjs/axios` in the same app on the same platform. Only the import changes. A throughput ratio above 1x means more requests per second.
 
 | Platform | Throughput | Avg latency | P95 latency |
 |---|---:|---:|---:|
@@ -28,7 +28,7 @@ Lower is better. Hover a bar for its p95.
 
 ## What's measured
 
-- Each app makes 5 parallel GET calls to a mock backend and returns the parsed bodies; only the `HttpModule`/`HttpService` import changes between the two rows for a given platform - see [`benchmarks/apps/nestjs-app`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/apps/nestjs-app).
+- Each request to the app makes 5 parallel GET calls to a mock backend and returns the parsed bodies. For a given platform, only the `HttpModule`/`HttpService` import changes between the two rows. The app is [`benchmarks/apps/nestjs-app`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/apps/nestjs-app).
 - The "with an interceptor" rows add the same `axiosRef` request/response interceptor to both clients (it sets a header and times the call), with no per-request logging.
 - [`benchmarks/apps/undici-raw`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/apps/undici-raw) calls undici directly, with no `HttpModule`/`HttpService` at all, as a floor for the other rows.
 
