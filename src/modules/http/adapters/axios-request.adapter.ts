@@ -1548,10 +1548,13 @@ export function normalizeAxiosRequest(
  * URL, no serialisation, no `AxiosHeaders` wrap); falls back to reconstructing
  * from `options` for requests that reach here some other way.
  *
- * Callers (`AxiosLikeResponseImpl`, `AxiosError`) call this from a `config`
- * getter on first read and cache the result themselves - *not* from a
- * per-instance `Object.defineProperty`, which measurably costs more than a
- * plain field write on every request, defeating the point of being lazy.
+ * Called by `attachLazyAxiosConfig`'s getter, on first read - not by
+ * `AxiosLikeResponseImpl`'s/`AxiosError`'s constructors directly, which would
+ * pay this (an `AxiosHeaders` construction plus a ~15-field object literal)
+ * on every response/error whether or not `.config` is ever read. None of the
+ * benchmark scenarios (`benchmarks/micro/client.js`) read `response.config`/
+ * `error.config` at all, so this used to run, and be thrown away, on every
+ * single request.
  */
 export function buildLazyAxiosConfig(
   request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
@@ -1581,6 +1584,56 @@ export function buildLazyAxiosConfig(
     validateStatus: options.validateStatus,
     responseType: options.responseType,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Lazy `config` accessor for `AxiosLikeResponseImpl`/`AxiosError` - shared so
+// installing it costs one `Object.defineProperty` call per instance, not two
+// per-instance closures (a `get`/`set` pair written inline in each
+// constructor would each be a fresh function allocation per instance; these
+// two are module-level and shared by every instance instead, the same
+// symbol-keyed-field trade-off `axios-headers.ts`'s `STORE` doc comment
+// explains for the same reason).
+// ---------------------------------------------------------------------------
+
+const LAZY_CONFIG_REQUEST: unique symbol = Symbol('lazyConfigRequest');
+const LAZY_CONFIG_VALUE: unique symbol = Symbol('lazyConfigValue');
+
+function getLazyConfig(this: any): InternalAxiosLikeRequestConfig {
+  return (
+    this[LAZY_CONFIG_VALUE] ??
+    (this[LAZY_CONFIG_VALUE] = buildLazyAxiosConfig(this[LAZY_CONFIG_REQUEST]))
+  );
+}
+
+function setLazyConfig(this: any, value: InternalAxiosLikeRequestConfig): void {
+  this[LAZY_CONFIG_VALUE] = value;
+}
+
+/**
+ * Installs an own, enumerable `config` accessor on `target` (an
+ * `AxiosLikeResponseImpl` or `AxiosError` instance) that calls
+ * `buildLazyAxiosConfig(request)` only on first read, and caches the result -
+ * a plain `target.config = ...` write (before or after that first read)
+ * overrides it directly, same as a plain field. Deliberately an *own*
+ * accessor, installed per instance via `Object.defineProperty` - not a
+ * class-body `get config()`, which lands on the *prototype* and is
+ * non-enumerable there, so `{ ...target }`/`JSON.stringify(target)` would
+ * silently drop `config` instead of copying its resolved value, unlike
+ * axios' own plain `config` field (checked against this library's own "should
+ * survive being spread" test, `http.service.config-transform.spec.ts`).
+ */
+export function attachLazyAxiosConfig(
+  target: object,
+  request: HttpInterceptorRequest,
+): void {
+  (target as any)[LAZY_CONFIG_REQUEST] = request;
+  Object.defineProperty(target, 'config', {
+    enumerable: true,
+    configurable: true,
+    get: getLazyConfig,
+    set: setLazyConfig,
+  });
 }
 
 // ---------------------------------------------------------------------------
