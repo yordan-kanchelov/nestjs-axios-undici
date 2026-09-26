@@ -126,7 +126,7 @@ httpService.postForm(url, { tags: ['a', 'b'] }, {
 | Feature | Status | Notes |
 |---------|:------:|-------|
 | `status`, `statusText`, `headers['x-name']` | ✅ | Header names are lower-case, as in axios. `statusText` is the server's actual reason phrase. |
-| A header sent multiple times (`res.setHeader('X-Dup', ['one', 'two'])`) | ⚠️ | Returned as an array (`['one', 'two']`); axios joins duplicates into one comma-separated string (`'one, two'`). `Set-Cookie` is unaffected either way - both libraries always return it as an array. |
+| A header sent multiple times (`res.setHeader('X-Dup', ['one', 'two'])`) | ✅ | Joined the way Node's `IncomingMessage.headers` (axios' own transport) joins them: `set-cookie` stays an array; `cookie` joins with `'; '`; a fixed "no duplicates" set (`content-type`, `content-length`, `user-agent`, `referer`, `host`, `authorization`, `proxy-authorization`, `if-modified-since`, `if-unmodified-since`, `from`, `location`, `max-forwards`, `retry-after`, `etag`, `last-modified`, `server`, `age`, `expires`) keeps only the first value; everything else (including a custom header like `X-Dup`) joins with `', '`. |
 | JSON body with a JSON `Content-Type` (`application/json`, and any `+json` suffix like `application/problem+json`) | ✅ | Invalid JSON gives the raw string, an empty body gives `''`. |
 | `204` / empty body | ✅ | `data` is `''`. |
 | JSON-looking body with a non-JSON `Content-Type` (e.g. `text/plain`, no `Content-Type`) | ✅ | Parsed as JSON, like axios' `forcedJSONParsing`; falls back to the raw string silently if parsing fails. |
