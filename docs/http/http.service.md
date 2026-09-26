@@ -1,6 +1,6 @@
 # HttpService
 
-`HttpService` makes the HTTP requests. Its methods match `@nestjs/axios`' `HttpService`. They return an RxJS `Observable` that emits an axios-compatible response, and non-2xx responses are emitted as axios errors.
+`HttpService` makes the HTTP requests. Its methods match the `HttpService` from `@nestjs/axios`. They return an RxJS `Observable` that emits an axios-compatible response, and non-2xx responses are emitted as axios errors.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -53,7 +53,7 @@ All methods return `Observable<AxiosLikeResponse<T>>`.
 
 ## `axiosRef`
 
-A real, callable axios instance, for code written against `@nestjs/axios`' `httpService.axiosRef`. It stands in for `AxiosInstance`:
+A real, callable axios instance, for code written against `httpService.axiosRef` in `@nestjs/axios`. It stands in for `AxiosInstance`:
 
 - **Callable**: `axiosRef(config)` and `axiosRef(url, config)` both resolve like `axios(...)` (this is what libraries like `axios-retry` rely on).
 - `axiosRef.request(config)`, `get`, `delete`, `head`, `options`, `post`, `put`, `patch`, `postForm`, `putForm`, `patchForm`, `query`, each returning a `Promise` of the response.

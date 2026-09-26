@@ -1,6 +1,6 @@
 # HttpModule
 
-`HttpModule` provides `HttpService`. Its API matches `@nestjs/axios`' `HttpModule`. Import it as is, or configure it with `register()` or `registerAsync()`.
+`HttpModule` provides `HttpService`. Its API matches the `HttpModule` from `@nestjs/axios`. Import it as is, or configure it with `register()` or `registerAsync()`.
 
 ```typescript
 import { Module } from '@nestjs/common';

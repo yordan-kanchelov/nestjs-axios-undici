@@ -1,6 +1,6 @@
 # Configuration guide
 
-`HttpModule.register()`/`.registerAsync()` accept axios-style options directly, the same ones you'd pass to `@nestjs/axios`' `HttpModule`, and map them to undici automatically. They also accept undici's own [request options](https://github.com/nodejs/undici#undicirequesturl-options-promise), such as a custom `dispatcher`, for anything the axios mapping doesn't cover. See [Axios compatibility](/docs/axios-supported-options.md#module-level-axios-options) for the full option list.
+`HttpModule.register()`/`.registerAsync()` accept axios-style options directly, the same ones you'd pass to the `HttpModule` from `@nestjs/axios`, and map them to undici automatically. They also accept undici's own [request options](https://github.com/nodejs/undici#undicirequesturl-options-promise), such as a custom `dispatcher`, for anything the axios mapping doesn't cover. See [Axios compatibility](/docs/axios-supported-options.md#module-level-axios-options) for the full option list.
 
 ## Basic configuration
 
@@ -24,7 +24,7 @@ export class AppModule {}
 
 ### Timeout
 
-Set the maximum time to wait for a response (mapped to undici's `headersTimeout` and `bodyTimeout`):
+`timeout` is a deadline for the whole request, as in axios. It runs from the start of the request until the body is fully read, and the request rejects with `ECONNABORTED` when it passes. See [`timeout`](/docs/axios-supported-options.md?id=request-config) for the details.
 
 ```typescript
 HttpModule.register({
