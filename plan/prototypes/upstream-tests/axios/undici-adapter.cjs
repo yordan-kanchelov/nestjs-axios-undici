@@ -48,6 +48,24 @@ function makeAdapter({ buildFullPath }) {
       config,
     );
 
+    // Real axios's http adapter listens to the legacy `cancelToken.promise`
+    // alongside `config.signal`; without this, a test using only
+    // `CancelToken` (not `AbortController`) hangs until the vitest test
+    // timeout, and its server is never closed - see the report's "harness
+    // limitation" note on the cancel-token cascade.
+    let signal = config.signal;
+    if (config.cancelToken) {
+      const controller = new AbortController();
+      if (config.signal) {
+        config.signal.addEventListener('abort', () => controller.abort(config.signal.reason));
+      }
+      config.cancelToken.promise.then(
+        (reason) => controller.abort(reason),
+        () => {},
+      );
+      signal = controller.signal;
+    }
+
     const interceptorRequest = {
       url: fullPath,
       options: {
@@ -57,7 +75,7 @@ function makeAdapter({ buildFullPath }) {
         decompress: config.decompress !== false,
         validateStatus:
           config.validateStatus === null ? () => true : config.validateStatus,
-        signal: config.signal,
+        signal,
       },
     };
 
@@ -79,7 +97,7 @@ function makeAdapter({ buildFullPath }) {
           method: currentOptions.method,
           headers: currentOptions.headers,
           body: currentOptions.body,
-          signal: config.signal,
+          signal,
         };
         if (config.timeout) {
           dispatchOptions.headersTimeout = config.timeout;

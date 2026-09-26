@@ -183,9 +183,91 @@ Playwright is never invoked), writes a `setupFiles` entry that monkey-patches
 `lib/`), and runs the **unmodified** `tests/unit/adapters/http.test.js` against it
 (optionally filtered with vitest's own `-t`).
 
-*(Results for the full 246-test run are appended below once the background run this
-report was drafted alongside finishes; see the Log line in `plan.md` for the exact
-numbers and the commit that carries them.)*
+**A full, unfiltered 246-test run doesn't complete.** First attempt: it hung, producing
+zero output, for the full 280s the prototype was given. Isolating individual tests found
+one concrete cause - `should support cancel` (legacy `axios.CancelToken`, not
+`AbortController`) hung for the full 15s test timeout because the prototype adapter only
+wired `config.signal` through to undici, not the legacy `cancelToken.promise` - and
+because that test's server is then never cleanly closed, its fixed port (upstream's
+fixture always listens on `8020`) stays bound, so every later test reusing it fails
+closed with `EADDRINUSE`. Fixed in `undici-adapter.cjs` (listen for `cancelToken.promise`
+too, matching real axios's own http adapter) - filtered re-runs confirm the fix. **The
+unfiltered run still hangs with the fix applied**, so at least one more test (earlier in
+file order than the 30 sampled below - not yet isolated) has a similar unhandled-hang
+gap, most likely another socket/agent-internals test whose custom connection stub never
+settles against a bare `undici.request()`. Given the time budget for this exploration,
+that second hang is left as a named follow-up rather than fully bisected; see the PR
+plan's acceptance criteria for the job needing a per-test timeout guard (already present,
+15s) **and** a way to fail forward past a hung test instead of blocking the whole file -
+vitest's own `--bail`-adjacent isolation, or splitting the upstream file into per-`describe`
+runs, would do it.
+
+**Filtered run (30 of the 246 tests, chosen to cover JSON, redirects, gzip/br/zstd/
+compress decompression, default headers, size limits, streams/buffers, cancellation,
+baseURL combining, protocol errors, and timeouts - i.e. transport/response/error
+behaviour, not proxy/socket/agent internals): 15 passed, 15 failed.**
+
+Real, concrete incompatibilities (grouped; each is either newly precise or newly
+confirmed against a real upstream assertion rather than an internal probe):
+
+- **Timeout error message/format.** Repro: `axios.get(url, { timeout: 250 })` against a
+  server that never responds. Axios: `code: 'ECONNABORTED'`,
+  `message: 'timeout of 250ms exceeded'`. Ours: `message: 'timeout exceeded'` (no
+  duration). A separate case with `timeoutErrorMessage: 'oops, timeout'` set shows the
+  option is **ignored outright** - message stays `'timeout exceeded'` instead of
+  `'oops, timeout'`. Matches the open plan.md "fix(errors)" bullet
+  (`timeoutErrorMessage`); this pins the exact expected string.
+- **`response.request`/`error.request` is a useless placeholder.** Repro: after a
+  redirect, `response.request.path` is `undefined`; axios sets it to `'/two'` (the
+  final hop's path) because `response.request` is the real `http.ClientRequest`. Matches
+  the already-tracked "`error.request`/`response.request` are never set" bullet, with a
+  field (`.path`) confirmed to be read by real-world/upstream code, not just
+  `!!response.request`.
+- **`maxBodyLength` (request body size) is not enforced at all.** Repro: `axios.post(url,
+  bigBody, { maxBodyLength: <bigBody.length - 1> })` resolves instead of rejecting.
+  Matches the already-tracked "a per-request `maxBodyLength` is ignored" bullet, now with
+  a passing/failing repro instead of a code-reading note.
+- **Unsupported-protocol errors carry undici's message, not axios's.** Repro:
+  `axios.get('tel:484-695-3408')`. Axios: `message: 'Unsupported protocol tel:'`. Ours:
+  `message: 'Invalid URL protocol: the URL must start with \`http:\` or \`https:\`.'`
+  (verbatim from wherever the URL gets rejected before undici is even reached). Matches
+  the tracked "errors undici throws synchronously... come through raw" bullet, with the
+  exact wording gap.
+- **`compress` (legacy LZW) and `zstd` `Content-Encoding` are not decompressed.** This is
+  already a *deliberately documented* gap for `compress`
+  (`axios-response-type.adapter.ts`'s comment on `SUPPORTED_CONTENT_ENCODINGS`); `zstd`
+  isn't mentioned there at all, so this test confirms it falls into the same,
+  already-accepted "gzip/deflate/br only" boundary rather than being a fresh gap - noted
+  for completeness, not as a new must-fix.
+
+Not real bugs (harness/prototype limitations or environment artifacts):
+
+- **No default `User-Agent`/`Accept`/`Accept-Encoding` headers on the bare adapter.**
+  `should provides a default User-Agent header` expects `axios/<version>`; the prototype
+  adapter sends whatever `config.headers` already contains, because default-header
+  injection happens in `HttpService`'s own request path (and `axiosRef`'s defaults),
+  both of which strategy (b) deliberately bypasses (see "what it bypasses" above). Real
+  `HttpService.get()` calls *do* set a default `User-Agent` (`nestjs-axios-undici/<version>`,
+  by design - see `DEFAULT_USER_AGENT` in `http.service.ts`); this failure is about the
+  standalone prototype adapter, not the package.
+- **The legacy-`CancelToken` hang and its 4 cascading `EADDRINUSE` failures** (`should
+  support cancel`, `should combine baseURL and url`, `should support HTTP protocol`,
+  `should support HTTPS protocol`, `should throw an error if http server that aborts a
+  chunked request`) are the one root-cause prototype gap described above, not 5
+  independent findings.
+- **`should respect the timeout property during TCP connect with maxRedirects set to 0`**
+  expects `ECONNABORTED` but gets `ENOTFOUND`. This exercises a DNS-timeout race against
+  a non-routable address; the same sandbox proxy that turned the baseline's 2 real-DNS
+  failures into `403`s (see above) is a strong confound here too. Inconclusive without a
+  network-unrestricted environment - flagged, not counted as a finding either way.
+
+Net: of 15 failures, **5 are real, reproducible package gaps** (all already tracked in
+`plan.md` phase 2, now with concrete upstream-sourced repro strings), **1 is
+inconclusive** (network sandbox), and **9** are one prototype wiring gap and its
+cascade. That ratio - most failures traced to a single, fixable harness issue rather
+than a long tail of unique problems - is itself useful signal: strategy (b)'s adapter
+surface is small enough that fixing it once (legacy `CancelToken`) unblocks most of the
+remaining, currently-unrun tests in the file.
 
 ## Proposed PR plan
 
