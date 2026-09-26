@@ -263,24 +263,38 @@ const MAX_SOCKET_PATH_DISPATCHERS = 32;
 class RequestAbortSignal {
   aborted = false;
   reason: unknown = undefined;
-  private listeners: Array<() => void> = [];
+  // One slot covers the common case (undici's own listener); the array is
+  // only allocated when a second listener registers (the maxRate/progress
+  // path), so ordinary requests pay no extra allocation.
+  private listener: (() => void) | undefined;
+  private extraListeners: Array<() => void> | undefined;
 
   addEventListener(_type: 'abort', listener: () => void): void {
-    this.listeners.push(listener);
+    if (this.listener === undefined) this.listener = listener;
+    else (this.extraListeners ??= []).push(listener);
   }
 
   removeEventListener(_type: 'abort', listener: () => void): void {
-    const i = this.listeners.indexOf(listener);
-    if (i !== -1) this.listeners.splice(i, 1);
+    if (this.listener === listener) {
+      this.listener = undefined;
+      return;
+    }
+    const extra = this.extraListeners;
+    if (extra === undefined) return;
+    const i = extra.indexOf(listener);
+    if (i !== -1) extra.splice(i, 1);
   }
 
   abort(reason?: unknown): void {
     if (this.aborted) return;
     this.aborted = true;
     this.reason = reason;
-    const listeners = this.listeners;
-    this.listeners = [];
-    for (const listener of listeners) listener();
+    const listener = this.listener;
+    const extra = this.extraListeners;
+    this.listener = undefined;
+    this.extraListeners = undefined;
+    listener?.();
+    if (extra !== undefined) for (const l of extra) l();
   }
 }
 
