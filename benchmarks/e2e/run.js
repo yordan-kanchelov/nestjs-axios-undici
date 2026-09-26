@@ -37,11 +37,15 @@ const ready = (child) =>
     child.once('message', resolve);
     child.once('exit', (code) => reject(new Error(`exited with code ${code} before it became ready`)));
   });
+// Resolves at once for a child that has already exited, since its 'exit' event
+// won't fire again.
 const stop = (child) =>
-  new Promise((resolve) => {
-    child.once('exit', resolve);
-    child.kill();
-  });
+  child.exitCode !== null || child.signalCode !== null
+    ? Promise.resolve()
+    : new Promise((resolve) => {
+        child.once('exit', resolve);
+        child.kill();
+      });
 
 async function runApp(client) {
   const app = fork(path.join(ROOT, 'apps/nestjs-app/src/main.ts'), [], {
@@ -58,28 +62,34 @@ async function runApp(client) {
     },
     silent: true,
   });
-  await ready(app);
-  await runLoad(APP_URL, { connections, durationMs: warmupMs }); // warm up (JIT, connection pool)
-  const result = await runLoad(APP_URL, { connections, durationMs });
-  await stop(app);
-  return result;
+  try {
+    await ready(app);
+    await runLoad(APP_URL, { connections, durationMs: warmupMs }); // warm up (JIT, connection pool)
+    return await runLoad(APP_URL, { connections, durationMs });
+  } finally {
+    await stop(app);
+  }
 }
 
 async function main() {
+  // The forked children hold IPC channels open, so they're always stopped,
+  // including on an error, or the process would never exit.
   const upstream = fork(path.join(__dirname, 'upstream.js'), [String(UPSTREAM_PORT)], { silent: true });
-  await ready(upstream);
-
   const results = { axios: [], undici: [] };
-  for (let round = 0; round < rounds; round++) {
-    const order = round % 2 ? ['undici', 'axios'] : ['axios', 'undici'];
-    for (const client of order) {
-      const result = await runApp(client);
-      if (result.errors > 0) throw new Error(`${client}: ${result.errors} request(s) failed`);
-      results[client].push(result);
-      console.error(`round ${round + 1} ${client}: ${result.rps.toFixed(0)} req/s, p95 ${result.p95.toFixed(1)}ms`);
+  try {
+    await ready(upstream);
+    for (let round = 0; round < rounds; round++) {
+      const order = round % 2 ? ['undici', 'axios'] : ['axios', 'undici'];
+      for (const client of order) {
+        const result = await runApp(client);
+        if (result.errors > 0) throw new Error(`${client}: ${result.errors} request(s) failed`);
+        results[client].push(result);
+        console.error(`round ${round + 1} ${client}: ${result.rps.toFixed(0)} req/s, p95 ${result.p95.toFixed(1)}ms`);
+      }
     }
+  } finally {
+    await stop(upstream);
   }
-  await stop(upstream);
 
   const m = (client, field) => median(results[client].map((r) => r[field]));
   const throughputRatio = median(results.undici.map((r, i) => r.rps / results.axios[i].rps));
