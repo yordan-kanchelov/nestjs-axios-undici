@@ -221,11 +221,14 @@ differential('Differential: response decoding', routes, [
     normalize: async (o: any) => resultShape(o.result),
   },
   {
+    // Fixed by plan.md phase 2 "fix: join duplicate response headers like
+    // axios/Node": a duplicated `X-Dup` now joins with ", " (matching
+    // axios/Node's default header-join rule) instead of coming back as
+    // undici's raw array; `set-cookie` stays an array on both sides either
+    // way.
     name: 'headers: casing, multi-value set-cookie, duplicates',
     run: (s, ctx) => s.get(`${ctx.base}/multi-headers`),
     normalize: async (o: any) => normHeaders(o.result?.headers),
-    // axios joins duplicate headers ("one, two"); we return them as an array.
-    knownDifference: TYPES,
   },
   {
     name: 'response.headers AxiosHeaders API (get/has/getContentType)',
