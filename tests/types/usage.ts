@@ -4,7 +4,7 @@
 // @nestjs/axios"); a case that still fails here is marked with
 // `@ts-expect-error` and a reason, so a fix that closes the gap makes the
 // stale directive itself fail the build.
-// Port of plan/prototypes/quality/typecompat/usage.template.ts (plan.md phase 1 item C).
+// Usage type checks (plan.md phase 1 item C).
 import 'reflect-metadata';
 import { Injectable, Module } from '@nestjs/common';
 import {

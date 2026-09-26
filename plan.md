@@ -235,7 +235,7 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
 ### Phase 6: 1.0.0 release
 
 - [ ] Every must-have item above is merged into `claude/v1.0.0`.
-- [ ] Delete `plan/prototypes/`. Add a major changeset with migration notes from 0.6.
+- [x] Delete `plan/prototypes/`. Add a major changeset with migration notes from 0.6. (`claude/release-prep`: `.changeset/v1-stable.md` links the migration guide's "Upgrading from 0.6.x"; three stale migration-guide links in older changesets repointed at the docs site.)
 - [ ] **CodeRabbit review of the master PR (#8)**, once everything else in this phase is done.
   - Trigger it with a PR comment: `@coderabbitai full review`. Automatic reviews are off because the repo has fewer than 10 stars and the base branch is non-default.
   - Handle every finding. Fix it, or reply with the reason it stays as is, then resolve the thread.
@@ -370,3 +370,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - Upstream conformance: 4 entries removed from `expected-failures.strategy-a.json` (numeric-string timeout, both `beforeRedirect`-throws cases, the malformed-URL case).
   - Perf (`benchmarks/micro/compare.js`, Node 24, 5 rounds × 3s, paired against a `claude/v1.0.0` worktree build): get -2.9%, post -2.3%, config +0.2%, error +6.0%, interceptors +1.2% - all within budget (10%/15%).
   - Docs: `docs/axios-supported-options.md` (`timeout`/`beforeRedirect` rows flipped ⚠️→✅, a new malformed-URL row), `docs/migration-guide.md` (numeric-string timeout + `beforeRedirect` bullets, a BREAKING malformed-URL bullet). Changeset: `minor` (`.changeset/request-side-axios-parity.md`).
+- 2026-09-26: release prep (`claude/release-prep`): deleted `plan/prototypes/`, since every prototype is now maintained under `tests/`, `scripts/` or `benchmarks/` (only comments referred to it; reworded). Added the 1.0 major changeset `.changeset/v1-stable.md`, and repointed three older changesets' migration-guide links whose anchors PR #32's rewrite removed (they end up in the published CHANGELOG).
