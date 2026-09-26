@@ -3,9 +3,11 @@ import {
   createBrotliDecompress,
   createGunzip,
   createInflate,
+  createZstdDecompress,
   gunzipSync,
   inflateRawSync,
   inflateSync,
+  zstdDecompressSync,
 } from 'node:zlib';
 import type { Readable } from 'node:stream';
 import type { Dispatcher } from 'undici';
@@ -95,15 +97,20 @@ async function readBufferWithLimit(
 // JSON parsing (axios' `transitional.forcedJSONParsing` / `silentJSONParsing`)
 // ---------------------------------------------------------------------------
 
+/** axios' `config.parseReviver`: the same signature `JSON.parse`'s own `reviver` accepts. */
+export type JsonReviver = (this: any, key: string, value: any) => any;
+
 /**
  * Parses JSON like axios' default `transformResponse` with
  * `silentJSONParsing: true`: invalid JSON yields the raw string instead of
- * throwing.
+ * throwing. `reviver` is axios' `parseReviver` config option, passed straight
+ * through to `JSON.parse` - `own(this, 'parseReviver')` in axios' own
+ * `lib/defaults/index.js`.
  */
-export function parseJsonOrText(text: string): any {
+export function parseJsonOrText(text: string, reviver?: JsonReviver): any {
   if (!text) return text;
   try {
-    return JSON.parse(text);
+    return JSON.parse(text, reviver);
   } catch {
     return text;
   }
@@ -147,9 +154,9 @@ function isJsonStart(text: string): boolean {
  * back to the raw string silently otherwise. Avoids a wasted `JSON.parse`
  * try/catch for ordinary text responses.
  */
-export function parseTextMaybeJson(text: string): any {
+export function parseTextMaybeJson(text: string, reviver?: JsonReviver): any {
   if (!text || !isJsonStart(text)) return text;
-  return parseJsonOrText(text);
+  return parseJsonOrText(text, reviver);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,11 +192,38 @@ export function classifyContentType(contentType: string): BodyContentKind {
 const GZIP_ENCODINGS = new Set(['gzip', 'x-gzip']);
 
 /**
+ * True when this Node build's `zlib` supports Zstandard (`zstd`) - added in
+ * Node 22.15.0 / 23.8.0 (every Node this package's `engines.node`,
+ * `>=22.17.0`, allows already has it). Feature-detected the same way axios
+ * does (`isZstdSupported` in `lib/adapters/http.js`) rather than assumed: the
+ * check runs once, at module load, and lets `decompressBuffer`/
+ * `decompressStream` fall through to their existing "unknown encoding, pass
+ * the raw bytes through untouched" branch on a hypothetical older/patched
+ * Node that lacks it - exactly what axios itself does (its own `switch` on
+ * `content-encoding: zstd` is a no-op, leaving the header and the body both
+ * unchanged, when `zlib.createZstdDecompress` isn't a function).
+ */
+export const isZstdSupported = typeof createZstdDecompress === 'function';
+
+/**
  * `Content-Encoding` values `decompressBuffer`/`decompressStream` can
  * actually decode. Used to build the default `Accept-Encoding` request
  * header: unlike axios (which also advertises `compress`, an old LZW scheme
  * neither axios nor this library decodes), this only lists what can be
  * decompressed.
+ *
+ * `zstd` is deliberately left out here even though it's decoded (see
+ * `decompressBuffer`/`decompressStream` below): axios 1.20 only advertises
+ * it when `transitional.advertiseZstdAcceptEncoding === true` is explicitly
+ * set (`ACCEPT_ENCODING_WITH_ZSTD` vs. the plain `ACCEPT_ENCODING` axios
+ * sends by default - `lib/adapters/http.js`), i.e. axios' own default
+ * `Accept-Encoding` doesn't include it either. A server sending `zstd`
+ * without being asked (or one that always compresses that way) still gets
+ * decoded either way - decoding never depends on what was advertised. A
+ * caller who wants to advertise it can already do so like any other default
+ * header override: `axiosRef.defaults.headers.common['Accept-Encoding'] =
+ * 'gzip, deflate, br, zstd'` (or a per-request header), so this library adds
+ * no separate `advertiseZstdAcceptEncoding`-equivalent option for it.
  */
 export const SUPPORTED_CONTENT_ENCODINGS = 'gzip, deflate, br';
 
@@ -211,6 +245,7 @@ export function decompressBuffer(buffer: Buffer, encoding: string): Buffer {
       return inflateRawSync(buffer);
     }
   }
+  if (e === 'zstd' && isZstdSupported) return zstdDecompressSync(buffer);
   return buffer;
 }
 
@@ -249,6 +284,8 @@ export function decompressStream(body: Readable, encoding: string): Readable {
   if (GZIP_ENCODINGS.has(e)) decompressor = createGunzip();
   else if (e === 'br') decompressor = createBrotliDecompress();
   else if (e === 'deflate') decompressor = createInflate();
+  else if (e === 'zstd' && isZstdSupported)
+    decompressor = createZstdDecompress();
   else return body;
 
   body.pipe(decompressor);
@@ -327,6 +364,8 @@ export interface BodyDecodeOptions {
   contentEncoding?: string;
   /** `false` disables decompression, as in axios. Default: decompress. */
   decompress?: boolean;
+  /** axios' `parseReviver`, forwarded to every default `JSON.parse` call. */
+  parseReviver?: JsonReviver;
 }
 
 function shouldDecompress(options: BodyDecodeOptions): boolean {
@@ -423,7 +462,9 @@ export async function readDefaultBody(
   if (options.maxContentLength) {
     assertMaxContentLength(Buffer.byteLength(text), options.maxContentLength);
   }
-  return kind === 'json' ? parseJsonOrText(text) : parseTextMaybeJson(text);
+  return kind === 'json'
+    ? parseJsonOrText(text, options.parseReviver)
+    : parseTextMaybeJson(text, options.parseReviver);
 }
 
 // ---------------------------------------------------------------------------
@@ -463,5 +504,7 @@ export async function readBodyAsResponseType(
   if (maxContentLength) {
     assertMaxContentLength(Buffer.byteLength(text), maxContentLength);
   }
-  return responseType === 'json' ? parseJsonOrText(text) : text;
+  return responseType === 'json'
+    ? parseJsonOrText(text, options.parseReviver)
+    : text;
 }
