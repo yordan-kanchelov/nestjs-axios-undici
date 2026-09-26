@@ -169,14 +169,14 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
 
 ### Phase 3: package quality and API (see `plan/reports/package-quality.md`)
 
-- [~] `src/version.ts`: replace the runtime `require('../package.json')` with a build-time constant, so bundlers that prune non-JS files don't break it (PR #16 review). PR #27 open (`claude/api-trim`).
+- [x] `src/version.ts`: replace the runtime `require('../package.json')` with a build-time constant, so bundlers that prune non-JS files don't break it (PR #16 review). PR #27, merged.
 - [x] Resource cleanup: `OnModuleDestroy` closes the dispatchers the module created. The static module's default options become a factory. PR #26, merged.
-- [~] Option mapping: PR #26 merged the two sub-items below; the `__`-casts sub-item is done, PR #27 open (`claude/api-trim`).
+- [x] Option mapping: PR #26 merged the two sub-items below; the `__`-casts sub-item is done, PR #27, merged.
   - ~~replace the `__` casts with a typed resolved config~~ - done by `claude/api-trim`: one internal `ResolvedModuleConfig` (`src/modules/http/internal/resolved-config.ts`), produced once by `mapAxiosConfigToUndici` and consumed by `HttpService`, replaces the `__agentOptions`/`__proxyAgent` `as any` reads.
   - ~~strip axios-only keys (such as `auth`) before calling undici~~ - done by `claude/dispatcher-lifecycle`: `auth`/`httpAgent`/`httpsAgent`/`proxy`/`httpVersion`/`cookieJar`/`withCredentials`/`xsrfCookieName`/`xsrfHeaderName` and the internal `__` keys are stripped once, at setup, into a `dispatchBaseOptions` object, instead of leaking into every request's undici dispatch options.
   - ~~fix `socketPath`~~, ~~the dead `__axiosCompat.baseURL` branch~~, ~~`keepAlive`~~ and ~~the ignored `httpsAgent` TLS options~~ - done by `claude/fix-transport-options`. Still open: a `baseURL` combined with a `UrlObject` URL (not a string) silently ignores `baseURL` instead of crashing (`normalizeAxiosRequest` only combines a string URL) - better than before, not fully correct.
   - ~~use Nest `Logger` instead of console~~ - done by `claude/dispatcher-lifecycle`: `http.module.ts`'s axios-compatibility warnings now go through a `Logger` with context `HttpModule`.
-- [~] Trim the public API (decided: remove what loses nothing), then commit an api-extractor report and check it in CI. PR #27 open (`claude/api-trim`).
+- [x] Trim the public API (decided: remove what loses nothing), then commit an api-extractor report and check it in CI. PR #27, merged.
 - [x] HttpService members: `setDispatcher` (rename), internal `setInterceptors`, a real `interceptorCount`, a read-only `undiciRef`. PR #26, merged.
 - [x] `strict` TypeScript in `tsconfig.build.json` (7 errors) - done by `claude/types-axios-interop` (only 4 remained by then; the main `tsconfig.json`, editor/ts-jest/tests, stays loose).
 - [x] Duplicate undici copy: plain requests should also use an Agent from this package's undici copy. Per the "breaking changes are fine" decision, this is a per-service default `Agent`, done together with `OnModuleDestroy` resource cleanup. PR #26, merged.
@@ -305,3 +305,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - `test:debug` generates the version file first.
   - The migration guide covers the alias/axios name clash.
   - Known follow-up: api-extractor bundles TS 5.9 while the repo uses TS 6.0. It currently only warns; upgrade api-extractor when a TS 6 build ships.
+- 2026-09-26: PR #27 merged: public API trimmed from 57 to 38 exports (the axiosRef dispatch bridge and its context types are now internal), api-extractor report plus `api:check` in CI, build-time version constant, typed internal `ResolvedModuleConfig`, `reflect-metadata` peer dropped. CI all green.
