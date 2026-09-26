@@ -29,12 +29,12 @@ Lower is better. Hover a bar for its p95.
 ## What's measured
 
 - Each request to the app makes 5 parallel GET calls to a mock backend and returns the parsed bodies. For a given platform, only the `HttpModule`/`HttpService` import changes between the two rows. The app is [`benchmarks/apps/nestjs-app`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/apps/nestjs-app).
-- The "with an interceptor" rows add the same `axiosRef` request/response interceptor to both clients (it sets a header and times the call), with no per-request logging.
+- The "with an interceptor" rows add the same `axiosRef` request and response interceptor to both clients. It sets a header and times the call, and logs nothing per request.
 - [`benchmarks/apps/undici-raw`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/apps/undici-raw) calls undici directly, with no `HttpModule`/`HttpService` at all, as a floor for the other rows.
 
 ## Full results
 
-Tested on Node.js 24. See Environment below for how these numbers were produced.
+Tested on Node.js 24. The Environment section below says where these numbers come from.
 
 ### Average response time (ms)
 
