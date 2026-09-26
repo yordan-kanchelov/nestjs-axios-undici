@@ -52,6 +52,146 @@ export type AxiosRequestHeaders = Partial<
   RawAxiosHeaders & CommonRequestHeaders
 >;
 
+// ---------------------------------------------------------------------------
+// Header value sanitization (plan.md phase 2: "sanitize CRLF / non-Latin1
+// header values like axios")
+// ---------------------------------------------------------------------------
+
+/**
+ * axios sanitizes a header value *twice*, at two different points in time,
+ * with two different allowed sets (`lib/helpers/sanitizeHeaderValue.js`,
+ * checked against real axios 1.20) - not composable into one pass, because
+ * axiosRef request interceptors run *between* them and can observe/rewrite
+ * the value in between (see `sanitizeByteStringHeaderValue`'s doc comment
+ * below for the concrete case this matters for):
+ *
+ * 1. When a value is set on an `AxiosHeaders` instance (`sanitizeHeaderValue`
+ *    below): strips every C0/DEL control character (CRLF and friends) -
+ *    `INVALID_UNICODE_HEADER_VALUE_CHARS` in axios' source. A non-ASCII
+ *    Unicode character (an emoji, `请求用户`, ...) is *not* touched here.
+ * 2. Right before the request is actually dispatched, once
+ *    (`sanitizeByteStringHeaderValue` below, called by `toByteStringHeader
+ *    Object` in axios, and by `HttpService.executeRequest`'s own
+ *    `sanitizeHeadersToByteString` here): strips anything outside the
+ *    Latin-1 byte range - `INVALID_BYTE_STRING_HEADER_VALUE_CHARS`, a
+ *    strictly *wider* set than pass 1's (every character pass 1 removes is
+ *    also outside pass 2's allowed range, so pass 2 alone is a safe,
+ *    idempotent superset check, useful as a defense-in-depth final pass even
+ *    where pass 1 already ran).
+ *
+ * Where undici would otherwise throw `InvalidArgumentError` for a header
+ * value axios' Node `http` transport silently rewrites (a bare `\n`, an
+ * emoji, ...), these strip it the same way up front, so undici never sees
+ * the invalid bytes and the two libraries send the same bytes on the wire -
+ * checked against real axios 1.20 (`tests/compat/differential/errors.diff
+ * .spec.ts`, "header value with an embedded newline").
+ */
+// eslint-disable-next-line no-control-regex -- intentionally targets C0/DEL controls, matching axios' own `INVALID_UNICODE_HEADER_VALUE_CHARS`.
+const HEADER_VALUE_CONTROL_CHARS_RE = /[\u0000-\u0008\u000a-\u001f\u007f]/;
+// eslint-disable-next-line no-control-regex -- see HEADER_VALUE_CONTROL_CHARS_RE above.
+const HEADER_VALUE_CONTROL_CHARS_RE_G = /[\u0000-\u0008\u000a-\u001f\u007f]+/g;
+const HEADER_VALUE_NON_LATIN1_RE = /[^\t\x20-\x7e\x80-\xff]/;
+const HEADER_VALUE_NON_LATIN1_RE_G = /[^\t\x20-\x7e\x80-\xff]+/g;
+
+/** axios' `trimSPorHTAB` (`sanitizeHeaderValue.js`): trims only space/tab, never other whitespace. */
+function trimSpaceOrTab(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end) {
+    const c = value.charCodeAt(start);
+    if (c !== 0x09 && c !== 0x20) break;
+    start++;
+  }
+  while (end > start) {
+    const c = value.charCodeAt(end - 1);
+    if (c !== 0x09 && c !== 0x20) break;
+    end--;
+  }
+  return start === 0 && end === value.length ? value : value.slice(start, end);
+}
+
+/**
+ * Pass 1 (see the doc comment above): strips CRLF and every other C0/DEL
+ * control character - what axios applies whenever a header value is *set*
+ * (`AxiosHeaders#set`, and `axios-request.adapter.ts`'s `mergeHeaders` for
+ * the fast, plain-object dispatch path, which never builds an `AxiosHeaders`
+ * instance). Deliberately leaves a non-Latin1 Unicode character untouched -
+ * only pass 2 (`sanitizeByteStringHeaderValue`) removes those, once, right
+ * before dispatch. A `test()` pass first, with no allocation, keeps the
+ * overwhelming common case (a value with no invalid characters) at exactly
+ * its prior cost. Axios' own `sanitizeValue` trims unconditionally (even a
+ * value with no invalid characters can have a leading/trailing space/tab
+ * trimmed), so a value that needs no character removal still gets the cheap
+ * trim check.
+ */
+export function sanitizeHeaderValue(value: string): string {
+  const cleaned = HEADER_VALUE_CONTROL_CHARS_RE.test(value)
+    ? value.replace(HEADER_VALUE_CONTROL_CHARS_RE_G, '')
+    : value;
+  return trimSpaceOrTab(cleaned);
+}
+
+/**
+ * Pass 2 (see the doc comment above): strips anything outside the Latin-1
+ * byte range - what axios applies exactly once, right before a request is
+ * actually dispatched (`toByteStringHeaderObject`), *after* axiosRef request
+ * interceptors have already run. This distinction is what lets an
+ * interceptor read/transform a header value pass 1 left untouched - e.g.
+ * axios' own "should allow request interceptors to encode Unicode header
+ * values before Node sends them" test: a request is built with a raw
+ * Unicode header value, a request interceptor `encodeURIComponent`s it
+ * (reading the *original* Unicode text, only possible because pass 1 never
+ * touched it), and only the *interceptor's own* (now Latin1-only) result
+ * ever reaches pass 2. Sanitizing at set-time with this pass' wider set
+ * instead - the mistake this doc comment is here to prevent regressing back
+ * into - would strip the Unicode text before the interceptor ever sees it,
+ * breaking exactly that case. Same `test()`-first shape as
+ * `sanitizeHeaderValue` above.
+ */
+export function sanitizeByteStringHeaderValue(value: string): string {
+  const cleaned = HEADER_VALUE_NON_LATIN1_RE.test(value)
+    ? value.replace(HEADER_VALUE_NON_LATIN1_RE_G, '')
+    : value;
+  return trimSpaceOrTab(cleaned);
+}
+
+/**
+ * axios' `toByteStringHeaderObject`: applies `sanitizeByteStringHeaderValue`
+ * (pass 2 above) to every value of a plain headers object, once, right
+ * before it's handed to the actual transport - called from
+ * `HttpService.executeRequest`, after axiosRef request interceptors (if any)
+ * have already run, on both the fast and axiosRef-pipeline dispatch paths.
+ * Returns the *same* object (no allocation at all) when nothing needs
+ * stripping - the overwhelming common case - and otherwise a shallow copy,
+ * so the original (e.g. `response.config.headers`/`error.config.headers`,
+ * which reads the pre-pass-2 value, matching axios) is never mutated.
+ */
+export function sanitizeHeadersToByteString(
+  headers: Record<string, any>,
+): Record<string, any> {
+  let out: Record<string, any> | undefined;
+  for (const key of Object.keys(headers)) {
+    const value = headers[key];
+    let sanitized: any = value;
+    if (typeof value === 'string') {
+      sanitized = sanitizeByteStringHeaderValue(value);
+    } else if (Array.isArray(value)) {
+      let changed = false;
+      const mapped = value.map(v => {
+        if (typeof v !== 'string') return v;
+        const s = sanitizeByteStringHeaderValue(v);
+        if (s !== v) changed = true;
+        return s;
+      });
+      sanitized = changed ? mapped : value;
+    }
+    if (sanitized !== value) {
+      (out ??= { ...headers })[key] = sanitized;
+    }
+  }
+  return out ?? headers;
+}
+
 /** `has`/`delete`/`clear`'s optional value matcher, matching axios' `AxiosHeaderMatcher`. */
 export type AxiosHeaderMatcher =
   | string
@@ -155,6 +295,26 @@ function store(target: AxiosHeaders): Map<string, [string, AxiosHeaderValue]> {
  * without needing TS `private` (which brings back the nominal-typing
  * problem `STORE`'s own doc comment explains).
  */
+/**
+ * Sanitizes a value being stored into this class' backing map, the same way
+ * axios' `normalizeValue` (`AxiosHeaders.js`) does for a *string* value -
+ * CRLF/non-Latin1 characters are only ever a concern for a string. Unlike
+ * axios' own `normalizeValue` (which also unconditionally coerces every
+ * other value with `String()`), a number/boolean/`null` is left exactly as
+ * given: this class already preserves those types through `get()`/`toJSON()`
+ * (see the "should handle different value types" test), a deliberate,
+ * pre-existing difference from axios untouched by this fix - only the
+ * string (and string-array) case, where an actual sanitization concern
+ * exists, is touched here.
+ */
+function normalizeHeaderValue(value: AxiosHeaderValue): AxiosHeaderValue {
+  if (typeof value === 'string') return sanitizeHeaderValue(value);
+  if (Array.isArray(value)) {
+    return value.map(v => (typeof v === 'string' ? sanitizeHeaderValue(v) : v));
+  }
+  return value;
+}
+
 function setInMap(
   map: Map<string, [string, AxiosHeaderValue]>,
   name: string,
@@ -171,7 +331,7 @@ function setInMap(
   // `set()` for the same header, regardless of the casing passed this
   // time).
   const preservedName = existing ? existing[0] : name;
-  map.set(lower, [preservedName, value]);
+  map.set(lower, [preservedName, normalizeHeaderValue(value)]);
 }
 
 /** Single-header `set()`, resolving `store(target)` itself - for the rare call outside a batch (see `setInMap`). */

@@ -2,6 +2,7 @@ import {
   buildFormData,
   buildFormRequestConfig,
   buildFormSerializedPairs,
+  buildAxiosConfig,
   buildURL,
   combineURLs,
   extractUrlCredentials,
@@ -9,6 +10,7 @@ import {
   isAxiosRequestConfig,
   mergeHeaders,
   normalizeAxiosRequest,
+  serializeAxiosConfig,
   serializeRequestData,
   SIGNAL_CLEANUP,
   toUrlEncodedForm,
@@ -342,6 +344,38 @@ describe('axios request adapter', () => {
       });
     });
 
+    /**
+     * plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values like
+     * axios" (found by upstream conformance): `mergeHeaders` is the one
+     * place every header source is merged for the fast, plain-object
+     * dispatch path (which never builds an `AxiosHeaders` instance), so it
+     * must sanitize the same way `AxiosHeaders#set` does - checked against
+     * real axios 1.20.
+     */
+    it('mergeHeaders sanitizes CRLF/control characters out of header values', () => {
+      expect(mergeHeaders({ 'X-Bad': 'a\nb' })).toEqual({ 'X-Bad': 'ab' });
+      expect(mergeHeaders({ 'X-Bad': 'a\r\nb' })).toEqual({ 'X-Bad': 'ab' });
+    });
+
+    it('mergeHeaders trims space/tab, but leaves a non-Latin1 character untouched (that only happens once, at dispatch time - see sanitizeHeadersToByteString)', () => {
+      // mergeHeaders is the fast path's set()-time equivalent - see the doc
+      // comment on `sanitizeHeaderValue` in axios-headers.ts for why an
+      // emoji/non-Latin1 character survives this pass (an axiosRef request
+      // interceptor must still be able to observe/transform it first).
+      expect(mergeHeaders({ 'X-Emoji': 'a\u{1F600}b' })).toEqual({
+        'X-Emoji': 'a\u{1F600}b',
+      });
+      expect(mergeHeaders({ 'X-Trim': '\t value \t' })).toEqual({
+        'X-Trim': 'value',
+      });
+    });
+
+    it('mergeHeaders sanitizes every element of an array header value', () => {
+      expect(mergeHeaders({ 'X-Multi': ['a\nb', 'c\rd'] })).toEqual({
+        'X-Multi': ['ab', 'cd'],
+      });
+    });
+
     it('toUrlEncodedForm supports nested values', () => {
       expect(
         toUrlEncodedForm({ a: 1, b: 'x y', list: [1, 2], obj: { k: 'v' } }),
@@ -509,6 +543,57 @@ describe('axios request adapter', () => {
       );
       const form = config.data as any;
       expect([...form.keys()]).toEqual(['list', 'list']);
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: remaining error-shape gaps" (found by upstream
+   * conformance), item 2: "a synchronous config-normalization error (e.g. a
+   * throwing paramsSerializer/params handling) must reject as an AxiosError
+   * like axios" - checked against real axios 1.20 (`lib/adapters/http.js`:
+   * `buildURL(...)` wrapped in its own `try`/`catch`,
+   * `AxiosError.from(err, AxiosError.ERR_BAD_REQUEST, config, ...)`).
+   */
+  describe('a throwing paramsSerializer is wrapped as an AxiosError (ERR_BAD_REQUEST)', () => {
+    const throwingSerializer = () => {
+      throw new Error('boom');
+    };
+
+    it('normalizeAxiosRequest (the fast path)', () => {
+      expect(() =>
+        normalizeAxiosRequest('http://api/x', {
+          params: { a: 1 },
+          paramsSerializer: throwingSerializer,
+        }),
+      ).toThrow(
+        expect.objectContaining({
+          isAxiosError: true,
+          code: 'ERR_BAD_REQUEST',
+          message: 'boom',
+          // axios' own `AxiosError.from`'s 6th-parameter `customProps`
+          // (`lib/adapters/http.js`'s `buildURL` catch) - checked against
+          // real axios 1.20's "should display error while parsing params".
+          url: 'http://api/x',
+          exists: true,
+        }),
+      );
+    });
+
+    it('serializeAxiosConfig (the axiosRef pipeline path)', () => {
+      const config = buildAxiosConfig('http://api/x', {
+        params: { a: 1 },
+        paramsSerializer: throwingSerializer,
+      });
+      expect(() => serializeAxiosConfig(config)).toThrow(
+        expect.objectContaining({
+          isAxiosError: true,
+          code: 'ERR_BAD_REQUEST',
+          message: 'boom',
+          url: 'http://api/x',
+          exists: true,
+          config,
+        }),
+      );
     });
   });
 });

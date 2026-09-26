@@ -80,6 +80,11 @@ export class AxiosError<T = any> extends Error {
     config?: InternalAxiosLikeRequestConfig,
     request?: any,
     response?: AxiosLikeResponse<T>,
+    // axios' own 6th `AxiosError.from` parameter (`lib/core/AxiosError.js`):
+    // arbitrary extra fields merged onto the built error, e.g. `http.js`'s
+    // own `buildURL(...)` catch sets `{ url, exists: true }` - see
+    // `axios-request.adapter.ts`'s `buildURL` wrapping.
+    customProps?: Record<string, unknown>,
   ): AxiosError<T> {
     const axiosError = new AxiosError<T>(
       error?.message ?? String(error),
@@ -97,6 +102,7 @@ export class AxiosError<T = any> extends Error {
     if (error?.name) {
       axiosError.name = error.name;
     }
+    if (customProps) Object.assign(axiosError, customProps);
     return axiosError;
   }
 
@@ -330,6 +336,41 @@ export function createUnsupportedProtocolError(
   const error = new AxiosError(
     `Unsupported protocol ${protocol}`,
     AxiosError.ERR_BAD_REQUEST,
+  );
+  error._setLazyConfig(request);
+  return error;
+}
+
+/**
+ * True when `value` is the kind of `timeout` axios itself rejects before
+ * ever using it: a *truthy* value (axios' own check is `if (own('timeout'))`
+ * - `0`/`''`/`null`/`undefined`/`NaN` all skip validation entirely, same as
+ * "no timeout configured") that `parseInt(value, 10)` can't turn into a
+ * number - checked against real axios 1.20 (`lib/adapters/http.js`: `const
+ * timeout = parseInt(own('timeout'), 10); if (Number.isNaN(timeout)) {...}`).
+ * A numeric string (`'5000'`) is valid, matching axios' own `parseInt` call.
+ */
+export function isUnparsableTimeout(value: unknown): boolean {
+  if (!value) return false;
+  return Number.isNaN(parseInt(value as any, 10));
+}
+
+/**
+ * The error axios gives for a `timeout` it can't parse to an integer
+ * (`isUnparsableTimeout`): `ERR_BAD_OPTION_VALUE`, the exact message axios
+ * uses - checked against real axios 1.20. Unlike axios (which only reaches
+ * this check once the request's socket already exists, so its error also
+ * carries `request`), this library checks it up front, before ever
+ * dispatching - matching `createUnsupportedProtocolError`'s same precedent
+ * of setting no `.request` for a config error caught before any network
+ * activity starts.
+ */
+export function createUnparsableTimeoutError(
+  request: HttpInterceptorRequest,
+): AxiosError {
+  const error = new AxiosError(
+    'error trying to parse `config.timeout` to int',
+    AxiosError.ERR_BAD_OPTION_VALUE,
   );
   error._setLazyConfig(request);
   return error;

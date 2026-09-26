@@ -1,8 +1,9 @@
 import type { UrlObject } from 'node:url';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import type { Dispatcher } from 'undici';
 import { AxiosError, createStatusError } from '../errors/axios-error';
 import {
+  hasContentLengthLimit,
   readBodyAsResponseType,
   readDefaultBody,
   readText,
@@ -233,6 +234,77 @@ export const STATUS_TEXT_MAP: Record<number, string> = {
 };
 
 /**
+ * True when `status` passes `options.validateStatus`, axios' own way
+ * (`settle()`): a *function* `validateStatus` decides it outright;
+ * `validateStatus` present as an own key at all (even explicit `undefined`,
+ * or `null`) always resolves, matching axios' `!validateStatus ||
+ * validateStatus(status)` (a non-function `validateStatus` never rejects);
+ * otherwise the built-in 2xx range. Shared by `toAxiosLikeResponse` (a real
+ * network response) and `resolveDataUrlRequest` (a `data:` URL's synthetic
+ * response - axios runs the *exact same* `settle()` for both).
+ */
+export function resolveIsValidStatus(
+  options: Record<string, any> | undefined,
+  status: number,
+): boolean {
+  const configuredValidateStatus = options?.validateStatus;
+  return typeof configuredValidateStatus === 'function'
+    ? configuredValidateStatus(status)
+    : Object.prototype.hasOwnProperty.call(options ?? {}, 'validateStatus')
+      ? true
+      : status >= 200 && status < 300;
+}
+
+/**
+ * Enforces `maxContentLength` on a `responseType: 'stream'` body, matching
+ * axios 1.20 exactly (`lib/adapters/http.js`'s own streamed enforcement,
+ * `Readable.from(enforceMaxContentLength(), ...)`  - checked against real
+ * axios 1.20): wraps the (already decompressed, if applicable -
+ * `maxContentLength` counts decoded bytes, like the buffered case in
+ * `axios-response-type.adapter.ts`) stream in an async generator that throws
+ * a real `AxiosError` once the running total crosses the limit. Reading it
+ * past that point destroys `source` through the `for await` loop's own
+ * `return()` call on an abrupt completion - the same mechanism
+ * `readBufferWithLimit`/`readDecompressedBufferWithLimit` already rely on
+ * for the buffered case - rather than a `Transform` this function would have
+ * to destroy manually. When the response was compressed, `source` is
+ * `decompressStream`'s own return value, which - review fix: destroying only
+ * `source` used to leave the raw (undici) body/socket dangling, since
+ * `.pipe()` never propagates destruction upstream - already wires
+ * destroying it to destroying the raw body behind it (see that function's
+ * doc comment), so this still only ever needs to destroy the one stream it
+ * was given. Only ever called when a limit is actually set (see the call
+ * site below): an unset/`-1` `maxContentLength` (the common case) never
+ * wraps the stream at all, so `responseType: 'stream'` costs nothing extra
+ * by default.
+ */
+function guardStreamMaxContentLength(
+  source: Readable,
+  maxContentLength: number,
+  request: HttpInterceptorRequest,
+  requestInfo: RequestInfo | Record<string, any>,
+): Readable {
+  async function* enforce(): AsyncGenerator<Buffer> {
+    let total = 0;
+    for await (const chunk of source as unknown as AsyncIterable<Buffer>) {
+      total += (chunk as Buffer).length;
+      if (total > maxContentLength) {
+        const error = new AxiosError(
+          `maxContentLength size of ${maxContentLength} exceeded`,
+          AxiosError.ERR_BAD_RESPONSE,
+          undefined,
+          requestInfo,
+        );
+        error._setLazyConfig(request);
+        throw error;
+      }
+      yield chunk as Buffer;
+    }
+  }
+  return Readable.from(enforce());
+}
+
+/**
  * Converts an undici response to the axios-compatible response format,
  * reading and parsing the body and rejecting with an axios-like error when
  * the status fails `validateStatus`. `HttpService` applies it at the end of
@@ -346,6 +418,19 @@ export async function toAxiosLikeResponse(
         maxContentLength,
         { contentEncoding, decompress },
       );
+      if (
+        responseType === 'stream' &&
+        hasContentLengthLimit(maxContentLength) &&
+        parsedData &&
+        typeof (parsedData as any).pipe === 'function'
+      ) {
+        parsedData = guardStreamMaxContentLength(
+          parsedData as Readable,
+          maxContentLength!,
+          request,
+          requestInfo,
+        );
+      }
     } else if (body) {
       parsedData = await readDefaultBody(
         body as Dispatcher.ResponseData['body'],
@@ -411,23 +496,7 @@ export async function toAxiosLikeResponse(
     requestInfo,
   );
 
-  // Axios throws errors for 4xx and 5xx status codes by default, unless
-  // `validateStatus` says otherwise. `validateStatus: null` (or `undefined`
-  // set as an explicit own key - see `normalizeAxiosRequest`) means every
-  // status resolves, as in axios' `settle()` (`!validateStatus ||
-  // validateStatus(status)`): only a *function* ever narrows this.
-  const configuredValidateStatus = (request.options as any)?.validateStatus;
-  const isValidStatus =
-    typeof configuredValidateStatus === 'function'
-      ? configuredValidateStatus(undiciResponse.statusCode)
-      : Object.prototype.hasOwnProperty.call(
-            request.options as any,
-            'validateStatus',
-          )
-        ? true
-        : undiciResponse.statusCode >= 200 && undiciResponse.statusCode < 300;
-
-  if (!isValidStatus) {
+  if (!resolveIsValidStatus(request.options, undiciResponse.statusCode)) {
     throw createStatusError(axiosLikeResponse, request);
   }
 
