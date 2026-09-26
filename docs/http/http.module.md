@@ -1,6 +1,6 @@
 # HttpModule
 
-`HttpModule` provides `HttpService`. Its API matches `@nestjs/axios`' `HttpModule`: import it as is, or configure it with `register()` or `registerAsync()`.
+`HttpModule` provides `HttpService`. Its API matches the `HttpModule` from `@nestjs/axios`. Import it as is, or configure it with `register()` or `registerAsync()`.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -12,7 +12,7 @@ import { HttpModule } from 'nestjs-axios-undici';
 export class AppModule {}
 ```
 
-Each import of `HttpModule`, `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Bare `HttpModule` (no `register()` call) gets empty options - previously, every app that imported the bare module this way shared the *same* empty options object, so calling `setDispatcher()` (or the old `setGlobalDispatcher()`) in one app leaked into every other app's `HttpService` too; that's fixed, each app now gets its own.
+Each import of `HttpModule`, `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Bare `HttpModule` (no `register()` call) gets empty options. Previously, every app that imported the bare module this way shared the *same* empty options object, so calling `setDispatcher()` (or the old `setGlobalDispatcher()`) in one app leaked into every other app's `HttpService` too. That's fixed now: each app gets its own.
 
 ## `register(options)`
 
@@ -73,7 +73,7 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 
 ## Dispatchers and shutdown
 
-Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService`, bounded by a short internal grace period so an abandoned `responseType: 'stream'` response can't hang shutdown forever - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
+Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService`. This is bounded by a short internal grace period, so an abandoned `responseType: 'stream'` response can't hang shutdown forever. See [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
 
 ## `interceptors`
 

@@ -34,6 +34,14 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/docsify@4.13.0/lib/themes/vue.css"
     />
+    <style>
+      /* Let long code spans in table cells wrap, so wide tables fit the page
+         instead of scrolling their last column out of view. */
+      .markdown-section td code {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    </style>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>"
