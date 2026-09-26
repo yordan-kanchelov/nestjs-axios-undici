@@ -189,7 +189,14 @@ describe('HttpService - request-path caches stay live', () => {
   it('setInterceptors after the first request still applies', async () => {
     await firstValueFrom(service.get(`${serverUrl}/x`));
 
-    service.setInterceptors([
+    // `setInterceptors` is internal now (plan.md phase 3 "HttpService
+    // members") - `http.module.ts` passes the resolved interceptor list into
+    // the constructor instead of calling it. Reached here via a bracket-key
+    // cast purely to exercise the cache-invalidation behaviour this test is
+    // actually about.
+    (service as unknown as { setInterceptors: (i: unknown[]) => void })[
+      'setInterceptors'
+    ]([
       (request, next) => {
         request.options.headers = {
           ...(request.options.headers as any),

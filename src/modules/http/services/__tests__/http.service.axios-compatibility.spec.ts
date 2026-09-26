@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '../http.service';
 import { HttpModule } from '../../http.module';
@@ -193,7 +194,12 @@ describe('HttpService - Axios Compatibility', () => {
 
   describe('HttpModule.register with axios options', () => {
     it('should automatically map axios configuration to undici', async () => {
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      // http.module.ts logs axios compatibility warnings through Nest's own
+      // `Logger` (plan.md phase 3 "Option mapping": "use Nest Logger"), not
+      // `console.warn` any more - spy on the Logger itself.
+      const consoleWarnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation();
 
       module = await Test.createTestingModule({
         imports: [
@@ -239,7 +245,9 @@ describe('HttpService - Axios Compatibility', () => {
     });
 
     it('should show warnings for unsupported options', async () => {
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleWarnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation();
 
       module = await Test.createTestingModule({
         imports: [
@@ -251,7 +259,7 @@ describe('HttpService - Axios Compatibility', () => {
 
       // Should show warnings for unsupported options
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[nestjs-axios-undici] Axios compatibility warnings:',
+        'Axios compatibility warnings:',
       );
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('XSRF protection'),
@@ -262,7 +270,9 @@ describe('HttpService - Axios Compatibility', () => {
     });
 
     it('does not warn for socketPath (now supported)', async () => {
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleWarnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation();
 
       module = await Test.createTestingModule({
         imports: [

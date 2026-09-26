@@ -12,7 +12,7 @@ import { HttpModule } from 'nestjs-axios-undici';
 export class AppModule {}
 ```
 
-Each import of `HttpModule.register()` / `registerAsync()` creates its own `HttpService` with its own configuration and interceptors.
+Each import of `HttpModule`, `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Bare `HttpModule` (no `register()` call) gets empty options - previously, every app that imported the bare module this way shared the *same* empty options object, so calling `setDispatcher()` (or the old `setGlobalDispatcher()`) in one app leaked into every other app's `HttpService` too; that's fixed, each app now gets its own.
 
 ## `register(options)`
 
@@ -70,6 +70,10 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 - **Undici request options**, used as defaults for every request, for example `dispatcher`, `headersTimeout` and `bodyTimeout`. See the [undici `request()` options](https://github.com/nodejs/undici#undicirequesturl-options-promise).
 - **`interceptors`**: an array of interceptors (see below).
 - **`global`**: registers the module as global, as in `@nestjs/axios`.
+
+## Dispatchers and shutdown
+
+Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService` - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
 
 ## `interceptors`
 

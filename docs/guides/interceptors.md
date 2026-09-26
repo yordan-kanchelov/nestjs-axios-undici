@@ -215,7 +215,7 @@ For testing interceptors, see [Testing](/docs/guides/testing.md#testing-intercep
 
 ## Custom Dispatchers
 
-For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module configuration (`dispatcher`), at runtime (`httpService.setGlobalDispatcher(...)`) or per request (`request(url, { dispatcher })`).
+For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module configuration (`dispatcher`), at runtime (`httpService.setDispatcher(...)`) or per request (`request(url, { dispatcher })`).
 
 ```typescript
 import { Agent } from 'undici';

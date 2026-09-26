@@ -97,6 +97,8 @@ To configure advanced behavior like connection pooling, proxies, or mocks, you s
 
 For the common axios-style cases - TLS options via `httpsAgent`, `socketPath`, an explicit `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables, and `httpVersion: 2` - you don't need a `Dispatcher` at all; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options).
 
+With none of these set, `HttpService` still doesn't use undici's *global* dispatcher: it builds its own default `Agent` once, at startup. **Breaking change:** earlier versions fell back to `undici.getGlobalDispatcher()`, so `undici.setGlobalDispatcher()` elsewhere in the process could affect this library's own requests; it no longer can. `app.close()` gracefully closes every dispatcher this library created (the default `Agent`, or whatever `dispatcher`/`httpAgent`/`httpsAgent`/`proxy`/`socketPath` produced) - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in yourself is never closed by this library.
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { HttpModule } from 'nestjs-axios-undici';
