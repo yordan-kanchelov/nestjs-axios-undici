@@ -339,5 +339,110 @@ describe('axios-progress.adapter', () => {
         expect(errors).toHaveLength(1);
       });
     });
+
+    // Coordinator review fix on PR #33: the first version of the mitigation
+    // eagerly drained `body` (ignoring `meter.write()`'s own backpressure)
+    // whenever `Content-Length` was known, for *every* responseType -
+    // including `'stream'`. For `responseType: 'stream'` with
+    // `onDownloadProgress`/`maxRate` set (a progress bar on a large
+    // download - exactly why a caller picks `'stream'` at all), that meant a
+    // multi-GB response could sit fully in memory ahead of a slow consumer,
+    // the opposite of what streaming is for. `buffered` (only ever `true`
+    // for a responseType that's going to be fully buffered anyway - see
+    // `axios-response.adapter.ts`'s call site) now gates that eager drain;
+    // these tests fail against that first version (drop `buffered` from
+    // either call below and both this describe block's tests fail: the
+    // 'stream' one because `source` never pauses, the `maxContentLength` one
+    // because `source` fully drains despite exceeding the limit).
+    describe('buffered vs stream backpressure (coordinator review fix, PR #33)', () => {
+      // A pull-based source: `_read` only ever produces one chunk per call,
+      // so `.pipe()`'s own flow control is what would make it pause - never
+      // draining without a consumer requesting more proves nothing pulled
+      // it eagerly.
+      function makeLargeSource(
+        totalBytes: number,
+        chunkSize = 64 * 1024,
+      ): Readable {
+        let sent = 0;
+        return new Readable({
+          read() {
+            if (sent >= totalBytes) {
+              this.push(null);
+              return;
+            }
+            const size = Math.min(chunkSize, totalBytes - sent);
+            sent += size;
+            this.push(Buffer.alloc(size, 'x'));
+          },
+        });
+      }
+
+      it("responseType: 'stream' (buffered: false/unset) keeps the raw body backpressured - never drained ahead of an unread consumer, even with a known Content-Length", async () => {
+        const total = 4 * 1024 * 1024; // 4MB, several highWaterMarks
+        const source = makeLargeSource(total);
+        const wrapped = meterDownloadBody(source, { total }); // buffered unset
+
+        // Nothing ever reads `wrapped` - a stalled/very slow stream consumer.
+        await new Promise(r => setTimeout(r, 50));
+
+        expect(source.isPaused()).toBe(true);
+        expect(source.readableEnded).toBe(false);
+        // Bounded to a handful of highWaterMarks, not anywhere near `total`.
+        expect((wrapped as any).writableLength).toBeLessThan(1024 * 1024);
+
+        source.destroy();
+        wrapped.destroy();
+      });
+
+      it('a buffered responseType (buffered: true) drains the raw body eagerly - even with a stalled consumer, bounded by Content-Length', async () => {
+        const total = 4 * 1024 * 1024; // 4MB
+        const source = makeLargeSource(total);
+        const wrapped = meterDownloadBody(source, { total, buffered: true });
+
+        // Same stalled consumer as above - the difference is `buffered`.
+        await new Promise(r => setTimeout(r, 50));
+
+        expect(source.readableEnded).toBe(true); // fully drained already
+        expect(source.isPaused()).toBe(false); // never backpressured
+
+        wrapped.destroy();
+      });
+
+      it('a buffered responseType whose Content-Length already exceeds maxContentLength is NOT drained ahead of time - the streamed maxContentLength check still gets to reject it promptly, without reading the whole oversized body first', async () => {
+        const total = 4 * 1024 * 1024; // 4MB, well over the limit below
+        const source = makeLargeSource(total);
+        const wrapped = meterDownloadBody(source, {
+          total,
+          buffered: true,
+          maxContentLength: 1000, // far under `total`
+        });
+
+        await new Promise(r => setTimeout(r, 50));
+
+        // Falls back to the plain, backpressured pipe: not eagerly drained.
+        expect(source.isPaused()).toBe(true);
+        expect(source.readableEnded).toBe(false);
+
+        source.destroy();
+        wrapped.destroy();
+      });
+
+      it('a buffered responseType whose Content-Length is within maxContentLength is still drained ahead of time', async () => {
+        const total = 4 * 1024 * 1024;
+        const source = makeLargeSource(total);
+        const wrapped = meterDownloadBody(source, {
+          total,
+          buffered: true,
+          maxContentLength: total + 1, // just over `total` - within the limit
+        });
+
+        await new Promise(r => setTimeout(r, 50));
+
+        expect(source.readableEnded).toBe(true);
+        expect(source.isPaused()).toBe(false);
+
+        wrapped.destroy();
+      });
+    });
   });
 });

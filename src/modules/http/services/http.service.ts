@@ -247,8 +247,15 @@ function activeAxiosInterceptors<T>(
 
 /**
  * The per-request abort signal passed to undici. undici only needs `aborted`,
- * `reason` and a single 'abort' listener, so this is cheaper than an
- * AbortController (no EventTarget) on every request.
+ * `reason` and an 'abort' listener, so this is cheaper than a real
+ * AbortController (no EventTarget) on every request. Review fix (PR #33):
+ * needs *more than one* listener now - undici's own, plus
+ * `meterDownloadBody`'s (`axios-progress.adapter.ts`), which reacts to this
+ * same signal to reject a still-pending, `maxRate`-paced buffered read even
+ * once the raw undici transfer underneath it has already finished (the
+ * eager-drain mitigation there means that can now happen well before this
+ * fires) - a plain array of listeners is still far cheaper than a real
+ * EventTarget.
  */
 /** Upper bound on cached per-request `socketPath` Agents (see `getSocketPathDispatcher`). */
 const MAX_SOCKET_PATH_DISPATCHERS = 32;
@@ -256,23 +263,24 @@ const MAX_SOCKET_PATH_DISPATCHERS = 32;
 class RequestAbortSignal {
   aborted = false;
   reason: unknown = undefined;
-  private listener: (() => void) | undefined;
+  private listeners: Array<() => void> = [];
 
   addEventListener(_type: 'abort', listener: () => void): void {
-    this.listener = listener;
+    this.listeners.push(listener);
   }
 
-  removeEventListener(): void {
-    this.listener = undefined;
+  removeEventListener(_type: 'abort', listener: () => void): void {
+    const i = this.listeners.indexOf(listener);
+    if (i !== -1) this.listeners.splice(i, 1);
   }
 
   abort(reason?: unknown): void {
     if (this.aborted) return;
     this.aborted = true;
     this.reason = reason;
-    const listener = this.listener;
-    this.listener = undefined;
-    listener?.();
+    const listeners = this.listeners;
+    this.listeners = [];
+    for (const listener of listeners) listener();
   }
 }
 
@@ -1591,15 +1599,17 @@ export class HttpService implements OnModuleDestroy {
           currentUrl,
         );
 
-        toAxiosLikeResponse(interceptorRequest, res, requestInfo).then(
-          axiosRes => {
-            settled = true;
-            clearDeadline();
-            subscriber.next(axiosRes);
-            subscriber.complete();
-          },
-          fail,
-        );
+        toAxiosLikeResponse(
+          interceptorRequest,
+          res,
+          requestInfo,
+          abortSignal,
+        ).then(axiosRes => {
+          settled = true;
+          clearDeadline();
+          subscriber.next(axiosRes);
+          subscriber.complete();
+        }, fail);
       };
 
       // Perf item 4: one `.then(onFulfilled, onRejected)` registration

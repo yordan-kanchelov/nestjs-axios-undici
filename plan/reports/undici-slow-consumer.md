@@ -204,56 +204,143 @@ sustained slow consumer that reliably opens this race (that's precisely how the 
 upstream conformance test - "should support download rate limit" - found it: `maxRate`
 throttling is what turns a normally-instant local transfer into a multi-second one, giving
 the server's - there, a 1s - `keepAliveTimeout` time to fire mid-transfer), this package
-takes mitigation (b) for a `Content-Length`-known download metered this way, in two
-complementary steps in `meterDownloadBody`:
+takes mitigation (b) for a `Content-Length`-known download metered this way, in two steps in
+`meterDownloadBody` - the second for every caller, the first only when it's actually safe:
 
-1. **Root cause, not just the symptom.** The first attempt at this fix only listened for
-   the raw body's `'error'` event (replacing `stream.pipeline()`, whose automatic
-   error-forwarding would destroy the metered stream before a check could run) and turned
-   `UND_ERR_SOCKET` into a normal end when every promised (`Content-Length`) byte had
-   already been *forwarded* (`meter.bytesSeen >= total`). **This measurably helped but did
-   not reliably fix the real test**: `meter.bytesSeen` is itself paced by
-   `maxRate`/`onDownloadProgress`'s own throttling, so at the moment the race actually
-   fires - which, for a `maxRate`-throttled download, is tied to almost the same wall-clock
-   duration as the throttle's own pacing - it had typically *not* yet caught up to `total`
-   either (confirmed directly: re-running axios' own test against this first version still
-   failed, with the error's own diagnostics showing `bytesRead: 1000128` - the *raw* undici
-   socket already had the complete body - while our own `bytesSeen` lagged behind it).
-   Fixed by attacking the actual trigger instead: `body` (the raw undici stream) is now
-   drained via a `'data'` listener rather than `.pipe()`d, so undici's own parser is never
-   left paused on *our* backpressure - it's never given the chance to still be paused when
-   the peer's FIN is processed. Only `meter`'s own throttled/paced *output* stays
-   backpressured, exactly as intended. The trade-off: a `Content-Length`-known download
-   metered this way can now sit fully in `meter`'s internal buffer ahead of a slow
-   `maxRate`/consumer, up to `total` bytes - bounded by the response's own advertised size,
-   and no worse than what a *buffered* `responseType` (`json`/`text`/`arraybuffer`/`blob`)
-   already pays regardless of `maxRate` (this is exactly what the failing upstream test
-   uses - `responseType: 'text'` - so for it specifically there is no new memory cost at
-   all). `maxContentLength`'s own streamed enforcement sits in front of this unaffected (it
-   still destroys `body` the instant its limit is crossed - if anything, promptly *faster*
-   now).
-2. **Belt-and-suspenders.** (1) makes the race far less likely but not impossible (e.g. one
-   final chunk large enough to satisfy `Content-Length` and race the socket's `'end'` before
-   `meter.write()` is even called), so `body`'s `'error'` is still checked directly, exactly
-   as the first attempt did: `err.code === 'UND_ERR_SOCKET'` and `meter.bytesSeen >= total`
-   together turn it into a normal end instead of an error.
+1. **Root cause, not just the symptom - only for a response that's buffered anyway.** The
+   first attempt at this fix only listened for the raw body's `'error'` event (replacing
+   `stream.pipeline()`, whose automatic error-forwarding would destroy the metered stream
+   before a check could run) and turned `UND_ERR_SOCKET` into a normal end when every
+   promised (`Content-Length`) byte had already been *forwarded* (`meter.bytesSeen >=
+   total`). **This measurably helped but did not reliably fix the real test**:
+   `meter.bytesSeen` is itself paced by `maxRate`/`onDownloadProgress`'s own throttling, so
+   at the moment the race actually fires - which, for a `maxRate`-throttled download, is
+   tied to almost the same wall-clock duration as the throttle's own pacing - it had
+   typically *not* yet caught up to `total` either (confirmed directly: re-running axios'
+   own test against this first version still failed, with the error's own diagnostics
+   showing `bytesRead: 1000128` - the *raw* undici socket already had the complete body -
+   while our own `bytesSeen` lagged behind it).
+
+   Fixed by attacking the actual trigger instead: `body` (the raw undici stream) is drained
+   via a `'data'` listener rather than `.pipe()`d, so undici's own parser is never left
+   paused on *our* backpressure - it's never given the chance to still be paused when the
+   peer's FIN is processed. Only `meter`'s own throttled/paced *output* stays backpressured.
+   The trade-off: a `Content-Length`-known download drained this way can sit fully in
+   `meter`'s internal buffer ahead of a slow `maxRate`/consumer, up to `total` bytes.
+
+   **Coordinator review fix**: the version above did this for *every* `responseType`,
+   including `'stream'` - correctly flagged as unacceptable. For `responseType: 'stream'`
+   with `onDownloadProgress`/`maxRate` (a progress bar on a large download - exactly why a
+   caller picks `'stream'` at all), "bounded by `total`" is bounded only by whatever the
+   server advertises, which for a multi-GB download defeats the entire point of streaming.
+   "No worse than a buffered `responseType`" was true for the failing test
+   (`responseType: 'text'`) but false for `'stream'`. Fixed: this step now only runs when
+   `options.buffered` is `true` - set by the call site
+   (`axios-response.adapter.ts`) to `responseType !== 'stream'`, i.e. exactly the
+   `json`/`text`/`arraybuffer`/`blob` cases that get fully buffered in memory regardless, so
+   draining ahead of time costs nothing extra there. `responseType: 'stream'` keeps today's
+   plain, backpressured pipe unconditionally - still exposed to the race, now honestly
+   documented as such (see below) instead of incorrectly claimed fixed.
+
+   Also fixed in the same pass: even for a buffered response, this step now checks
+   `options.maxContentLength` against `total` first (`withinContentLengthLimit`) and skips
+   draining ahead of time whenever the response's own `Content-Length` already exceeds it -
+   otherwise draining ahead would read the *entire*, over-limit body before the buffered read
+   path's own streamed `maxContentLength` check (`readBufferWithLimit`/
+   `readDecompressedBufferWithLimit`, `axios-response-type.adapter.ts`) ever gets a chance to
+   reject it promptly, exactly the "download it all first" cost that check exists to avoid.
+   `Content-Length` itself is a hard, protocol-level bound on how much `body` can ever
+   deliver for this response either way (undici's own h1 framing enforces that), so this
+   step never reads *more* than `total` regardless; the added check is specifically about not
+   reading needlessly far past a caller's own, tighter `maxContentLength`.
+2. **Belt-and-suspenders - every caller, `'stream'` included.** Step 1 makes the race far
+   less likely for a buffered response but can't make it impossible (e.g. one final chunk
+   large enough to satisfy `Content-Length` and race the socket's `'end'` before
+   `meter.write()` is even called); for `'stream'`, where step 1 never runs, it's the only
+   defence. So `body`'s `'error'` is still checked directly, unconditionally: when it is
+   exactly `UND_ERR_SOCKET` *and* every promised byte was already handed to `meter`
+   (`meter.bytesSeen >= total`), it's this false positive, not a real failure, and is turned
+   into a normal end instead of an error. This is safe regardless of `buffered`/`'stream'`:
+   `meter.bytesSeen` only ever counts real bytes actually forwarded from `body`, so reaching
+   `total` is genuine proof the full body arrived, and this check never buffers anything
+   beyond what's already sitting in `meter` at that point - it only changes what happens on
+   an error that has already occurred.
+
+**Second coordinator review fix - abort/timeout still had to interrupt a still-pending read,
+even once step 1 had already finished with the raw transport.** Running this PR's e2e specs
+under Node 24 (`jest`'s native `require(esm)`, since the sandbox's Node 22 can't load
+`@nestjs/testing`) surfaced a real regression step 1 introduced:
+`tests/progress-form.e2e.spec.ts`'s "an abort mid-download still rejects with ERR_CANCELED,
+exactly like an unmetered request" (a buffered `GET` with `maxRate`/`onDownloadProgress`,
+aborted 50ms in) started **resolving successfully** instead of rejecting. Root cause: step 1
+now drains the raw undici body to completion almost immediately (a modest local download
+completes in a few ms once nothing backpressures it), so by the time the 50ms-delayed
+`controller.abort()` fires, undici's own request/response has *already fully finished* - the
+`abortSignal` `HttpService.executeRequest` gives undici has nothing left to interrupt at the
+transport layer. Before step 1, the raw transfer stayed genuinely in-flight for as long as
+`meter`'s own throttled pacing took (input and output rate were the same, backpressure-linked),
+so an abort at 50ms always still had a live target. This is a real, user-visible regression,
+not just a synthetic test artifact: any caller awaiting a `maxRate`-metered request, who
+cancels while their own promise is still pending, must see it reject - regardless of how much
+of that is now, invisibly, already sitting drained in `meter`'s own buffer.
+
+Fixed by making `HttpService.executeRequest`'s `RequestAbortSignal` support more than one
+listener (a plain array of listeners instead of one overwritable field - still far cheaper
+than a real `EventTarget`) and passing it through (`toAxiosLikeResponse`'s new optional 4th
+parameter, then into `meterDownloadBody`'s `options.signal`) so `meterDownloadBody` can
+register its *own* `'abort'` listener alongside undici's, independent of whichever step is (or
+isn't) draining `body` ahead of time: on abort, it destroys `meter` (and, via the existing
+`'close'` cleanup, `body`) with the signal's own `reason` - falling back to a synthetic
+`AbortError`-shaped one when `reason` is nullish (`HttpService.executeRequest`'s own
+RxJS-teardown abort path calls `abort()` with no reason at all) so a still-pending read always
+rejects rather than the destroy silently completing the stream cleanly. `meter.destroyed` is
+now checked before every eager-drain `write()`/`end()` call, guarding the gap between the
+synchronous `meter.destroy()` and `body`'s own (slightly later) destruction, so a queued
+`'data'`/`'end'` event in that window can't write/end an already-destroyed `meter` (which
+would otherwise emit a second, listener-less `'error'` - an uncaught exception). This
+uniformly covers both a user abort and this library's own deadline `timeout` (both go through
+the same `abortSignal`); `settled`'s existing gate (armed only until the response, or for
+`'stream'` the headers, is handed back) means this new listener is effectively inert for
+`'stream'`, matching the pre-existing "neither the teardown nor the user signal may abort"
+comment already there for that case.
+
+Re-verified after this fix: `tests/progress-form.e2e.spec.ts` (16/16), the differential
+suite (`tests/compat/differential/`, 222/222), the full `src/`/`tests/` jest suites under
+Node 24 (828/828 combined), axios' own "should support download rate limit" (still passes,
+3 more isolated runs), a full `run.mjs --strategy a` (0 new failures), and
+`benchmarks/micro/compare.js` (see Perf below) - all clean.
 
 A response with no `Content-Length` (chunked/unknown length) has no safe bound on how much
-this could ever buffer, so neither step applies - it keeps today's plain, backpressured
-`.pipe()` (and stays exposed to the race). A plain `responseType: 'stream'` consumer with
-neither `maxRate` nor `onDownloadProgress` set (the raw undici body handed straight to the
-caller, never wrapped) isn't covered either - fixing that generically would mean shipping
-our own default dispatcher/parser behaviour to paper over an upstream framing bug, a much
-bigger surface than this narrow, already-opt-in path. Both are documented as known
-limitations with a workaround (raise the server's `keepAliveTimeout`, or drain the stream
-faster) in `docs/axios-supported-options.md` (near `maxRate`/`responseType: 'stream'`) and
-`docs/migration-guide.md`.
+step 1 could ever buffer, so it's skipped regardless of `buffered` - only step 2 applies. A
+plain `responseType: 'stream'` consumer, with or without `maxRate`/`onDownloadProgress` set,
+never runs step 1 either (see the review fix above) - fixing that generically would mean
+shipping our own default dispatcher/parser behaviour to paper over an upstream framing bug, a
+much bigger surface than this narrow, already-opt-in path. Both remain exposed to the race
+(step 2 alone rescues some, not all, occurrences - see "Belt-and-suspenders" above) and are
+documented as known limitations with a workaround (raise the server's `keepAliveTimeout`, or
+drain the stream faster) in `docs/axios-supported-options.md` (near
+`maxRate`/`responseType: 'stream'`) and `docs/migration-guide.md`.
 
 **Verification.** Unit tests:
-`src/modules/http/adapters/__tests__/axios-progress.adapter.spec.ts` ("undici slow-consumer
-mitigation (UND_ERR_SOCKET)") - a fully-delivered body swallows the error and ends normally;
-a body short of `Content-Length` still errors; a different error code is never swallowed; a
-response with no `Content-Length` never swallows the error either.
+`src/modules/http/adapters/__tests__/axios-progress.adapter.spec.ts`:
+
+- ("undici slow-consumer mitigation (UND_ERR_SOCKET)", step 2 above) - a fully-delivered body
+  swallows the error and ends normally; a body short of `Content-Length` still errors; a
+  different error code is never swallowed; a response with no `Content-Length` never
+  swallows the error either.
+- ("buffered vs stream backpressure (coordinator review fix, PR #33)", step 1's gating) -
+  `responseType: 'stream'` (`buffered` unset) keeps a multi-MB raw body properly
+  backpressured (`source.isPaused()` true, `writableLength` bounded to a couple of
+  highWaterMarks) against a stalled consumer, never draining it ahead of time; `buffered:
+  true` does drain it ahead of time (`source.readableEnded` true, never paused) with the same
+  stalled consumer; `buffered: true` with `maxContentLength` set below the response's own
+  `Content-Length` falls back to the same backpressured behaviour as `'stream'` (the
+  streamed `maxContentLength` check must still reject an oversized body promptly, not after
+  reading all of it); `buffered: true` with `maxContentLength` at or above `Content-Length`
+  still drains ahead of time. Confirmed each of the first and third tests **fails** against
+  the pre-review-fix version (unconditional eager drain) by temporarily reverting
+  `axios-progress.adapter.ts`/`axios-response.adapter.ts` to that version by git stash,
+  re-running, and restoring the fix.
 
 Real-world confirmation, directly against axios' own test (not just a synthetic unit test):
 axios v1.20.0's `tests/unit/adapters/http.test.js` "should support download rate limit" is
