@@ -1,4 +1,5 @@
 import type { UrlObject } from 'node:url';
+import type { Readable } from 'node:stream';
 import type { Dispatcher } from 'undici';
 import { AxiosError, createStatusError } from '../errors/axios-error';
 import {
@@ -7,6 +8,7 @@ import {
   readText,
 } from './axios-response-type.adapter';
 import { buildLazyAxiosConfig } from './axios-request.adapter';
+import { meterDownloadBody, resolveMaxRates } from './axios-progress.adapter';
 import { urlToString } from './redirect.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
@@ -267,20 +269,48 @@ export async function toAxiosLikeResponse(
   // (decompressed, not yet JSON-parsed), not the already-parsed value.
   const transformResponse = request.axiosConfig?.transformResponse;
 
+  // `onDownloadProgress`/download `maxRate` (plan.md phase 2 "Progress
+  // callbacks"): wrap the body in a counting/throttling stream only when at
+  // least one is actually set - a single property read plus an `||` check on
+  // the common, neither-set path, matching every other opt-in option this
+  // function reads off `request.options`. Works for every `responseType`,
+  // including `'stream'` (the wrapped stream is what the caller gets back).
+  const onDownloadProgress = (request.options as any)?.onDownloadProgress;
+  const rawMaxRate = (request.options as any)?.maxRate;
+  let body: Dispatcher.ResponseData['body'] | Readable | undefined =
+    undiciResponse.body;
+  if (body && (onDownloadProgress || rawMaxRate !== undefined)) {
+    const { download: maxDownloadRate } = resolveMaxRates(rawMaxRate);
+    if (onDownloadProgress || maxDownloadRate) {
+      const contentLengthHeader = undiciResponse.headers['content-length'];
+      const total =
+        typeof contentLengthHeader === 'string'
+          ? Number(contentLengthHeader) || undefined
+          : Array.isArray(contentLengthHeader)
+            ? Number(contentLengthHeader[0]) || undefined
+            : undefined;
+      body = meterDownloadBody(body as unknown as Readable, {
+        onProgress: onDownloadProgress,
+        maxRate: maxDownloadRate,
+        total,
+      });
+    }
+  }
+
   try {
     if (transformResponse && responseType !== 'stream') {
       // As in axios: a stream is never transformed, and binary response
       // types hand the transform the raw bytes rather than decoded text.
-      const raw = !undiciResponse.body
+      const raw = !body
         ? ''
         : responseType === 'arraybuffer' || responseType === 'blob'
           ? await readBodyAsResponseType(
-              undiciResponse.body,
+              body as Dispatcher.ResponseData['body'],
               responseType,
               maxContentLength,
               { contentEncoding, decompress },
             )
-          : await readText(undiciResponse.body, {
+          : await readText(body as Dispatcher.ResponseData['body'], {
               contentEncoding,
               decompress,
             });
@@ -297,19 +327,19 @@ export async function toAxiosLikeResponse(
           ),
         raw,
       );
-    } else if (responseType && undiciResponse.body) {
+    } else if (responseType && body) {
       parsedData = await readBodyAsResponseType(
-        undiciResponse.body,
+        body as Dispatcher.ResponseData['body'],
         responseType,
         maxContentLength,
         { contentEncoding, decompress },
       );
-    } else if (undiciResponse.body) {
-      parsedData = await readDefaultBody(undiciResponse.body, contentType, {
-        maxContentLength,
-        contentEncoding,
-        decompress,
-      });
+    } else if (body) {
+      parsedData = await readDefaultBody(
+        body as Dispatcher.ResponseData['body'],
+        contentType,
+        { maxContentLength, contentEncoding, decompress },
+      );
     } else {
       // Axios returns empty string for null body
       parsedData = '';
@@ -332,13 +362,16 @@ export async function toAxiosLikeResponse(
     // Failures after the body was read (for example corrupt gzip/br/deflate
     // data), reject like axios does: the body can't be read again, so
     // falling back would silently return empty data.
-    if ((undiciResponse.body as any)?.bodyUsed) {
+    if ((body as any)?.bodyUsed) {
       throw error;
     }
 
     // If parsing fails, try to get raw text
     try {
-      parsedData = await undiciResponse.body.text();
+      parsedData =
+        typeof (body as any)?.text === 'function'
+          ? await (body as Dispatcher.ResponseData['body']).text()
+          : '';
     } catch {
       parsedData = '';
     }

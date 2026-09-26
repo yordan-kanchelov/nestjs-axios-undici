@@ -30,7 +30,7 @@ Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ no
 | `axiosRef.interceptors.request/response.use()` | ✅ | Runs in axios' own order: request interceptors last-registered-first, response interceptors first-registered-first. `runWhen`/`synchronous` (3rd argument) are honoured. |
 | `interceptors.*.eject(id)` / `clear()` | ✅ | |
 | `axiosRef.defaults.headers.common[...]`, `.get/.post/...[...]` | ✅ | See [Precedence](#precedence-axiosrefdefaults) below. |
-| `axiosRef.defaults.baseURL` / `.timeout` / `.maxRedirects` / `.params` / `.paramsSerializer` / `.validateStatus` / `.responseType` / `.transformRequest` / `.transformResponse` / `.adapter` / `.withCredentials` | ✅ | Honoured at request time, including on a plain request with no axiosRef interceptors. |
+| `axiosRef.defaults.baseURL` / `.timeout` / `.maxRedirects` / `.params` / `.paramsSerializer` / `.validateStatus` / `.responseType` / `.transformRequest` / `.transformResponse` / `.adapter` / `.withCredentials` / `.onUploadProgress` / `.onDownloadProgress` / `.maxRate` / `.formSerializer` | ✅ | Honoured at request time, including on a plain request with no axiosRef interceptors. |
 | A function `axiosRef.defaults.adapter` / `config.adapter` | ✅ | Called with the final config instead of dispatching through undici; its response still runs through `validateStatus`/`transformResponse`/response interceptors. This is what makes `axios-mock-adapter` work. A string adapter name (`'http'`/`'xhr'`/`'fetch'`) is accepted but ignored - this library always dispatches through undici. |
 | `AxiosHeaders` casing (`toJSON()`, iteration, `normalize(true)`) | ✅ | `config.headers`/`error.config.headers` preserve the casing a header was first set with (case-insensitive lookup either way), like axios. `response.headers` itself stays a plain, lower-cased object - see [Response](#response) below. |
 | Full mutual TypeScript assignability with axios' `AxiosInstance` | ⚠️ | One narrow, TypeScript-only gap: axios' `Axios.request`/`get`/... carry a 4th generic (`R`, for fully overriding the response type) this library's methods don't mirror - unrelated to `AxiosHeaders`, and with no effect at runtime. See the migration guide. |
@@ -66,7 +66,10 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `proxy`, `httpAgent`, `httpsAgent`, `withCredentials` per request | ❌ | Module-level only (see below). |
 | `cookieJar` per request | ❌ | Module-level only - not an axios option, see [Cookies: `cookieJar`](#cookies-cookiejar). Building a `CookieAgent` per jar per request would be expensive; pass different `cookieJar`s to different `HttpModule.register()` calls instead. |
 | `adapter` (a function) | ✅ | Called instead of dispatching through undici; see [`axiosRef`](#axiosref) above. A string name (`'http'`/`'xhr'`/`'fetch'`) is accepted but ignored. |
-| `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress` | ❌ | |
+| `onUploadProgress` / `onDownloadProgress` | ✅ | See [Progress callbacks, `maxRate` and `formSerializer`](#progress-callbacks-maxrate-and-formserializer) below. |
+| `maxRate` | ✅ | Both directions - see below. |
+| `formSerializer` | ✅ | See below. |
+| `xsrfCookieName` / `xsrfHeaderName` | ❌ | |
 
 ### Precedence: `axiosRef.defaults`
 
@@ -82,6 +85,34 @@ httpService.axiosRef.defaults.headers.common['User-Agent'] = 'my-app/2.0';
 ```
 
 **Breaking change from an earlier version of this plan (PR #16):** module `headers` used to always win over `axiosRef.defaults`, so a runtime mutation of `axiosRef.defaults.headers` for a header the module also set had no effect. That inconsistency (module always won for `headers`, but `axiosRef.defaults` already won for `timeout`/`maxRedirects`) is gone - every field now follows the same rule. Mutating the *object passed to* `register()` after the fact (or `httpService.undiciRef.headers`) no longer has any effect either, for the same reason - mutate `axiosRef.defaults` instead.
+
+### Progress callbacks, `maxRate` and `formSerializer`
+
+`onUploadProgress`/`onDownloadProgress`/`maxRate` are only ever wired up when actually set - a plain request with none of these pays no measurable extra cost (a body/response is never wrapped in a counting stream otherwise).
+
+| Feature | Status | Notes |
+|---------|:------:|-------|
+| `onDownloadProgress` | ✅ | Fires as response body bytes arrive, throttled the way axios throttles it (at most every ~333ms, plus a final flush once the body ends so the last event always reflects the true final state). Works with every `responseType`, including `'stream'` (the stream the caller reads from is the same one progress is reported on). `total` comes from the response's `Content-Length` header when present; otherwise `total`/`progress` are `undefined` and `lengthComputable` is `false`, as in axios. |
+| `onUploadProgress` | ✅ | Same throttling/event shape, `upload: true`. Works for a string, `Buffer`, stream, or `FormData`/`postForm` body. `total` is the body's own byte length for a string/Buffer, or an already-known `Content-Length` header for anything else - a `postForm`/multipart body has neither (this library doesn't pre-compute the encoded multipart size the way axios' own `formDataToStream` does), so `total`/`progress` stay `undefined` there even though `loaded` still tracks real bytes written. |
+| `maxRate` (a number, or `[upload, download]`) | ✅ | Throttles actual throughput (not just the progress-event rate) in both directions, via the same windowed-chunk-splitting algorithm axios' `AxiosTransformStream` uses. |
+| `formSerializer` (`{ visitor, dots, metaTokens, indexes, maxDepth }`) | ✅ | Axios' own options for turning a plain object/array into `FormData`/a url-encoded body (`lib/helpers/toFormData.js`), applied to: `postForm`/`putForm`/`patchForm` with a plain object; a plain request whose `Content-Type` is explicitly `application/x-www-form-urlencoded` or `multipart/form-data`. Defaults match axios exactly: `dots: false`, `metaTokens: true`, `indexes: false` (`a[]=1&a[]=2` for an array), `maxDepth: 100`. A custom `visitor` replaces the default traversal entirely (called with `(value, key, path, helpers)`, `helpers.defaultVisitor`/`.isVisitable`/`.convertValue` match axios'). `formDataHeaderPolicy` (a `form-data`-package-specific option) isn't implemented. |
+| The reverse: a real `FormData` sent with an explicit `Content-Type: application/json` | ✅ | Converted to a plain object first (axios' `formDataToJSON`, the inverse of the bracket-path convention above) and then `JSON.stringify`d, exactly like axios' default `transformRequest`. |
+
+Precedence is the same **request > `axiosRef.defaults` > module options** rule as everything else in this section - `HttpModule.register({ onDownloadProgress, maxRate, formSerializer, ... })` seeds `axiosRef.defaults` once at setup, same as any other passthrough default.
+
+```typescript
+httpService.get(url, {
+  responseType: 'stream',
+  onDownloadProgress: ({ loaded, total, progress }) => {
+    console.log(`${loaded}/${total ?? '?'} (${progress ? Math.round(progress * 100) : '?'}%)`);
+  },
+  maxRate: 5 * 1024 * 1024, // cap both directions at ~5 MB/s
+});
+
+httpService.postForm(url, { tags: ['a', 'b'] }, {
+  formSerializer: { indexes: true }, // tags[0]=a&tags[1]=b instead of tags[]=a&tags[]=b
+});
+```
 
 ## Response
 
@@ -159,6 +190,7 @@ axiosRef request interceptors receive a config whose `headers` is non-optional a
 | `httpVersion` | ✅ | `httpVersion: 2` → `Agent({ allowH2: true })`. Module-level only; needs a target that speaks HTTP/2 over TLS (undici has no plaintext HTTP/2). `http2Options` is accepted but has no effect (undici has no per-session HTTP/2 tuning). |
 | `decompress` | ✅ | Applied as the default for every request; a per-request `decompress` overrides it. |
 | `xsrfCookieName`, `xsrfHeaderName` | ❌ | Ignored (a warning is logged). |
+| `onUploadProgress` / `onDownloadProgress` / `maxRate` / `formSerializer` | ✅ | Seeded into `axiosRef.defaults` once at setup; a per-request value wins. See [Progress callbacks, `maxRate` and `formSerializer`](#progress-callbacks-maxrate-and-formserializer). |
 | `cookieJar` | - | Not an axios option - see [Cookies: `cookieJar`](#cookies-cookiejar) below. |
 
 ### Precedence: an explicit `dispatcher` always wins

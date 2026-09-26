@@ -1,7 +1,11 @@
 import {
+  buildFormData,
+  buildFormRequestConfig,
+  buildFormSerializedPairs,
   buildURL,
   combineURLs,
   extractUrlCredentials,
+  formDataToJSON,
   isAxiosRequestConfig,
   mergeHeaders,
   normalizeAxiosRequest,
@@ -342,6 +346,169 @@ describe('axios request adapter', () => {
       expect(
         toUrlEncodedForm({ a: 1, b: 'x y', list: [1, 2], obj: { k: 'v' } }),
       ).toBe('a=1&b=x%20y&list%5B%5D=1&list%5B%5D=2&obj%5Bk%5D=v');
+    });
+  });
+
+  describe('formSerializer', () => {
+    it('the default (no formSerializer) matches the existing bracket/indexes:false behaviour', () => {
+      const form = new FormData();
+      buildFormData({ a: 1, list: [1, 2], obj: { k: 'v' } }, form as any);
+      expect([...(form as any).keys()]).toEqual([
+        'a',
+        'list[]',
+        'list[]',
+        'obj[k]',
+      ]);
+    });
+
+    it('indexes: true numbers array entries', () => {
+      const pairs = buildFormSerializedPairs(
+        { list: [10, 20] },
+        { indexes: true },
+      );
+      expect(pairs).toEqual([
+        ['list[0]', '10'],
+        ['list[1]', '20'],
+      ]);
+    });
+
+    it('indexes: null drops the brackets entirely (repeated bare key)', () => {
+      const pairs = buildFormSerializedPairs(
+        { list: [10, 20] },
+        { indexes: null },
+      );
+      expect(pairs).toEqual([
+        ['list', '10'],
+        ['list', '20'],
+      ]);
+    });
+
+    it('dots: true renders nested objects with dot notation', () => {
+      const pairs = buildFormSerializedPairs(
+        { obj: { a: { b: 1 } } },
+        { dots: true },
+      );
+      expect(pairs).toEqual([['obj.a.b', '1']]);
+    });
+
+    it('metaTokens: false strips the trailing {} token from a JSON-stringified field', () => {
+      const withTokens = buildFormSerializedPairs({ 'meta{}': { x: 1 } }, {});
+      expect(withTokens).toEqual([['meta{}', '{"x":1}']]);
+      const withoutTokens = buildFormSerializedPairs(
+        { 'meta{}': { x: 1 } },
+        { metaTokens: false },
+      );
+      expect(withoutTokens).toEqual([['meta', '{"x":1}']]);
+    });
+
+    it('a custom visitor replaces the default traversal entirely', () => {
+      const pairs = buildFormSerializedPairs(
+        { a: 1, b: 2 },
+        {
+          visitor(value, key, _path, helpers) {
+            if (typeof value === 'number') {
+              (this as any).append(`custom_${String(key)}`, value * 10);
+              return false;
+            }
+            return helpers.defaultVisitor.call(
+              this,
+              value,
+              key,
+              _path,
+              helpers,
+            );
+          },
+        },
+      );
+      expect(pairs).toEqual([
+        ['custom_a', '10'],
+        ['custom_b', '20'],
+      ]);
+    });
+
+    it('maxDepth throws once nesting exceeds the limit', () => {
+      expect(() =>
+        buildFormSerializedPairs({ a: { b: { c: 1 } } }, { maxDepth: 1 }),
+      ).toThrow(/too deeply nested/);
+    });
+
+    it('rejects a circular reference', () => {
+      const circular: any = { a: 1 };
+      circular.self = circular;
+      expect(() => buildFormSerializedPairs(circular, {})).toThrow(
+        /Circular reference/,
+      );
+    });
+
+    it('formDataToJSON decodes bracket-path field names back into a nested object (the reverse of buildFormData)', () => {
+      const form = new FormData();
+      form.append('a', '1');
+      form.append('obj[b]', '2');
+      form.append('list[]', '3');
+      form.append('list[]', '4');
+      // Matches real axios exactly (verified directly): a repeated `list[]`
+      // key builds a genuine Array (`arrayToObject` only converts a
+      // *non-numeric*-keyed intermediate node - see `formDataToJSON`).
+      expect(formDataToJSON(form as any)).toEqual({
+        a: '1',
+        obj: { b: '2' },
+        list: ['3', '4'],
+      });
+    });
+
+    it('serializeRequestData converts a real FormData to JSON when Content-Type is explicitly application/json', () => {
+      const form = new FormData();
+      form.append('a', '1');
+      const headers: Record<string, any> = {
+        'Content-Type': 'application/json',
+      };
+      const body = serializeRequestData(form, headers, 'POST');
+      expect(body).toBe('{"a":"1"}');
+    });
+
+    it('serializeRequestData sends a plain object as multipart when Content-Type is explicitly multipart/form-data', () => {
+      const headers: Record<string, any> = {
+        'Content-Type': 'multipart/form-data',
+      };
+      const body = serializeRequestData({ a: 1 }, headers, 'POST');
+      expect(typeof body.pipe).toBe('function');
+      expect(headers['Content-Type']).toMatch(
+        /^multipart\/form-data; boundary=/,
+      );
+    });
+
+    it('serializeRequestData honours formSerializer for a urlencoded body', () => {
+      const headers: Record<string, any> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      const body = serializeRequestData({ list: [1, 2] }, headers, 'POST', {
+        indexes: true,
+      });
+      expect(body).toBe('list%5B0%5D=1&list%5B1%5D=2');
+    });
+
+    it('buildFormRequestConfig honours a request-level formSerializer, overriding the default', () => {
+      const config = buildFormRequestConfig(
+        'POST',
+        'http://api/x',
+        { list: [1, 2] },
+        { formSerializer: { indexes: true } },
+        { indexes: null },
+      );
+      const form = config.data as any;
+      expect([...form.keys()]).toEqual(['list[0]', 'list[1]']);
+    });
+
+    it('buildFormRequestConfig falls back to the default formSerializer when the request gives none', () => {
+      const config = buildFormRequestConfig(
+        'POST',
+        'http://api/x',
+        { list: [1, 2] },
+        undefined,
+        { indexes: null },
+      );
+      const form = config.data as any;
+      expect([...form.keys()]).toEqual(['list', 'list']);
     });
   });
 });

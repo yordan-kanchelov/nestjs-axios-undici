@@ -23,6 +23,40 @@ function assertMaxContentLength(size: number, maxContentLength?: number): void {
 }
 
 /**
+ * `body.arrayBuffer()`, falling back to plain async iteration when `body`
+ * doesn't have that method - true for undici's own response body (the common
+ * case, and the only one this fallback costs anything to check for), but not
+ * for a plain Node `Readable` (e.g. the `ByteMeterStream` a progress
+ * callback/`maxRate` wraps the body in - see `axios-progress.adapter.ts`).
+ */
+async function bodyArrayBuffer(
+  body: Dispatcher.ResponseData['body'],
+): Promise<ArrayBuffer> {
+  if (typeof (body as any).arrayBuffer === 'function') {
+    return body.arrayBuffer();
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as unknown as AsyncIterable<Buffer>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const buffer = Buffer.concat(chunks);
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  );
+}
+
+/** `body.text()`, with the same fallback as `bodyArrayBuffer` above. */
+async function bodyText(
+  body: Dispatcher.ResponseData['body'],
+): Promise<string> {
+  if (typeof (body as any).text === 'function') {
+    return body.text();
+  }
+  return Buffer.from(await bodyArrayBuffer(body)).toString('utf8');
+}
+
+/**
  * Reads a body stream into a `Buffer`, enforcing `maxContentLength` as bytes
  * arrive (axios does the same - see `lib/adapters/http.js`'s streamed
  * `maxContentLength` enforcement) rather than after buffering the whole
@@ -38,7 +72,7 @@ async function readBufferWithLimit(
   maxContentLength?: number,
 ): Promise<Buffer> {
   if (!maxContentLength || maxContentLength <= -1) {
-    return Buffer.from(await body.arrayBuffer());
+    return Buffer.from(await bodyArrayBuffer(body));
   }
   const chunks: Buffer[] = [];
   let total = 0;
@@ -279,7 +313,7 @@ async function readBuffer(
       );
     }
     return decompressBuffer(
-      Buffer.from(await body.arrayBuffer()),
+      Buffer.from(await bodyArrayBuffer(body)),
       options.contentEncoding!,
     );
   }
@@ -313,7 +347,7 @@ export async function readText(
     return stripBOM(buffer.toString('utf8'));
   }
   if (!options.maxContentLength || options.maxContentLength <= -1) {
-    return body.text();
+    return bodyText(body);
   }
   const buffer = await readBufferWithLimit(body, options.maxContentLength);
   return stripBOM(buffer.toString('utf8'));

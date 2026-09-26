@@ -178,17 +178,21 @@ export interface AxiosLikeRequestConfig<D = any> {
     // (undocumented)
     decompress?: boolean;
     dispatcher?: Dispatcher;
+    formSerializer?: FormSerializerOptions;
     // (undocumented)
     headers?: Record<string, any> | AxiosHeaders;
     // (undocumented)
     maxBodyLength?: number;
     // (undocumented)
     maxContentLength?: number;
+    maxRate?: number | [number, number];
     maxRedirections?: number;
     // (undocumented)
     maxRedirects?: number;
     // (undocumented)
     method?: string;
+    onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
     // (undocumented)
     params?: any;
     // (undocumented)
@@ -241,6 +245,30 @@ export type AxiosParamsSerializer = ((params: any) => string) | {
 };
 
 // @public
+export interface AxiosProgressEvent {
+    // (undocumented)
+    bytes: number;
+    // (undocumented)
+    download?: boolean;
+    // (undocumented)
+    estimated?: number;
+    // (undocumented)
+    event?: unknown;
+    // (undocumented)
+    lengthComputable: boolean;
+    // (undocumented)
+    loaded: number;
+    // (undocumented)
+    progress?: number;
+    // (undocumented)
+    rate?: number;
+    // (undocumented)
+    total?: number;
+    // (undocumented)
+    upload?: boolean;
+}
+
+// @public
 export interface AxiosRef {
     // (undocumented)
     <T = any, D = any>(config: AxiosLikeRequestConfig<D>): Promise<AxiosLikeResponse<T, D>>;
@@ -286,6 +314,7 @@ export interface AxiosRefDefaults<D = any> {
     adapter?: ((config: any) => Promise<any>) | string | Array<((config: any) => Promise<any>) | string>;
     // (undocumented)
     baseURL?: string;
+    formSerializer?: FormSerializerOptions;
     headers: {
         common: AxiosHeaders;
         get: AxiosHeaders;
@@ -296,8 +325,11 @@ export interface AxiosRefDefaults<D = any> {
         put: AxiosHeaders;
         patch: AxiosHeaders;
     };
+    maxRate?: number | [number, number];
     // (undocumented)
     maxRedirects?: number;
+    onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
     // (undocumented)
     params?: any;
     // (undocumented)
@@ -380,6 +412,36 @@ export interface CommonRequestHeaders {
 export type CookieJarOption = object;
 
 // @public
+export interface FormDataLikeTarget {
+    // (undocumented)
+    append(name: string, value: any): void;
+}
+
+// @public
+export interface FormDataVisitorHelpers {
+    // (undocumented)
+    convertValue: (value: any) => any;
+    // (undocumented)
+    defaultVisitor: SerializerVisitor;
+    // (undocumented)
+    isVisitable: (value: any) => boolean;
+}
+
+// @public
+export interface FormSerializerOptions {
+    // (undocumented)
+    dots?: boolean;
+    // (undocumented)
+    indexes?: boolean | null;
+    // (undocumented)
+    maxDepth?: number;
+    // (undocumented)
+    metaTokens?: boolean;
+    // (undocumented)
+    visitor?: SerializerVisitor;
+}
+
+// @public
 export const HTTP_MODULE_OPTIONS = "HTTP_MODULE_OPTIONS";
 
 // @public (undocumented)
@@ -445,6 +507,7 @@ export interface HttpModuleOptions {
     cookieJar?: CookieJarOption;
     decompress?: boolean;
     dispatcher?: Dispatcher;
+    formSerializer?: FormSerializerOptions;
     global?: boolean;
     headers?: Record<string, any> | AxiosHeaders;
     // (undocumented)
@@ -458,8 +521,11 @@ export interface HttpModuleOptions {
     interceptors?: Array<Type<HttpInterceptor> | HttpInterceptor | HttpInterceptorFunction>;
     maxBodyLength?: number;
     maxContentLength?: number;
+    maxRate?: number | [number, number];
     maxRedirections?: number;
     maxRedirects?: number;
+    onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
     // (undocumented)
     params?: any;
     // (undocumented)
@@ -547,6 +613,9 @@ export interface RawAxiosHeaders {
     // (undocumented)
     [key: string]: AxiosHeaderValue;
 }
+
+// @public
+export type SerializerVisitor = (this: FormDataLikeTarget, value: any, key: string | number, path: Array<string | number> | null, helpers: FormDataVisitorHelpers) => boolean;
 
 // @public
 export const UNDICI_INSTANCE_TOKEN = "UNDICI_INSTANCE_TOKEN";

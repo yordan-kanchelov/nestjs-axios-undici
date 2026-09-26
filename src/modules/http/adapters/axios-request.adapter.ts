@@ -4,7 +4,10 @@ import type {
   AxiosCancelTokenLike,
   AxiosLikeRequestConfig,
   AxiosParamsSerializer,
+  FormDataVisitorHelpers,
+  FormSerializerOptions,
   InternalAxiosLikeRequestConfig,
+  SerializerVisitor,
 } from '../interfaces/axios-compatible.interface';
 import type { AxiosRefDefaults } from '../interfaces/axios-ref.interface';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
@@ -209,6 +212,254 @@ function flattenParams(
   return pairs;
 }
 
+// ---------------------------------------------------------------------------
+// `formSerializer` (plan.md phase 2 "Progress callbacks ... formSerializer"):
+// a fuller, axios-compatible traversal engine (custom `visitor`, `dots`,
+// `metaTokens`, `indexes`, `maxDepth`, circular-reference/depth checks),
+// ported from axios' own `lib/helpers/toFormData.js`. Only reached when a
+// caller actually configures `formSerializer` - `postForm`/a plain
+// multipart/urlencoded body with no `formSerializer` keeps using the simpler
+// `flattenParams` above unchanged (see `toGlobalFormData`/
+// `serializeRequestData`), so the common case pays nothing extra.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FORM_DATA_MAX_DEPTH = 100;
+
+function stripArrayBracketSuffix(key: string): string {
+  return key.endsWith('[]') ? key.slice(0, -2) : key;
+}
+
+function renderFormKey(
+  path: Array<string | number> | null | undefined,
+  key: string | number,
+  dots: boolean,
+): string {
+  if (!path) return String(key);
+  return path
+    .concat(key)
+    .map((token, i) => {
+      const t = stripArrayBracketSuffix(String(token));
+      return !dots && i ? `[${t}]` : t;
+    })
+    .join(dots ? '.' : '');
+}
+
+/** axios' own `convertValue`: `Date`/`boolean`/`null` get special-cased; a Buffer/typed array becomes a `Blob` when the target supports one (a real, spec-compliant `FormData`). */
+function convertFormValue(value: any, useBlob: boolean): any {
+  if (value === null) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'boolean') return String(value);
+  if (
+    useBlob &&
+    typeof Blob !== 'undefined' &&
+    (Buffer.isBuffer(value) ||
+      value instanceof ArrayBuffer ||
+      ArrayBuffer.isView(value))
+  ) {
+    return new Blob([value as any]);
+  }
+  return value;
+}
+
+/**
+ * Walks `data`'s own keys (matching axios' `toFormData`'s `build()`),
+ * appending each resolved leaf to `target` via `visitor` (the caller's own
+ * `formSerializer.visitor`, or `defaultVisitor` below). `target` is anything
+ * with an `.append(name, value)` - a real `FormData` (multipart, `useBlob:
+ * true`) or an internal pairs collector (url-encoded, `useBlob: false`, since
+ * `URLSearchParams` needs strings, not Blobs).
+ */
+export function buildFormData(
+  data: Record<string, any>,
+  target: { append(name: string, value: any): void },
+  options: FormSerializerOptions = {},
+  useBlob = false,
+): void {
+  const metaTokens =
+    options.metaTokens === undefined ? true : options.metaTokens;
+  const dots = !!options.dots;
+  const indexes = options.indexes === undefined ? false : options.indexes;
+  const maxDepth =
+    options.maxDepth === undefined
+      ? DEFAULT_FORM_DATA_MAX_DEPTH
+      : options.maxDepth;
+  const stack: any[] = [];
+
+  const convertValue = (value: any) => convertFormValue(value, useBlob);
+
+  const defaultVisitor: SerializerVisitor = function (value, key, path) {
+    if (value !== null && !path && typeof value === 'object') {
+      if (typeof key === 'string' && key.endsWith('{}')) {
+        const renderedKey = metaTokens ? key : key.slice(0, -2);
+        target.append(
+          renderFormKey(path, renderedKey, dots),
+          convertValue(JSON.stringify(value)),
+        );
+        return false;
+      }
+      const isFlatArr = Array.isArray(value) && !value.some(isVisitable);
+      if (
+        isFlatArr ||
+        (typeof key === 'string' && key.endsWith('[]') && Array.isArray(value))
+      ) {
+        const base = stripArrayBracketSuffix(String(key));
+        (value as any[]).forEach((el, index) => {
+          if (el === undefined || el === null) return;
+          const name =
+            indexes === true
+              ? renderFormKey([base], index, dots)
+              : indexes === null
+                ? base
+                : `${base}[]`;
+          target.append(name, convertValue(el));
+        });
+        return false;
+      }
+    }
+    if (isVisitable(value)) return true;
+    target.append(renderFormKey(path, key, dots), convertValue(value));
+    return false;
+  };
+
+  const visitor = options.visitor || defaultVisitor;
+  const helpers: FormDataVisitorHelpers = {
+    defaultVisitor,
+    isVisitable,
+    convertValue,
+  };
+
+  function build(
+    value: any,
+    path: Array<string | number> | null = null,
+    depth = 0,
+  ): void {
+    if (value === undefined) return;
+    if (depth > maxDepth) {
+      throw new Error(
+        `Object is too deeply nested (${depth} levels). Max depth: ${maxDepth}`,
+      );
+    }
+    if (stack.indexOf(value) !== -1) {
+      throw new Error(
+        `Circular reference detected in ${(path || []).join('.')}`,
+      );
+    }
+    stack.push(value);
+    const entries: Array<[string | number, any]> = Array.isArray(value)
+      ? value.map((v, i): [number, any] => [i, v])
+      : Object.keys(value).map((k): [string, any] => [k, value[k]]);
+    for (const [rawKey, el] of entries) {
+      if (el === undefined || el === null) continue;
+      const key = typeof rawKey === 'string' ? rawKey.trim() : rawKey;
+      const result = visitor.call(target as any, el, key, path, helpers);
+      if (result === true) {
+        build(el, path ? path.concat(key) : [key], depth + 1);
+      }
+    }
+    stack.pop();
+  }
+
+  build(data);
+}
+
+/** Collects `[key, value]` pairs (values stringified on append) - the `formSerializer` url-encoded-body target, joined with `URLSearchParams` afterwards so the actual percent-encoding matches the no-`formSerializer` default path exactly. */
+class FormPairsTarget {
+  readonly pairs: Array<[string, string]> = [];
+  append(name: string, value: any): void {
+    this.pairs.push([name, value == null ? '' : String(value)]);
+  }
+}
+
+/** `data` (a plain object/array) turned into `[key, value]` pairs per `formSerializer`, for a url-encoded body. */
+export function buildFormSerializedPairs(
+  data: Record<string, any>,
+  formSerializer: FormSerializerOptions,
+): Array<[string, string]> {
+  const target = new FormPairsTarget();
+  buildFormData(data, target, formSerializer, false);
+  return target.pairs;
+}
+
+const MAX_FORM_DATA_JSON_DEPTH = DEFAULT_FORM_DATA_MAX_DEPTH;
+
+function parseFormDataPropPath(name: string): Array<string> {
+  // foo[x][y][z] -> ['foo', 'x', 'y', 'z']; foo.x.y.z -> same.
+  const path: string[] = [];
+  const pattern = /[^.[\]]+|\[([^.[\]]*)]/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(name)) !== null) {
+    if (path.length > MAX_FORM_DATA_JSON_DEPTH) {
+      throw new Error(
+        `FormData field is too deeply nested (${path.length} levels). Max depth: ${MAX_FORM_DATA_JSON_DEPTH}`,
+      );
+    }
+    path.push(match[0] === '[]' ? '' : (match[1] ?? match[0]));
+  }
+  return path;
+}
+
+/**
+ * axios' `formDataToJSON`: the reverse of `buildFormData`/`toFormData` - a
+ * `foo[x][y]`-style flat field-name convention decoded back into a nested
+ * object. Used when a real `FormData` is sent as `data` but `Content-Type` is
+ * explicitly `application/json` (axios' default `transformRequest`
+ * special-cases exactly this - see `serializeRequestData`).
+ */
+export function formDataToJSON(formData: {
+  entries?: () => IterableIterator<[string, any]>;
+}): Record<string, any> | null {
+  if (typeof formData?.entries !== 'function') return null;
+
+  function buildPath(
+    path: string[],
+    value: any,
+    target: Record<string, any>,
+    index: number,
+  ): boolean {
+    if (index > MAX_FORM_DATA_JSON_DEPTH) {
+      throw new Error(
+        `FormData field is too deeply nested (${index} levels). Max depth: ${MAX_FORM_DATA_JSON_DEPTH}`,
+      );
+    }
+    let name: string | number = path[index++];
+    if (name === '__proto__') return true;
+    const isNumericKey = Number.isFinite(+name);
+    const isLast = index >= path.length;
+    name = !name && Array.isArray(target) ? target.length : name;
+
+    if (isLast) {
+      if (Object.prototype.hasOwnProperty.call(target, name)) {
+        target[name] = Array.isArray(target[name])
+          ? target[name].concat(value)
+          : [target[name], value];
+      } else {
+        target[name] = value;
+      }
+      return !isNumericKey;
+    }
+
+    if (
+      !Object.prototype.hasOwnProperty.call(target, name) ||
+      typeof target[name] !== 'object' ||
+      target[name] === null
+    ) {
+      target[name] = [];
+    }
+
+    const result = buildPath(path, value, target[name], index);
+    if (result && Array.isArray(target[name])) {
+      target[name] = { ...target[name] };
+    }
+    return !isNumericKey;
+  }
+
+  const obj: Record<string, any> = {};
+  for (const [name, value] of formData.entries()) {
+    buildPath(parseFormDataPropPath(name), value, obj, 0);
+  }
+  return obj;
+}
+
 /**
  * Appends `params` to `url` exactly like axios' `buildURL`.
  */
@@ -270,11 +521,18 @@ export function toUrlEncodedForm(data: any): string {
  * do the actual multipart encoding (boundary, `Content-Type`) - exactly as
  * it already does for a `FormData` instance a caller builds by hand.
  */
-function toGlobalFormData(data: any): FormData {
+function toGlobalFormData(
+  data: any,
+  formSerializer?: FormSerializerOptions,
+): FormData {
   const form = new FormData();
   if (data != null) {
-    for (const [key, value] of flattenParams(data, {})) {
-      form.append(key, value);
+    if (formSerializer) {
+      buildFormData(data, form as any, formSerializer, true);
+    } else {
+      for (const [key, value] of flattenParams(data, {})) {
+        form.append(key, value);
+      }
     }
   }
   return form;
@@ -301,6 +559,13 @@ export function buildFormRequestConfig<D = any>(
   url: Url,
   data: D | undefined,
   config: AxiosLikeRequestConfig<D> | undefined,
+  // `axiosRef.defaults.formSerializer` (seeded from module options at setup -
+  // see `createAxiosRefDefaults`'s `DEFAULTS_PASSTHROUGH_KEYS`), read by
+  // `HttpService.formRequest`/`axiosRef.postForm` et al. before this runs, so
+  // the same "request > defaults" precedence every other option here has
+  // applies to `formSerializer` too. A request-level `config.formSerializer`
+  // always wins.
+  defaultFormSerializer?: FormSerializerOptions,
 ): AxiosLikeRequestConfig<D> {
   // A URLSearchParams body is already form-encoded: send it as is (its
   // `a=1&b=2` body and urlencoded Content-Type) rather than flattening it
@@ -314,6 +579,8 @@ export function buildFormRequestConfig<D = any>(
     return { ...config, url: url as any, method, data };
   }
 
+  const formSerializer = config?.formSerializer ?? defaultFormSerializer;
+
   // Multipart by default, like axios' postForm - `data` becomes a real
   // FormData, and the existing global-FormData body path sets the
   // `Content-Type`/boundary itself (no header set here).
@@ -321,7 +588,7 @@ export function buildFormRequestConfig<D = any>(
     ...config,
     url: url as any,
     method,
-    data: toGlobalFormData(data) as any,
+    data: toGlobalFormData(data, formSerializer) as any,
   };
 }
 
@@ -470,9 +737,19 @@ export function serializeRequestData(
   data: any,
   headers: HeaderRecord,
   method: string,
+  formSerializer?: FormSerializerOptions,
 ): any {
   const contentType = String(findHeader(headers, 'content-type') || '');
   let body: any;
+
+  // A plain object/array with an explicit multipart Content-Type is sent as
+  // multipart, like axios' default `transformRequest` (`toFormData`) - not
+  // just through `postForm`/`putForm`/`patchForm`. Converted to a real
+  // `FormData` up front so the `isGlobalFormData` branch just below does the
+  // actual multipart encoding either way.
+  if (isPlainObject(data) && contentType.includes('multipart/form-data')) {
+    data = toGlobalFormData(data, formSerializer);
+  }
 
   if (
     data === undefined ||
@@ -482,7 +759,14 @@ export function serializeRequestData(
     // axios sends no body for null/undefined and falsy primitives (0, false, '')
     body = undefined;
   } else if (isGlobalFormData(data)) {
-    body = globalFormDataToStream(data, headers);
+    // axios' default `transformRequest`: a real `FormData` sent with an
+    // explicit `Content-Type: application/json` is converted to JSON first
+    // (`formDataToJSON`) instead of being encoded as multipart.
+    if (contentType.includes('application/json')) {
+      body = JSON.stringify(formDataToJSON(data as any));
+    } else {
+      body = globalFormDataToStream(data, headers);
+    }
   } else if (isStreamLike(data) && typeof data.getHeaders === 'function') {
     // `form-data` package: copy its multipart headers and stream it
     Object.entries(data.getHeaders() as Record<string, string>).forEach(
@@ -526,7 +810,11 @@ export function serializeRequestData(
     typeof data === 'object' &&
     contentType.includes(FORM_URLENCODED)
   ) {
-    body = new URLSearchParams(flattenParams(data, {})).toString();
+    body = formSerializer
+      ? new URLSearchParams(
+          buildFormSerializedPairs(data, formSerializer),
+        ).toString()
+      : new URLSearchParams(flattenParams(data, {})).toString();
   } else if (
     typeof data === 'object' ||
     contentType.includes('application/json')
@@ -906,6 +1194,13 @@ export function normalizeAxiosRequest(
     (instance.timeoutErrorMessage !== undefined &&
       input.timeoutErrorMessage === undefined) ||
     (instance.transitional !== undefined && input.transitional === undefined) ||
+    (defaults?.onUploadProgress !== undefined &&
+      input.onUploadProgress === undefined) ||
+    (defaults?.onDownloadProgress !== undefined &&
+      input.onDownloadProgress === undefined) ||
+    (defaults?.maxRate !== undefined && input.maxRate === undefined) ||
+    (defaults?.formSerializer !== undefined &&
+      input.formSerializer === undefined) ||
     (headerBase
       ? headerBase.hasWork
       : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
@@ -1012,9 +1307,38 @@ export function normalizeAxiosRequest(
     headers.Authorization = `Basic ${token}`;
   }
 
+  // Precedence: request > axiosRef.defaults (module options are seeded into
+  // defaults at setup - see `DEFAULTS_PASSTHROUGH_KEYS` in
+  // `axios-ref.factory.ts`), matching every other passthrough default.
+  if (
+    options.onUploadProgress === undefined &&
+    defaults?.onUploadProgress !== undefined
+  ) {
+    options.onUploadProgress = defaults.onUploadProgress;
+  }
+  if (
+    options.onDownloadProgress === undefined &&
+    defaults?.onDownloadProgress !== undefined
+  ) {
+    options.onDownloadProgress = defaults.onDownloadProgress;
+  }
+  if (options.maxRate === undefined && defaults?.maxRate !== undefined) {
+    options.maxRate = defaults.maxRate;
+  }
+  const formSerializer: FormSerializerOptions | undefined =
+    options.formSerializer ?? defaults?.formSerializer;
+  if (options.formSerializer === undefined && formSerializer !== undefined) {
+    options.formSerializer = formSerializer;
+  }
+
   if (options.body === undefined) {
     if (data !== undefined) {
-      options.body = serializeRequestData(data, headers, method);
+      options.body = serializeRequestData(
+        data,
+        headers,
+        method,
+        formSerializer,
+      );
     } else if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
       // axios' dispatchRequest sets this default unconditionally for these
       // 3 methods, even with no `data` at all (`config.headers
@@ -1266,6 +1590,11 @@ export function buildAxiosConfig(
       instance.transformResponse,
     socketPath: input.socketPath ?? instance.socketPath,
     adapter: input.adapter ?? defaults?.adapter ?? instance.adapter,
+    onUploadProgress: input.onUploadProgress ?? defaults?.onUploadProgress,
+    onDownloadProgress:
+      input.onDownloadProgress ?? defaults?.onDownloadProgress,
+    maxRate: input.maxRate ?? defaults?.maxRate,
+    formSerializer: input.formSerializer ?? defaults?.formSerializer,
   };
 
   return config;
@@ -1335,7 +1664,12 @@ export function serializeAxiosConfig(
       config.data,
     );
   } else {
-    body = serializeRequestData(config.data, headers as any, upperMethod);
+    body = serializeRequestData(
+      config.data,
+      headers as any,
+      upperMethod,
+      config.formSerializer,
+    );
   }
   config.data = body;
 
@@ -1385,6 +1719,15 @@ export function serializeAxiosConfig(
   }
   if (config.socketPath !== undefined) {
     options.socketPath = config.socketPath;
+  }
+  if (config.onUploadProgress !== undefined) {
+    options.onUploadProgress = config.onUploadProgress;
+  }
+  if (config.onDownloadProgress !== undefined) {
+    options.onDownloadProgress = config.onDownloadProgress;
+  }
+  if (config.maxRate !== undefined) {
+    options.maxRate = config.maxRate;
   }
 
   const signal = resolveSignal(

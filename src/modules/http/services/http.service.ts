@@ -70,6 +70,11 @@ import {
   type DeadlineTimeoutReason,
 } from '../errors/axios-error';
 import {
+  meterUploadBody,
+  resolveMaxRates,
+  resolveUploadTotal,
+} from '../adapters/axios-progress.adapter';
+import {
   DEFAULT_MAX_REDIRECTS,
   buildRedirectHop,
   createTooManyRedirectsError,
@@ -1174,6 +1179,17 @@ export class HttpService implements OnModuleDestroy {
         timeoutErrorMessage,
         transitional,
         maxBodyLength,
+        // Progress callbacks/`maxRate` (plan.md phase 2 "Progress
+        // callbacks"): stripped here so they never reach undici's own
+        // request options. `onUploadProgress`/upload `maxRate` are consumed
+        // right below; `onDownloadProgress` is read later, off
+        // `interceptorRequest.options` itself (untouched by this
+        // destructure - a different object than `options`, below) by
+        // `toAxiosLikeResponse` (`axios-response.adapter.ts`), since it only
+        // matters once a response actually arrives.
+        onUploadProgress,
+        onDownloadProgress: _onDownloadProgress,
+        maxRate,
         ...restOptions
       } = rawOptions;
       // Destructuring a rest element off a `Record<string, any>`-shaped
@@ -1281,6 +1297,24 @@ export class HttpService implements OnModuleDestroy {
         const enforced = enforceMaxBodyLength(options.body, maxBodyLength);
         options.body = enforced.body;
         maxBodyLengthError = enforced.error;
+      }
+
+      // `onUploadProgress`/upload `maxRate` (plan.md phase 2 "Progress
+      // callbacks"): wraps `options.body` in a counting/throttling stream
+      // only when at least one is actually set - a single `||` check on the
+      // common, neither-set path.
+      if (
+        options.body !== undefined &&
+        (onUploadProgress || maxRate !== undefined)
+      ) {
+        const { upload: maxUploadRate } = resolveMaxRates(maxRate);
+        if (onUploadProgress || maxUploadRate) {
+          options.body = meterUploadBody(options.body, {
+            onProgress: onUploadProgress,
+            maxRate: maxUploadRate,
+            total: resolveUploadTotal(options.body, options.headers),
+          });
+        }
       }
 
       const fail = (error: unknown): void => {
@@ -1748,6 +1782,14 @@ export class HttpService implements OnModuleDestroy {
     data?: any,
     config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
-    return this.request(buildFormRequestConfig(method, url, data, config));
+    return this.request(
+      buildFormRequestConfig(
+        method,
+        url,
+        data,
+        config,
+        this.axiosContext.defaults.formSerializer,
+      ),
+    );
   }
 }
