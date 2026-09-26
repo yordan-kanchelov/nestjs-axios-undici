@@ -125,6 +125,12 @@ Legend: `[ ]` todo, `[~]` in progress (a PR is open), `[x]` merged into `claude/
   - Note: making this check a **required** status check is a GitHub branch-protection setting; the repo owner has to turn it on (Settings → Branches → branch protection rule for `claude/v1.0.0` → Require status checks to pass, add "HttpService regression check" / the `regression` job).
   - Prototypes: `plan/prototypes/perf/compare2.js`, `client.js`, `server.js`.
 - [ ] upstream conformance suites (see `plan/reports/upstream-test-suites.md`)
+  - Plan: two small CI jobs (clone at a pinned tag, run, compare against an expected-failures list like `knownDifference`), one per project, run weekly and on PRs touching `src/**`.
+    - @nestjs/axios' own specs, via jest `moduleNameMapper` shims.
+    - axios' `tests/unit/adapters/http.test.js`, with an adapter backed by our transport (strategy b), then also with `axios.create()` shimmed to our `axiosRef` (strategy a, now possible since PR #23).
+  - Prototype results: @nestjs/axios 16/23 pass; axios adapter subset 15/30 (the full 246-test run hangs early; not bisected yet).
+  - The error-related findings (timeout message, `timeoutErrorMessage`, `error.request`, `maxBodyLength`, unsupported protocol) were handed to fix(errors).
+  - **Deliberate difference, not fixed:** @nestjs/axios never aborts a `responseType: 'stream'` request on unsubscribe. We abort it only before the headers arrive, when no one can hold the stream yet, which frees the connection. Once the stream is emitted we never abort. Document this in the expected-failures list.
 
 ### Phase 2: compatibility fixes (one small PR each; each flips differential cases and passes the perf check)
 
@@ -286,3 +292,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - `setAcceptEncoding`/`getAcceptEncoding`/`hasAcceptEncoding` are back as runtime-only methods: axios has them at runtime but not in its `.d.ts`, so removing them was a needless break.
   Each fix has a test that fails without it.
 - 2026-09-26: PR #23 merged: `axiosRef` is a real axios instance (callable, `create`, `getUri`, `*Form`, `query`, runtime defaults, function `adapter` so axios-mock-adapter works, header casing kept), with one precedence rule: request > `axiosRef.defaults`, seeded from module options. 22 known differences, 1 `@ts-expect-error` left. CI all green. Next: fix(errors).
+- 2026-09-26: Upstream test-suite exploration merged into the plan (report + prototypes). Recommendation: run both projects' own suites in CI against an expected-failures list; keep abort-before-headers for streams as a deliberate difference.
