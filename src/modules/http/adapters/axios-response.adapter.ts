@@ -263,14 +263,20 @@ export function resolveIsValidStatus(
  * `maxContentLength` counts decoded bytes, like the buffered case in
  * `axios-response-type.adapter.ts`) stream in an async generator that throws
  * a real `AxiosError` once the running total crosses the limit. Reading it
- * past that point destroys the underlying stream through the `for await`
- * loop's own `return()` call on an abrupt completion - the same mechanism
+ * past that point destroys `source` through the `for await` loop's own
+ * `return()` call on an abrupt completion - the same mechanism
  * `readBufferWithLimit`/`readDecompressedBufferWithLimit` already rely on
  * for the buffered case - rather than a `Transform` this function would have
- * to destroy manually. Only ever called when a limit is actually set (see
- * the call site below): an unset/`-1` `maxContentLength` (the common case)
- * never wraps the stream at all, so `responseType: 'stream'` costs nothing
- * extra by default.
+ * to destroy manually. When the response was compressed, `source` is
+ * `decompressStream`'s own return value, which - review fix: destroying only
+ * `source` used to leave the raw (undici) body/socket dangling, since
+ * `.pipe()` never propagates destruction upstream - already wires
+ * destroying it to destroying the raw body behind it (see that function's
+ * doc comment), so this still only ever needs to destroy the one stream it
+ * was given. Only ever called when a limit is actually set (see the call
+ * site below): an unset/`-1` `maxContentLength` (the common case) never
+ * wraps the stream at all, so `responseType: 'stream'` costs nothing extra
+ * by default.
  */
 function guardStreamMaxContentLength(
   source: Readable,

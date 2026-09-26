@@ -214,13 +214,54 @@ export function decompressBuffer(buffer: Buffer, encoding: string): Buffer {
   return buffer;
 }
 
-/** Pipes a response body stream through the matching zlib decompressor. */
+/**
+ * Pipes a response body stream through the matching zlib decompressor, with
+ * bidirectional destroy propagation so the raw (undici) body/socket is never
+ * left dangling once the decompressed side stops being read:
+ *
+ * - if `body` errors, the decompressor is destroyed with the same error;
+ * - if the decompressor is destroyed or errors - whether by a caller's own
+ *   `.destroy()` on the stream this function returns (a `responseType:
+ *   'stream'` consumer that stops reading early), or by `axios-response
+ *   .adapter.ts`'s `guardStreamMaxContentLength` throwing inside a `for
+ *   await` loop over it (which destroys it via the async iterator
+ *   protocol's own `return()` call on early exit) - `body` is destroyed too.
+ *
+ * `.pipe()`'s own forwarding is one-directional (source -> destination
+ * only, and only for data, never destruction in either direction - see the
+ * Node docs' own caveat on `Readable#pipe`), so without this, the upstream
+ * stream would otherwise keep flowing under backpressure - a real,
+ * DoS-relevant socket leak - until the producer itself notices nobody's
+ * reading: checked against a real server, an oversized gzip'd body left the
+ * connection open well past 2s where the uncompressed equivalent (which
+ * never goes through this function - see `readBodyAsResponseType`'s stream
+ * branch) closed in under 0.5s. `readDecompressedBufferWithLimit`'s own
+ * explicit `destroy()` calls on both streams (below) still fire too; they're
+ * synchronous and race harmlessly against this function's listeners (both
+ * check `!stream.destroyed` first), so nothing double-destroys.
+ */
 export function decompressStream(body: Readable, encoding: string): Readable {
   const e = normalizeEncoding(encoding);
-  if (GZIP_ENCODINGS.has(e)) return body.pipe(createGunzip());
-  if (e === 'br') return body.pipe(createBrotliDecompress());
-  if (e === 'deflate') return body.pipe(createInflate());
-  return body;
+  let decompressor: NodeJS.ReadWriteStream & {
+    destroyed?: boolean;
+    destroy(error?: Error): void;
+  };
+  if (GZIP_ENCODINGS.has(e)) decompressor = createGunzip();
+  else if (e === 'br') decompressor = createBrotliDecompress();
+  else if (e === 'deflate') decompressor = createInflate();
+  else return body;
+
+  body.pipe(decompressor);
+  const destroyBody = (err?: Error): void => {
+    if (!body.destroyed) body.destroy(err);
+  };
+  const destroyDecompressor = (err?: Error): void => {
+    if (!decompressor.destroyed) decompressor.destroy(err);
+  };
+  body.once('error', destroyDecompressor);
+  decompressor.once('error', destroyBody);
+  decompressor.once('close', destroyBody);
+  return decompressor as unknown as Readable;
 }
 
 /** True when a `maxContentLength` is actually set (matches `assertMaxContentLength`/`readBufferWithLimit`'s own guard: 0/`undefined`/`-1` all mean "no limit"). */

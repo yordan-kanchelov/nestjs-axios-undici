@@ -15,6 +15,56 @@ async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/** Resolves once `stream` emits `'close'` (or immediately if it's already destroyed) - `destroy()` schedules `'close'` asynchronously, so a disposal assertion right after calling it needs to wait for this instead of racing it. */
+function onceClosed(stream: {
+  destroyed?: boolean;
+  once(event: 'close', listener: () => void): unknown;
+}): Promise<void> {
+  return new Promise(resolve => {
+    if (stream.destroyed) {
+      resolve();
+      return;
+    }
+    stream.once('close', () => resolve());
+  });
+}
+
+/**
+ * A `Readable` that pushes `chunks` one at a time, a tick apart, instead of
+ * handing the whole payload to a `.pipe()` destination in one synchronous
+ * go - `Readable.from([buffer])` (a single, already-fully-buffered chunk)
+ * drains into a small `.pipe()` destination's internal buffer immediately
+ * regardless of how slowly (or whether at all) anything downstream actually
+ * reads it, so it reaches its own natural `'end'`/`'close'` on its own -
+ * without ever exercising the destroy-*propagation* this file's disposal
+ * tests are actually about. This instead stays genuinely open (like a real,
+ * live socket under backpressure) until something explicitly destroys it.
+ */
+function slowReadable(chunks: Buffer[]): Readable {
+  const stream = new Readable({ read() {} });
+  let i = 0;
+  const pushNext = (): void => {
+    if (i >= chunks.length) {
+      stream.push(null);
+      return;
+    }
+    stream.push(chunks[i++]);
+    setTimeout(pushNext, 10);
+  };
+  setTimeout(pushNext, 10);
+  return stream;
+}
+
+/** Splits `buf` into `parts` roughly-equal pieces, for feeding `slowReadable` a payload across several slow chunks instead of one. */
+function splitBuffer(buf: Buffer, parts: number): Buffer[] {
+  const size = Math.ceil(buf.length / parts);
+  const chunks: Buffer[] = [];
+  for (let offset = 0; offset < buf.length; offset += size) {
+    chunks.push(buf.subarray(offset, offset + size));
+  }
+  return chunks;
+}
+
 describe('RequestInfo (perf: response.request / error.request built lazily)', () => {
   it('parses nothing in the constructor; a field is parsed only on first read, and cached after', () => {
     const OriginalURL = globalThis.URL;
@@ -254,11 +304,18 @@ describe('toAxiosLikeResponse: maxContentLength for responseType: stream', () =>
     // The compressed payload is well under the limit; only the decoded
     // (much larger) payload should trip it.
     expect(compressed.length).toBeLessThan(200);
+    // Fed as several slow chunks (not one `Readable.from([compressed])`
+    // buffer) so `body` is still genuinely open - mid-stream, not yet at its
+    // own natural `'end'` - at the moment the limit trips; that's the only
+    // way this test can tell an explicit `body.destroy()` apart from the
+    // stream just finishing on its own, which is what let this bug slip
+    // through the PR's original (single-chunk) version of this test.
+    const body = slowReadable(splitBuffer(compressed, 4));
     const undiciResponse: any = {
       statusCode: 200,
       statusText: 'OK',
       headers: { 'content-encoding': 'gzip' },
-      body: Readable.from([compressed]),
+      body,
     };
     const response = await toAxiosLikeResponse(
       fakeRequest({ maxContentLength: 200 }),
@@ -267,6 +324,13 @@ describe('toAxiosLikeResponse: maxContentLength for responseType: stream', () =>
     const error: any = await readAll(response.data).catch(e => e);
     expect(error?.code).toBe('ERR_BAD_RESPONSE');
     expect(error?.message).toBe('maxContentLength size of 200 exceeded');
+    // Review fix: `guardStreamMaxContentLength` used to destroy only the
+    // decompressed (`.pipe()`-derived) stream, never the raw undici body
+    // behind it - `.pipe()` never propagates destruction upstream, so the
+    // raw body/socket stayed open under backpressure. It must be destroyed
+    // too, or a real server connection would leak.
+    await onceClosed(body);
+    expect(body.destroyed).toBe(true);
   });
 
   it('unset/-1 maxContentLength never wraps the stream at all (same object identity as the raw body)', async () => {
@@ -282,6 +346,70 @@ describe('toAxiosLikeResponse: maxContentLength for responseType: stream', () =>
       undiciResponse,
     );
     expect(response.data).toBe(body);
+  });
+
+  it('an uncompressed stream over the limit destroys the raw body too (the already-working case, kept as a regression guard)', async () => {
+    const body = Readable.from([Buffer.alloc(10, 'x'), Buffer.alloc(10, 'y')]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 15 }),
+      undiciResponse,
+    );
+    await readAll(response.data).catch(() => undefined);
+    await onceClosed(body);
+    expect(body.destroyed).toBe(true);
+  });
+
+  /**
+   * Review fix, same root cause, pre-existing on `claude/v1.0.0` before this
+   * PR ever touched this file: a `responseType: 'stream'` consumer that
+   * stops reading a *compressed* response early (no `maxContentLength`
+   * involved at all) destroys the decompressed stream it was handed, but
+   * the raw undici body/socket behind it never got destroyed either -
+   * `decompressStream` (`axios-response-type.adapter.ts`) now wires that up
+   * directly, so every consumer of a compressed `responseType: 'stream'`
+   * response benefits, not just the `maxContentLength` path above.
+   */
+  it('a consumer destroying a compressed stream early also destroys the raw body', async () => {
+    // Slow chunks again (see the limit-crossed test above): otherwise the
+    // single already-buffered chunk drains into gunzip and `body` reaches
+    // its own natural `'end'`/`'close'` before `.destroy()` below even runs,
+    // so the assertion would pass whether or not destroy-propagation works.
+    const body = slowReadable(
+      splitBuffer(gzipSync(Buffer.alloc(1000, 'z')), 4),
+    );
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body,
+    };
+    const response = await toAxiosLikeResponse(fakeRequest({}), undiciResponse);
+    // A consumer that stops reading early - explicitly, not via a for-await
+    // `break` (which would already trigger the async iterator's own
+    // `return()`/`destroy()`, muddying which mechanism is under test here).
+    (response.data as any).destroy();
+    await onceClosed(body);
+    expect(body.destroyed).toBe(true);
+  });
+
+  it('a consumer destroying an uncompressed stream early also destroys the raw body (the already-working case, kept as a regression guard)', async () => {
+    const body = Readable.from([Buffer.alloc(1000, 'z')]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body,
+    };
+    const response = await toAxiosLikeResponse(fakeRequest({}), undiciResponse);
+    (response.data as any).destroy();
+    await onceClosed(body);
+    expect(body.destroyed).toBe(true);
   });
 });
 
