@@ -11,14 +11,50 @@ import type { Readable } from 'node:stream';
 import type { Dispatcher } from 'undici';
 import type { AxiosResponseType } from '../interfaces/axios-compatible.interface';
 
+/** axios: `ERR_BAD_RESPONSE`, `maxContentLength size of ${limit} exceeded` - checked against real axios 1.20 (`lib/adapters/http.js`). */
 function assertMaxContentLength(size: number, maxContentLength?: number): void {
   if (maxContentLength && maxContentLength > -1 && size > maxContentLength) {
     const error: any = new Error(
       `maxContentLength size of ${maxContentLength} exceeded`,
     );
-    error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+    error.code = 'ERR_BAD_RESPONSE';
     throw error;
   }
+}
+
+/**
+ * Reads a body stream into a `Buffer`, enforcing `maxContentLength` as bytes
+ * arrive (axios does the same - see `lib/adapters/http.js`'s streamed
+ * `maxContentLength` enforcement) rather than after buffering the whole
+ * response: a body that exceeds the limit is rejected, and the underlying
+ * stream released (via the `for await` loop's own `return()` call on an
+ * abrupt completion), as soon as the limit is crossed - not after reading
+ * however much more of a possibly-huge response follows. Only used when a
+ * limit is actually set; an unset/`-1` `maxContentLength` (the common case)
+ * defers to undici's own `.arrayBuffer()`, unchanged.
+ */
+async function readBufferWithLimit(
+  body: Dispatcher.ResponseData['body'],
+  maxContentLength?: number,
+): Promise<Buffer> {
+  if (!maxContentLength || maxContentLength <= -1) {
+    return Buffer.from(await body.arrayBuffer());
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of body as unknown as AsyncIterable<Buffer>) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxContentLength) {
+      const error: any = new Error(
+        `maxContentLength size of ${maxContentLength} exceeded`,
+      );
+      error.code = 'ERR_BAD_RESPONSE';
+      throw error;
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,26 +212,41 @@ async function readBuffer(
   body: Dispatcher.ResponseData['body'],
   options: BodyDecodeOptions,
 ): Promise<Buffer> {
-  const buffer = Buffer.from(await body.arrayBuffer());
-  return shouldDecompress(options)
-    ? decompressBuffer(buffer, options.contentEncoding!)
-    : buffer;
+  // `maxContentLength` applies to the *decoded* bytes, as in axios - when
+  // decompressing, the compressed size isn't what's being limited, so this
+  // buffers the (usually much smaller) compressed body fully first, same as
+  // before; the caller's own `assertMaxContentLength` on the decoded result
+  // still catches an oversized decompressed body. The common, uncompressed
+  // case streams the check instead (`readBufferWithLimit`).
+  if (shouldDecompress(options)) {
+    return decompressBuffer(
+      Buffer.from(await body.arrayBuffer()),
+      options.contentEncoding!,
+    );
+  }
+  return readBufferWithLimit(body, options.maxContentLength);
 }
 
 /**
- * Reads the body as a UTF-8 string. When nothing needs decompressing this
- * defers to undici's own `.text()` (which already strips a BOM), so the
- * common, uncompressed path costs nothing extra.
+ * Reads the body as a UTF-8 string. When nothing needs decompressing or
+ * limiting this defers to undici's own `.text()` (which already strips a
+ * BOM), so the common, unlimited/uncompressed path costs nothing extra.
  */
 export async function readText(
   body: Dispatcher.ResponseData['body'],
   options: BodyDecodeOptions,
 ): Promise<string> {
-  if (!shouldDecompress(options)) return body.text();
-  const buffer = decompressBuffer(
-    Buffer.from(await body.arrayBuffer()),
-    options.contentEncoding!,
-  );
+  if (shouldDecompress(options)) {
+    const buffer = decompressBuffer(
+      Buffer.from(await body.arrayBuffer()),
+      options.contentEncoding!,
+    );
+    return stripBOM(buffer.toString('utf8'));
+  }
+  if (!options.maxContentLength || options.maxContentLength <= -1) {
+    return body.text();
+  }
+  const buffer = await readBufferWithLimit(body, options.maxContentLength);
   return stripBOM(buffer.toString('utf8'));
 }
 

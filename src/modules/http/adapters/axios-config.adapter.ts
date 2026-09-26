@@ -6,7 +6,6 @@ import type {
   AxiosResponseType,
   HttpInterceptorFunction,
 } from '../interfaces';
-import { createSizeLimitInterceptor } from '../interceptors/size-limit.interceptor';
 
 /**
  * TLS/connection options this library reads off a Node.js `https.Agent`
@@ -174,23 +173,17 @@ export function mapAxiosConfigToUndici(
     undiciConfig.maxRedirections = axiosConfig.maxRedirects;
   }
 
-  // Handle size limits with interceptor
-  if (
-    axiosConfig.maxBodyLength !== undefined ||
-    axiosConfig.maxContentLength !== undefined
-  ) {
-    // Create size limit interceptor
-    interceptors.push(
-      createSizeLimitInterceptor({
-        maxBodyLength: axiosConfig.maxBodyLength,
-        maxContentLength: axiosConfig.maxContentLength,
-      }),
-    );
-
-    // Also store in options for the response adapter
-    (undiciConfig as any).maxBodyLength = axiosConfig.maxBodyLength;
-    (undiciConfig as any).maxContentLength = axiosConfig.maxContentLength;
-  }
+  // `maxBodyLength`/`maxContentLength` need no mapping here: `HttpModule.
+  // register()` already forwards the original `config` (which carries them
+  // verbatim) onto `HttpService`'s module options, and `HttpService` itself
+  // - via `normalizeAxiosRequest`/`buildAxiosConfig` (module-vs-request
+  // precedence) and `executeRequest`/`axios-response-type.adapter.ts`
+  // (enforcement + axios' own error codes) - reads them from there. This
+  // used to also register a `SizeLimitInterceptor`, which duplicated that
+  // enforcement with the wrong codes (`ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED`/
+  // `ERR_FR_MAX_BODY_LENGTH_EXCEEDED` regardless of body shape, buffering
+  // the whole response first) - removed; plan.md phase 2 "fix(errors):
+  // match axios errors".
 
   // Handle httpAgent/httpsAgent (TLS + keep-alive + maxSockets) and
   // httpVersion - resolved once here (setup time) into the exact undici

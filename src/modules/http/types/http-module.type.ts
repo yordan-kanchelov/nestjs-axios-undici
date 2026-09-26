@@ -59,10 +59,29 @@ export interface HttpModuleOptions {
   params?: any;
   paramsSerializer?: AxiosParamsSerializer;
   auth?: { username: string; password: string };
-  /** Maps to undici's `headersTimeout`/`bodyTimeout`. */
+  /**
+   * A total (deadline) timeout, as in axios: from request start until the
+   * response body is fully read (for `responseType: 'stream'`, until the
+   * response headers arrive). Also maps to undici's `headersTimeout`/
+   * `bodyTimeout` as a backstop.
+   */
   timeout?: number;
+  /** Message used instead of the default `timeout of ${timeout}ms exceeded`, as in axios. */
+  timeoutErrorMessage?: string;
+  /** `transitional.clarifyTimeoutError: true` reports a timeout as `ETIMEDOUT` instead of `ECONNABORTED`, as in axios. */
+  transitional?: {
+    clarifyTimeoutError?: boolean;
+    silentJSONParsing?: boolean;
+    forcedJSONParsing?: boolean;
+  };
   /** Follows up to 21 redirects by default, like axios; `0` disables. */
   maxRedirects?: number;
+  /**
+   * axios >=1.8: `false` makes an absolute request `url` be treated as
+   * relative to `baseURL` anyway. Default (`undefined`/`true`): an absolute
+   * `url` ignores `baseURL`.
+   */
+  allowAbsoluteUrls?: boolean;
   beforeRedirect?: BeforeRedirectFn;
   validateStatus?: ((status: number) => boolean) | null;
   /** `'document'` is accepted for axios type compatibility (browser-only; not implemented on Node.js). */
@@ -70,8 +89,9 @@ export interface HttpModuleOptions {
   responseEncoding?: string;
   /** `false` disables response decompression (gzip/br/deflate). Default: decompress. */
   decompress?: boolean;
-  /** Response body size limit; the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). */
+  /** Response body size limit, enforced while streaming; rejects with `ERR_BAD_RESPONSE`, as in axios. Per-request wins over this module-level value. */
   maxContentLength?: number;
+  /** Request body size limit; rejects with `ERR_BAD_REQUEST`, as in axios. Per-request wins over this module-level value. */
   maxBodyLength?: number;
   transformRequest?:
     | ((data: any, headers?: any) => any)

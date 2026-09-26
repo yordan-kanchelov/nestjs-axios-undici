@@ -17,8 +17,6 @@ import {
 } from '../../../src';
 import { differential, Ctx } from './harness';
 
-const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
-
 const routes = {
   '/echo': (req: any, res: any, body: string) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -124,9 +122,6 @@ differential('Differential: HttpModule.register() options', routes, [
     run: (s, ctx: Ctx) =>
       s.get(`${ctx.base}/big?n=500`, { maxContentLength: 10000 }),
     normalize: (o: any) => ({ ok: !!o.result }),
-    // a module-level maxContentLength overrides the per-request value here; axios lets the
-    // more specific (per-request) value win.
-    knownDifference: ERRORS,
   },
   {
     name: 'maxBodyLength module-level with a stream body',
@@ -134,6 +129,19 @@ differential('Differential: HttpModule.register() options', routes, [
     run: (s, ctx: Ctx) =>
       s.post(`${ctx.base}/echo`, Readable.from([Buffer.alloc(500, 'x')])),
     normalize: (o: any) => ({ ok: !!o.result }),
+  },
+  {
+    name: 'maxBodyLength module-level; per-request override wins',
+    options: { maxBodyLength: 100 },
+    run: (s, ctx: Ctx) =>
+      s.post(`${ctx.base}/echo`, 'x'.repeat(500), { maxBodyLength: 10000 }),
+    normalize: (o: any) => ({ ok: !!o.result }),
+  },
+  {
+    name: 'timeoutErrorMessage module-level',
+    options: { timeout: 300, timeoutErrorMessage: 'custom module message!' },
+    run: (s, ctx: Ctx) => s.get(`${ctx.base}/slow?ms=3000`),
+    normalize: (o: any) => o.error?.message,
   },
   {
     name: 'transformResponse (custom, replaces default parsing)',
