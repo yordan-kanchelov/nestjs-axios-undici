@@ -2,8 +2,8 @@ name: Upstream conformance
 
 # Runs @nestjs/axios' and axios' own (unmodified) test files against this
 # package - see tests/upstream/README.md. Weekly, to catch a new upstream
-# release inside the pinned tag range; on PRs that touch src/ or the suites
-# themselves; and on demand.
+# release inside the pinned tag range; on PRs and pushes to main that touch
+# src/ or the suites themselves; and on demand.
 #
 # A matrix of 3 parallel jobs (not one job running all three in sequence):
 # each of axios' two strategies can, rarely, need its own multi-minute
@@ -14,6 +14,13 @@ name: Upstream conformance
 on:
   pull_request:
     branches: [main, claude/v1.0.0]
+    paths:
+      - 'src/**'
+      - 'tests/upstream/**'
+      - '.github/workflows/upstream.yml'
+  # On main too, so the README badge reflects the released code.
+  push:
+    branches: [main]
     paths:
       - 'src/**'
       - 'tests/upstream/**'
