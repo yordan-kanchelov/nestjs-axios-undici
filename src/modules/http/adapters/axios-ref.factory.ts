@@ -56,6 +56,19 @@ const DEFAULTS_PASSTHROUGH_KEYS = [
   'parseReviver',
   'sensitiveHeaders',
   'transitional',
+  // CodeRabbit review finding: `create(config)` (and a runtime
+  // `axiosRef.defaults.X = ...` assignment) dropped these outright -
+  // `normalizeAxiosRequest`/`buildAxiosConfig` only ever read them off
+  // module/instance options, never off `defaults` (see the matching fix in
+  // `axios-request.adapter.ts`).
+  'auth',
+  'maxContentLength',
+  'maxBodyLength',
+  'timeoutErrorMessage',
+  'decompress',
+  'socketPath',
+  'allowAbsoluteUrls',
+  'beforeRedirect',
 ] as const;
 
 /**

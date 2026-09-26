@@ -56,6 +56,45 @@ describe('axios request adapter', () => {
       );
     });
 
+    /**
+     * CodeRabbit review finding (`axiosRef(config)` overload detection): a
+     * config with no explicit `url` (perfectly valid axios usage - a bare
+     * `baseURL`, or one an interceptor fills in later - see
+     * `AxiosLikeRequestConfig.url`'s own doc comment) used to fall through
+     * to the "this is a URL value" branch (the old check only looked for a
+     * `url` key), so `normalizeAxiosRequest({ baseURL, method })` (and, via
+     * the same shared `isAxiosRequestConfig`, `axiosRef({ baseURL, method
+     * })`) got treated as a raw URL and stringified to `"[object Object]"`.
+     * Fixed: a missing `url` key alone no longer means "this is a URL" -
+     * only an object that actually looks like a `UrlObject` (carries one of
+     * its own fields, e.g. `protocol`/`hostname`/`pathname`) does, matching
+     * the existing case just above; everything else with no `url` key is a
+     * config, matching axios' own `Axios.prototype.request` (`typeof
+     * configOrUrl === 'string'`).
+     */
+    it('treats a config with no url key at all as a config, not a URL value', () => {
+      expect(
+        isAxiosRequestConfig({ baseURL: 'http://api', method: 'get' }),
+      ).toBe(true);
+      expect(isAxiosRequestConfig({ transformRequest: [(d: any) => d] })).toBe(
+        true,
+      );
+      expect(isAxiosRequestConfig({})).toBe(true);
+      // A `UrlObject` (any of its own fields, not just protocol/host) is
+      // still recognised as a URL value, not a config.
+      expect(isAxiosRequestConfig({ pathname: '/x', search: '?a=1' })).toBe(
+        false,
+      );
+    });
+
+    it('normalizeAxiosRequest resolves baseURL for a config with no url key (fails without the isAxiosRequestConfig fix - previously combined baseURL with "[object Object]")', () => {
+      const { url } = normalizeAxiosRequest(
+        { baseURL: 'http://api.example.com/base', method: 'get' },
+        undefined,
+      );
+      expect(url).toBe('http://api.example.com/base');
+    });
+
     it('merges module headers, axiosRef defaults and request headers case-insensitively', () => {
       const defaults = createAxiosRefDefaults();
       defaults.headers.common['X-Common'] = 'c';
@@ -594,6 +633,145 @@ describe('axios request adapter', () => {
           config,
         }),
       );
+    });
+  });
+
+  /**
+   * CodeRabbit review finding (`axiosRef.create(config)` drops options):
+   * `auth`/`maxContentLength`/`maxBodyLength`/`timeoutErrorMessage`/
+   * `decompress`/`socketPath`/`allowAbsoluteUrls`/`beforeRedirect` used to
+   * be read only off module/instance options here, never off `defaults` -
+   * so `axiosRef.create({ auth })` (which only ever seeds `defaults`, never
+   * `instanceOptions`) sent no credentials, and a runtime `axiosRef.defaults
+   * .maxContentLength = ...` assignment enforced nothing. Covers both
+   * `normalizeAxiosRequest` (the fast path) and `buildAxiosConfig` (the
+   * axiosRef pipeline path, what `create()`'s own requests always run
+   * through once it has any interceptor/adapter/transform - and, via
+   * `dispatchAxiosConfig`, what every `axiosRef`/`create()` call ultimately
+   * resolves through regardless), with request-level always winning over
+   * `defaults`.
+   */
+  describe('axiosRef.defaults / create() precedence: auth, maxContentLength, maxBodyLength, timeoutErrorMessage, decompress, socketPath, allowAbsoluteUrls, beforeRedirect', () => {
+    const redirectHook = () => undefined;
+    const defaultsFixture = () => ({
+      ...createAxiosRefDefaults(),
+      auth: { username: 'default-user', password: 'default-pass' },
+      maxContentLength: 1000,
+      maxBodyLength: 2000,
+      timeoutErrorMessage: 'default timeout message',
+      decompress: false,
+      socketPath: '/var/run/default.sock',
+      allowAbsoluteUrls: false,
+      beforeRedirect: redirectHook,
+    });
+
+    it('normalizeAxiosRequest: defaults apply when the request sets nothing', () => {
+      const { options } = normalizeAxiosRequest('http://api/x', undefined, {
+        defaults: defaultsFixture() as any,
+      });
+      expect(options.headers.Authorization).toBe(
+        `Basic ${Buffer.from('default-user:default-pass').toString('base64')}`,
+      );
+      expect(options.maxContentLength).toBe(1000);
+      expect(options.maxBodyLength).toBe(2000);
+      expect(options.timeoutErrorMessage).toBe('default timeout message');
+      expect(options.decompress).toBe(false);
+      expect(options.socketPath).toBe('/var/run/default.sock');
+      expect(options.beforeRedirect).toBe(redirectHook);
+    });
+
+    it('normalizeAxiosRequest: a request-level value wins over defaults', () => {
+      const requestRedirectHook = () => undefined;
+      const { options } = normalizeAxiosRequest(
+        'http://api/x',
+        {
+          auth: { username: 'req-user', password: 'req-pass' },
+          maxContentLength: 5,
+          maxBodyLength: 6,
+          timeoutErrorMessage: 'request message',
+          decompress: true,
+          socketPath: '/var/run/request.sock',
+          beforeRedirect: requestRedirectHook,
+        },
+        { defaults: defaultsFixture() as any },
+      );
+      expect(options.headers.Authorization).toBe(
+        `Basic ${Buffer.from('req-user:req-pass').toString('base64')}`,
+      );
+      expect(options.maxContentLength).toBe(5);
+      expect(options.maxBodyLength).toBe(6);
+      expect(options.timeoutErrorMessage).toBe('request message');
+      expect(options.decompress).toBe(true);
+      expect(options.socketPath).toBe('/var/run/request.sock');
+      expect(options.beforeRedirect).toBe(requestRedirectHook);
+    });
+
+    it('normalizeAxiosRequest: allowAbsoluteUrls from defaults makes an absolute url combine with baseURL instead of replacing it', () => {
+      const { url } = normalizeAxiosRequest(
+        'http://absolute.example/path',
+        { baseURL: 'http://base.example/api' },
+        { defaults: { ...defaultsFixture(), allowAbsoluteUrls: false } as any },
+      );
+      expect(url).toBe('http://base.example/api/http://absolute.example/path');
+    });
+
+    it('buildAxiosConfig: defaults apply when the request sets nothing', () => {
+      const config = buildAxiosConfig('http://api/x', undefined, {
+        defaults: defaultsFixture() as any,
+      });
+      expect(config.auth).toEqual({
+        username: 'default-user',
+        password: 'default-pass',
+      });
+      expect(config.maxContentLength).toBe(1000);
+      expect(config.maxBodyLength).toBe(2000);
+      expect(config.timeoutErrorMessage).toBe('default timeout message');
+      expect(config.decompress).toBe(false);
+      expect(config.socketPath).toBe('/var/run/default.sock');
+      expect(config.allowAbsoluteUrls).toBe(false);
+      expect(config.beforeRedirect).toBe(redirectHook);
+    });
+
+    it('buildAxiosConfig: a request-level value wins over defaults', () => {
+      const requestRedirectHook = () => undefined;
+      const config = buildAxiosConfig(
+        'http://api/x',
+        {
+          auth: { username: 'req-user', password: 'req-pass' },
+          maxContentLength: 5,
+          maxBodyLength: 6,
+          timeoutErrorMessage: 'request message',
+          decompress: true,
+          socketPath: '/var/run/request.sock',
+          allowAbsoluteUrls: true,
+          beforeRedirect: requestRedirectHook,
+        },
+        { defaults: defaultsFixture() as any },
+      );
+      expect(config.auth).toEqual({
+        username: 'req-user',
+        password: 'req-pass',
+      });
+      expect(config.maxContentLength).toBe(5);
+      expect(config.maxBodyLength).toBe(6);
+      expect(config.timeoutErrorMessage).toBe('request message');
+      expect(config.decompress).toBe(true);
+      expect(config.socketPath).toBe('/var/run/request.sock');
+      expect(config.allowAbsoluteUrls).toBe(true);
+      expect(config.beforeRedirect).toBe(requestRedirectHook);
+    });
+
+    it('module (instanceOptions) still applies when defaults sets nothing (unaffected by this fix)', () => {
+      const { options } = normalizeAxiosRequest('http://api/x', undefined, {
+        instanceOptions: {
+          auth: { username: 'module-user', password: 'module-pass' },
+          maxContentLength: 42,
+        },
+      });
+      expect(options.headers.Authorization).toBe(
+        `Basic ${Buffer.from('module-user:module-pass').toString('base64')}`,
+      );
+      expect(options.maxContentLength).toBe(42);
     });
   });
 });

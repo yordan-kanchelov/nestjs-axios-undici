@@ -1094,18 +1094,59 @@ function headersHaveWork(
 }
 
 /**
- * Detects the `request(config)` call form (`{ url, method, ... }`), as opposed
- * to `request(url, options)` where `url` may also be a URL or UrlObject.
+ * `node:url`'s `UrlObject` shape (`url.format()`'s input): fields that only
+ * a URL-ish plain object would ever carry - none of them overlap with
+ * `AxiosLikeRequestConfig`'s own keys (checked against
+ * `axios-compatible.interface.ts`; `auth` is the one nominal overlap - a
+ * legacy `UrlObject.auth` string vs. `config.auth`'s `{ username, password }`
+ * object - vanishingly rare either way, so it's left off this list rather
+ * than risk misclassifying a real `config.auth`).
+ */
+const URL_OBJECT_MARKER_KEYS = [
+  'protocol',
+  'hostname',
+  'host',
+  'pathname',
+  'path',
+  'href',
+  'query',
+  'search',
+  'hash',
+  'slashes',
+  'port',
+] as const;
+
+/**
+ * Detects the `request(config)` call form (`{ url, method, ... }`), as
+ * opposed to `request(url, options)` where `url` may also be a `URL` or a
+ * `UrlObject`.
+ *
+ * Review fix (CodeRabbit): this used to require a `url` key to say "this is
+ * a config" - so `axiosRef({ baseURL: '...', method: 'get' })` (a perfectly
+ * valid axios config with no `url` set - matching axios exactly, see
+ * `AxiosLikeRequestConfig.url`'s own doc comment) fell through the `else`
+ * branch and got treated as a raw URL value, stringified to
+ * `"[object Object]"`. A config's `url` is commonly left unset (resolved
+ * later via `baseURL` or an interceptor), so a *missing* `url` key alone
+ * can't mean "this is a URL, not a config" - matches axios' own
+ * `Axios.prototype.request`, which only ever branches on
+ * `typeof configOrUrl === 'string'` (a bare URL value here is never a
+ * config). The one extra case this library's own `request(url, options)`/
+ * `get(url, config)` etc. add on top of axios (a raw `UrlObject` as the
+ * first, positional argument - see that interface's doc comment) is still
+ * recognised structurally: an object with no `url` key is a `UrlObject`
+ * only if it actually carries one of that shape's own fields
+ * (`URL_OBJECT_MARKER_KEYS`), never merely by the absence of `url`.
  */
 export function isAxiosRequestConfig(
   value: unknown,
 ): value is { url?: Url } & Record<string, any> {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !(value instanceof URL) &&
-    'url' in (value as Record<string, unknown>)
-  );
+  if (!value || typeof value !== 'object' || value instanceof URL) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  if ('url' in obj) return true;
+  return !URL_OBJECT_MARKER_KEYS.some(key => key in obj);
 }
 
 /**
@@ -1161,17 +1202,34 @@ export function normalizeAxiosRequest(
   );
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
-  let auth = input.auth ?? instance.auth;
+  let auth = input.auth ?? defaults?.auth ?? instance.auth;
   const defaultTimeout =
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects =
     input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
   const allowAbsoluteUrls =
-    input.allowAbsoluteUrls ?? instance.allowAbsoluteUrls;
+    input.allowAbsoluteUrls ??
+    defaults?.allowAbsoluteUrls ??
+    instance.allowAbsoluteUrls;
   // Precedence: request > axiosRef.defaults > module - see the header
   // comment below.
   const baseParams = defaults?.params ?? instance.params;
+  // CodeRabbit review finding: `axiosRef.create({ maxContentLength, ... })`
+  // (and a runtime `axiosRef.defaults.X = ...` assignment) used to have no
+  // effect on these 5 - only ever read off module (`instance`) options here,
+  // never off `defaults` - same precedence (request > axiosRef.defaults >
+  // module) as `baseURL`/`timeout`/`maxRedirects` above.
+  const defaultMaxContentLength =
+    defaults?.maxContentLength ?? instance.maxContentLength;
+  const defaultMaxBodyLength =
+    defaults?.maxBodyLength ?? instance.maxBodyLength;
+  const defaultTimeoutErrorMessage =
+    defaults?.timeoutErrorMessage ?? instance.timeoutErrorMessage;
+  const defaultDecompress = defaults?.decompress ?? instance.decompress;
+  const defaultSocketPath = defaults?.socketPath ?? instance.socketPath;
+  const defaultBeforeRedirect =
+    defaults?.beforeRedirect ?? instance.beforeRedirect;
 
   // Fast path: nothing axios-specific to do for this request. In practice
   // this only triggers for calls that bypass HttpService's axiosRef defaults
@@ -1190,12 +1248,17 @@ export function normalizeAxiosRequest(
       !Object.prototype.hasOwnProperty.call(input, 'validateStatus')) ||
     (defaults?.responseType !== undefined &&
       input.responseType === undefined) ||
-    (instance.maxContentLength !== undefined &&
+    (defaultMaxContentLength !== undefined &&
       input.maxContentLength === undefined) ||
-    (instance.maxBodyLength !== undefined &&
-      input.maxBodyLength === undefined) ||
-    (instance.timeoutErrorMessage !== undefined &&
+    (defaultMaxBodyLength !== undefined && input.maxBodyLength === undefined) ||
+    (defaultTimeoutErrorMessage !== undefined &&
       input.timeoutErrorMessage === undefined) ||
+    (defaultDecompress !== undefined && input.decompress === undefined) ||
+    (defaultSocketPath !== undefined && input.socketPath === undefined) ||
+    (defaultBeforeRedirect !== undefined &&
+      input.beforeRedirect === undefined) ||
+    (defaults?.allowAbsoluteUrls !== undefined &&
+      input.allowAbsoluteUrls === undefined) ||
     (defaults?.transitional !== undefined &&
       input.transitional === undefined) ||
     (defaults?.onUploadProgress !== undefined &&
@@ -1419,26 +1482,43 @@ export function normalizeAxiosRequest(
   ) {
     options.responseType = defaults.responseType;
   }
-  // Per-request wins over the module-level default, as in axios
+  // Per-request wins over axiosRef.defaults/module, as in axios
   // (`defaultToConfig2`) - see `plan/reports/axios-compat.md`'s "a
   // module-level `maxContentLength` overrides the per-request value" bug.
+  // CodeRabbit review finding: these 5 used to fall back to `instance`
+  // (module options) only, never `defaults` - so `axiosRef.create({
+  // maxContentLength: ... })`/a runtime `axiosRef.defaults.maxContentLength
+  // = ...` had no effect. `defaultX` above already resolves `defaults ??
+  // instance`, matching every other passthrough default in this function.
   if (
     options.maxContentLength === undefined &&
-    instance.maxContentLength !== undefined
+    defaultMaxContentLength !== undefined
   ) {
-    options.maxContentLength = instance.maxContentLength;
+    options.maxContentLength = defaultMaxContentLength;
   }
   if (
     options.maxBodyLength === undefined &&
-    instance.maxBodyLength !== undefined
+    defaultMaxBodyLength !== undefined
   ) {
-    options.maxBodyLength = instance.maxBodyLength;
+    options.maxBodyLength = defaultMaxBodyLength;
   }
   if (
     options.timeoutErrorMessage === undefined &&
-    instance.timeoutErrorMessage !== undefined
+    defaultTimeoutErrorMessage !== undefined
   ) {
-    options.timeoutErrorMessage = instance.timeoutErrorMessage;
+    options.timeoutErrorMessage = defaultTimeoutErrorMessage;
+  }
+  if (options.decompress === undefined && defaultDecompress !== undefined) {
+    options.decompress = defaultDecompress;
+  }
+  if (options.socketPath === undefined && defaultSocketPath !== undefined) {
+    options.socketPath = defaultSocketPath;
+  }
+  if (
+    options.beforeRedirect === undefined &&
+    defaultBeforeRedirect !== undefined
+  ) {
+    options.beforeRedirect = defaultBeforeRedirect;
   }
   // Precedence: request > axiosRef.defaults - module options are already
   // folded into `defaults` at setup (`DEFAULTS_PASSTHROUGH_KEYS`), matching
@@ -1549,14 +1629,16 @@ export function buildAxiosConfig(
   );
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
-  const auth = input.auth ?? instance.auth;
+  const auth = input.auth ?? defaults?.auth ?? instance.auth;
   const defaultTimeout =
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects =
     input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
   const allowAbsoluteUrls =
-    input.allowAbsoluteUrls ?? instance.allowAbsoluteUrls;
+    input.allowAbsoluteUrls ??
+    defaults?.allowAbsoluteUrls ??
+    instance.allowAbsoluteUrls;
   // See the matching comment in `normalizeAxiosRequest`: an own key (even
   // `null`) always wins over `defaults`/`instance`.
   const validateStatusProvided = Object.prototype.hasOwnProperty.call(
@@ -1626,7 +1708,17 @@ export function buildAxiosConfig(
     timeout: input.timeout ?? defaultTimeout,
     maxRedirects,
     allowAbsoluteUrls,
-    beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
+    // CodeRabbit review finding: these 5 (plus `auth`/`allowAbsoluteUrls`
+    // above) used to fall back to `instance` (module options) only, never
+    // `defaults` - so `axiosRef.create({ maxContentLength: ... })`/a
+    // runtime `axiosRef.defaults.maxContentLength = ...` had no effect on
+    // an instance's own axiosRef pipeline requests. `timeoutErrorMessage`
+    // wasn't even read here at all before (it only ever reached `config` via
+    // the `...rest` spread above, i.e. request-level only).
+    beforeRedirect:
+      input.beforeRedirect ??
+      defaults?.beforeRedirect ??
+      instance.beforeRedirect,
     sensitiveHeaders:
       input.sensitiveHeaders ??
       defaults?.sensitiveHeaders ??
@@ -1636,9 +1728,17 @@ export function buildAxiosConfig(
       : (defaults?.validateStatus ?? instance.validateStatus),
     responseType:
       input.responseType ?? defaults?.responseType ?? instance.responseType,
-    decompress: input.decompress ?? instance.decompress,
-    maxContentLength: input.maxContentLength ?? instance.maxContentLength,
-    maxBodyLength: input.maxBodyLength ?? instance.maxBodyLength,
+    decompress: input.decompress ?? defaults?.decompress ?? instance.decompress,
+    maxContentLength:
+      input.maxContentLength ??
+      defaults?.maxContentLength ??
+      instance.maxContentLength,
+    maxBodyLength:
+      input.maxBodyLength ?? defaults?.maxBodyLength ?? instance.maxBodyLength,
+    timeoutErrorMessage:
+      input.timeoutErrorMessage ??
+      defaults?.timeoutErrorMessage ??
+      instance.timeoutErrorMessage,
     transformRequest:
       input.transformRequest ??
       defaults?.transformRequest ??
@@ -1647,7 +1747,7 @@ export function buildAxiosConfig(
       input.transformResponse ??
       defaults?.transformResponse ??
       instance.transformResponse,
-    socketPath: input.socketPath ?? instance.socketPath,
+    socketPath: input.socketPath ?? defaults?.socketPath ?? instance.socketPath,
     adapter: input.adapter ?? defaults?.adapter ?? instance.adapter,
     onUploadProgress: input.onUploadProgress ?? defaults?.onUploadProgress,
     onDownloadProgress:

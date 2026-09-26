@@ -724,6 +724,100 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
+    /**
+     * CodeRabbit review finding: `axiosRef(config)` overload detection used
+     * to require a `url` key on `config` to recognise the `axiosRef(config)`
+     * call form - a config with `baseURL` but no `url` (perfectly valid
+     * axios usage) fell through to the "this is a raw URL" branch instead
+     * and got stringified to `"[object Object]"`.
+     */
+    it('axiosRef({ baseURL, method }) with no url key hits baseURL directly, like real axios', async () => {
+      const [a, u] = await both(async s =>
+        echo(await s.axiosRef({ baseURL: `${base}/echo`, method: 'get' })),
+      );
+      expect(u).toEqual(a);
+      expect(u.url).toBe('/echo');
+      expect(u.method).toBe('GET');
+    });
+
+    it('axiosRef({ method }) with no url/baseURL at all: a request interceptor that sets config.url still works', async () => {
+      const [a, u] = await both(async s => {
+        const id = s.axiosRef.interceptors.request.use((config: any) => {
+          config.url = `${base}/echo`;
+          return config;
+        });
+        try {
+          return echo(await s.axiosRef({ method: 'get' }));
+        } finally {
+          s.axiosRef.interceptors.request.eject(id);
+        }
+      });
+      expect(u).toEqual(a);
+      expect(u.url).toBe('/echo');
+    });
+
+    /**
+     * CodeRabbit review finding: `axiosRef.create(config)` merged `config`
+     * onto module options for `baseURL`/`timeout`/`maxRedirects`/headers/...
+     * but silently dropped `auth`, `maxContentLength`, `maxBodyLength`,
+     * `timeoutErrorMessage`, `decompress`, `socketPath`, `allowAbsoluteUrls`
+     * and `beforeRedirect` - `create({ auth })` sent no credentials, and
+     * `create({ maxContentLength })` enforced nothing, because
+     * `normalizeAxiosRequest`/`buildAxiosConfig` only ever read those off
+     * module/instance options, never off the child instance's own
+     * `defaults`.
+     */
+    it('axiosRef.create({ auth }) sends Basic auth, like real axios', async () => {
+      const [a, u] = await both(async s => {
+        const child = s.axiosRef.create({
+          auth: { username: 'alice', password: 'secret' },
+        });
+        return echo(await child.get(`${base}/echo`));
+      });
+      expect(u).toEqual(a);
+      expect(u.authorization).toBe(
+        `Basic ${Buffer.from('alice:secret').toString('base64')}`,
+      );
+    });
+
+    it('axiosRef.create({ maxContentLength }) enforces the limit on that child instance', async () => {
+      const [a, u] = await both(async s => {
+        const child = s.axiosRef.create({ maxContentLength: 5 });
+        return errorOf(child.get(`${base}/echo`));
+      });
+      expect(describeError(u)).toEqual(describeError(a));
+      expect(u.code).toBe('ERR_BAD_RESPONSE');
+      expect(u.message).toBe('maxContentLength size of 5 exceeded');
+    });
+
+    it('a runtime axiosRef.defaults.maxContentLength assignment (no create()) is also honoured', async () => {
+      const [a, u] = await both(async s => {
+        s.axiosRef.defaults.maxContentLength = 5;
+        try {
+          return await errorOf(s.axiosRef.get(`${base}/echo`));
+        } finally {
+          delete s.axiosRef.defaults.maxContentLength;
+        }
+      });
+      expect(describeError(u)).toEqual(describeError(a));
+      expect(u.code).toBe('ERR_BAD_RESPONSE');
+    });
+
+    it("axiosRef.create({ beforeRedirect }) is called on that child instance's redirects", async () => {
+      const [a, u] = await both(async s => {
+        const seen: string[] = [];
+        const child = s.axiosRef.create({
+          beforeRedirect: (options: any) => {
+            seen.push(options.path);
+          },
+        });
+        await child.get(`${base}/redirect`);
+        return seen;
+      });
+      expect(u).toEqual(a);
+      expect(u).toEqual(['/echo/after-redirect']);
+    });
+
     it('interceptors.request.eject and clear remove interceptors', async () => {
       const [a, u] = await both(async s => {
         const id = s.axiosRef.interceptors.request.use((config: any) => {
