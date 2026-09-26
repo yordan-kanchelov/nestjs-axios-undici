@@ -12,19 +12,28 @@ Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ no
 | `get`, `delete`, `head`, `post`, `put`, `patch` | ✅ | |
 | `options` | ✅ | Not available in `@nestjs/axios`. |
 | `postForm` / `putForm` / `patchForm` with `FormData` | ✅ | Sent as `multipart/form-data`. |
-| `postForm` / `putForm` / `patchForm` with a plain object | ⚠️ | Sent url-encoded; axios sends `multipart/form-data`. |
+| `postForm` / `putForm` / `patchForm` with a plain object | ✅ | Sent as `multipart/form-data` (converted to a `FormData`), matching axios' own `postForm`. An explicit `Content-Type` header doesn't change this - neither does axios' (confirmed against real axios). |
+| `query(url, data?, config?)` | ✅ | The HTTP `QUERY` method - new in `@nestjs/axios` 12 / axios ≥1.13. |
 | Unsubscribing aborts the request | ✅ | Unsubscribing before the response arrives (`timeout()`, `switchMap`, `takeUntil`, `race`, ...) aborts the upstream request, as in `@nestjs/axios`. Not aborted once the response (or, for `responseType: 'stream'`, the headers) has been emitted. |
 
 ## `axiosRef`
 
+`axiosRef` is a real, callable axios instance - it stands in for axios' own `AxiosInstance` type.
+
 | Feature | Status | Notes |
 |---------|:------:|-------|
+| `axiosRef(config)` / `axiosRef(url, config)` | ✅ | Callable, like `axios(...)` - what `axios-retry` relies on. |
+| `axiosRef.get/post/put/patch/delete/head/options/query/request()` | ✅ | Each returns a `Promise` of the response. |
+| `axiosRef.postForm/putForm/patchForm()` | ✅ | Same multipart behaviour as `HttpService.postForm` above. |
+| `axiosRef.getUri(config?)` | ✅ | The full URL a request would be sent to, without sending it. |
+| `axiosRef.create(config?)` | ✅ | A new instance sharing this `HttpService`'s transport/dispatcher and module-level interceptors, with its own `interceptors` and `defaults` merged from this one - see [Precedence](#precedence-axiosrefdefaults) below. |
 | `axiosRef.interceptors.request/response.use()` | ✅ | Runs in axios' own order: request interceptors last-registered-first, response interceptors first-registered-first. `runWhen`/`synchronous` (3rd argument) are honoured. |
 | `interceptors.*.eject(id)` / `clear()` | ✅ | |
-| `axiosRef.defaults.headers.common[...]`, `.get/.post/...[...]` | ✅ | Applied to every later request. |
-| `axiosRef.defaults.baseURL` / `.timeout` | ✅ | |
-| `axiosRef.get/post/put/patch/delete/head/options/request()` returning a Promise | ✅ | |
-| Other `AxiosInstance` members (`axiosRef(config)`, `getUri`, `create`, ...) | ❌ | |
+| `axiosRef.defaults.headers.common[...]`, `.get/.post/...[...]` | ✅ | See [Precedence](#precedence-axiosrefdefaults) below. |
+| `axiosRef.defaults.baseURL` / `.timeout` / `.maxRedirects` / `.params` / `.paramsSerializer` / `.validateStatus` / `.responseType` / `.transformRequest` / `.transformResponse` / `.adapter` / `.withCredentials` | ✅ | Honoured at request time, including on a plain request with no axiosRef interceptors. |
+| A function `axiosRef.defaults.adapter` / `config.adapter` | ✅ | Called with the final config instead of dispatching through undici; its response still runs through `validateStatus`/`transformResponse`/response interceptors. This is what makes `axios-mock-adapter` work. A string adapter name (`'http'`/`'xhr'`/`'fetch'`) is accepted but ignored - this library always dispatches through undici. |
+| `AxiosHeaders` casing (`toJSON()`, iteration, `normalize(true)`) | ✅ | `config.headers`/`error.config.headers` preserve the casing a header was first set with (case-insensitive lookup either way), like axios. `response.headers` itself stays a plain, lower-cased object - see [Response](#response) below. |
+| Full mutual TypeScript assignability with axios' `AxiosInstance` | ⚠️ | One narrow, TypeScript-only gap: axios' `Axios.request`/`get`/... carry a 4th generic (`R`, for fully overriding the response type) this library's methods don't mirror - unrelated to `AxiosHeaders`, and with no effect at runtime. See the migration guide. |
 
 ## Request config
 
@@ -35,8 +44,8 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `baseURL` | ✅ | Joined like axios (`http://api/v1` + `/users` → `http://api/v1/users`). |
 | `params` (objects, arrays, nested objects, dates, `URLSearchParams`) | ✅ | Same encoding as axios (`a[]=1&a[]=2`, `obj[k]=v`). |
 | `paramsSerializer` (function or `{ serialize, encode, indexes }`) | ✅ | |
-| `headers` (plain object or `AxiosHeaders`) | ✅ | Merged case-insensitively with module headers and `axiosRef.defaults.headers`. A header set to `undefined`/`null` removes a default, as in axios. |
-| Default `Accept`, `User-Agent`, `Accept-Encoding` headers | ⚠️ | `Accept: application/json, text/plain, */*` and `Content-Type` defaults match axios exactly. `User-Agent` is `nestjs-axios-undici/<version>` (axios: `axios/<version>`) - override it the axios way, `axiosRef.defaults.headers.common['User-Agent'] = '...'`. `Accept-Encoding` lists `gzip, deflate, br` (axios also advertises `compress`, an old scheme neither library decodes) and is only sent when decompression is enabled at module level (`register({ decompress: false })` omits it; a per-request `decompress: false` keeps the header and returns the raw compressed bytes, as axios does). Seeded into `axiosRef.defaults.headers.common` at setup; module `headers` and per-request `headers` override them (module `headers` also win over any other `axiosRef.defaults` header). |
+| `headers` (plain object or `AxiosHeaders`) | ✅ | Merged case-insensitively with `axiosRef.defaults.headers` (which module headers seed at setup - see [Precedence](#precedence-axiosrefdefaults)). A header set to `undefined`/`null` removes a default, as in axios. |
+| Default `Accept`, `User-Agent`, `Accept-Encoding` headers | ⚠️ | `Accept: application/json, text/plain, */*` and `Content-Type` defaults match axios exactly. `User-Agent` is `nestjs-axios-undici/<version>` (axios: `axios/<version>`) - override it the axios way, `axiosRef.defaults.headers.common['User-Agent'] = '...'`. `Accept-Encoding` lists `gzip, deflate, br` (axios also advertises `compress`, an old scheme neither library decodes) and is only sent when decompression is enabled at module level (`register({ decompress: false })` omits it; a per-request `decompress: false` keeps the header and returns the raw compressed bytes, as axios does). Seeded into `axiosRef.defaults.headers.common` at setup; module `headers` and per-request `headers` override them (see [Precedence](#precedence-axiosrefdefaults) for how module headers relate to `axiosRef.defaults`). |
 | `data`: object → JSON, string, `URLSearchParams`, `Buffer`/typed arrays, streams, `FormData` (global or the `form-data` package) | ✅ | Same `Content-Type` defaults as axios. |
 | `auth` | ✅ | Becomes `Authorization: Basic ...` and overrides an existing Authorization header, as in axios. |
 | `timeout` | ⚠️ | Rejects with `ECONNABORTED` / `timeout of Nms exceeded`. Implemented with undici's `headersTimeout`/`bodyTimeout`, which have ~1s resolution, so sub-second timeouts fire late. |
@@ -52,7 +61,23 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `socketPath` per request | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Overrides a module-level `socketPath`. |
 | `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength` per request | ❌ | Module-level only (see below). |
 | `cookieJar` per request | ❌ | Module-level only - not an axios option, see [Cookies: `cookieJar`](#cookies-cookiejar). Building a `CookieAgent` per jar per request would be expensive; pass different `cookieJar`s to different `HttpModule.register()` calls instead. |
-| `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress`, `adapter` | ❌ | |
+| `adapter` (a function) | ✅ | Called instead of dispatching through undici; see [`axiosRef`](#axiosref) above. A string name (`'http'`/`'xhr'`/`'fetch'`) is accepted but ignored. |
+| `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress` | ❌ | |
+
+### Precedence: `axiosRef.defaults`
+
+`HttpModule.register()`/`.registerAsync()` options only ever *seed* `axiosRef.defaults` once, at `HttpService` construction - exactly like `axios.create(moduleOptions)` seeds a real axios instance's `defaults`. From then on, **`axiosRef.defaults` is the single source of truth** for `headers`, `timeout`, `maxRedirects`, `baseURL`, `params`, `paramsSerializer`, `validateStatus`, `responseType`, `transformRequest`, `transformResponse` and `adapter`: a runtime mutation (`axiosRef.defaults.headers.common['X'] = '...'`, `axiosRef.defaults.timeout = 5000`, ...) applies to every later request and always wins over the module-level value it started out equal to. Precedence is uniformly **request config > `axiosRef.defaults` > module options**.
+
+```typescript
+// module options seed axiosRef.defaults once, at setup:
+HttpModule.register({ headers: { 'User-Agent': 'my-app/1.0' } });
+
+// a runtime mutation always wins from then on, even though it started out
+// equal to the module value above:
+httpService.axiosRef.defaults.headers.common['User-Agent'] = 'my-app/2.0';
+```
+
+**Breaking change from an earlier version of this plan (PR #16):** module `headers` used to always win over `axiosRef.defaults`, so a runtime mutation of `axiosRef.defaults.headers` for a header the module also set had no effect. That inconsistency (module always won for `headers`, but `axiosRef.defaults` already won for `timeout`/`maxRedirects`) is gone - every field now follows the same rule. Mutating the *object passed to* `register()` after the fact (or `httpService.undiciRef.headers`) no longer has any effect either, for the same reason - mutate `axiosRef.defaults` instead.
 
 ## Response
 
@@ -66,7 +91,7 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | Other binary `Content-Type` (images, PDFs, ...) | ⚠️ | Returned as a `Buffer`; axios also returns a UTF-8 string unless `responseType: 'arraybuffer'` is set (harder to use correctly, so this library keeps it a `Buffer` by default). Set `responseType: 'arraybuffer'` for binary downloads either way. |
 | `Content-Encoding: gzip \| br \| deflate` | ✅ | Decompressed automatically; `decompress: false` opts out. |
 | `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object, deliberately: measured (this library's own `AxiosHeaders`, a typical response's headers, 200k iterations) at about 955ns more per response just to construct, before counting that every later read on it also pays a Proxy-trap cost a plain object doesn't - not worth it, unconditionally, on every response, against the `+10%` CPU-per-request budget the CI regression check enforces. Typed as `Record<string, any>` (assignable to/from axios' own `AxiosResponse.headers`) regardless - index into it the normal way (`response.headers['content-type']`). |
-| `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers`, `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
+| `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers` (an `AxiosHeaders` preserving the casing each header was first set with, matching axios), `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
 | `response.request` | ⚠️ | A placeholder object, not the underlying request. `response.request.res.responseUrl` is set to the final hop's URL once a redirect was followed (unset otherwise), matching axios' `responseUrl`. |
 
 ## Errors
@@ -103,9 +128,9 @@ import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
 
 The four overlapping request-config types this library used to export (`AxiosLikeRequestConfig`, `AxiosCompatibleRequestOptions`, `AxiosCompatibleRequestConfig`, `HttpRequestOptions`) are one type now, `AxiosLikeRequestConfig<D = any>`, used everywhere a request-level config is accepted (`request()`, `get`/`post`/etc.'s `config` argument, `axiosRef`'s promise methods). `post`/`put`/`patch` have a real second (body) type parameter: `post<T, D>(url, data?: D, config?: AxiosLikeRequestConfig<D>)`, matching `@nestjs/axios`.
 
-`AxiosLikeResponse<T, D>` is structurally assignable to and from axios' own `AxiosResponse<T, D>` - a function declared `(): Observable<AxiosResponse<T>>` compiles when it returns this library's `HttpService.get()`, and a unit-test mock written `of({...} as AxiosResponse)` is assignable to `HttpService['get']`'s return type. Full parity (axiosRef interceptor callbacks typed with axios' own `InternalAxiosRequestConfig`, and an `AxiosResponse`-typed mock passed straight to `of(...)`) needs axios' `AxiosHeaders` class methods this library's own `AxiosHeaders` doesn't fully mirror yet - tracked as a known gap, see [`feat(axiosRef): make it a real axios instance`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/plan.md).
+`AxiosLikeResponse<T, D>` is structurally assignable to and from axios' own `AxiosResponse<T, D>` - a function declared `(): Observable<AxiosResponse<T>>` compiles when it returns this library's `HttpService.get()`, and a unit-test mock written `of({...} as AxiosResponse)` is assignable to `HttpService['get']`'s return type. This includes `config.headers`: this library's own `AxiosHeaders` class now mirrors axios' overloaded `set`/`get`/`has`/`delete`/`toJSON`/`normalize` signatures closely enough to be mutually assignable with axios' own `AxiosHeaders` class - so an axiosRef interceptor callback typed with axios' own `InternalAxiosRequestConfig` type-checks directly, with no cast. One narrow, unrelated gap remains for assigning the *whole* `axiosRef`/`HttpService` object to axios' own `AxiosInstance`/`HttpService` types (not needed for any of the above): axios' `Axios.request`/`get`/... carry a 4th generic (`R`, for fully overriding the response type) this library's methods don't mirror, with no effect at runtime.
 
-axiosRef request interceptors receive a config whose `headers` is non-optional, so `config.headers['Authorization'] = ...` and `config.headers.set(...)` (the README's own interceptor example) type-check under `strict` without a null check first.
+axiosRef request interceptors receive a config whose `headers` is non-optional and narrowed to `AxiosHeaders` (matching axios' own `InternalAxiosRequestConfig.headers`), so `config.headers['Authorization'] = ...` and `config.headers.set(...)` (the README's own interceptor example) type-check under `strict` without a null check first.
 
 `axios` itself is an optional peer (see [Errors](#errors)) - install it and `error instanceof axios.AxiosError` also holds for errors this library throws.
 

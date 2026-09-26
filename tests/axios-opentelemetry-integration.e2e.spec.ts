@@ -317,13 +317,10 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
         carrier['traceparent'] = '00-axios-headers-test-01';
       });
 
-      // Convert AxiosHeaders to plain object for the request
-      const plainHeaders: Record<string, string> = {};
-      headers.forEach((value, key) => {
-        if (value !== null && value !== undefined) {
-          plainHeaders[key] = String(value);
-        }
-      });
+      // Convert AxiosHeaders to plain object for the request (no forEach()
+      // on AxiosHeaders - see axios-headers.ts - toJSON() already excludes
+      // null/undefined/false values).
+      const plainHeaders: Record<string, string> = headers.toJSON();
 
       const response = await firstValueFrom(
         httpService.get(`http://127.0.0.1:${serverPort}/axios-headers`, {

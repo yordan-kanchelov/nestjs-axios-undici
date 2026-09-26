@@ -46,7 +46,17 @@ export interface AxiosLikeAbortSignal {
  * would catch.
  */
 export interface AxiosLikeRequestConfig<D = any> {
-  url?: string | URL;
+  /**
+   * A `string`, matching axios' own `AxiosRequestConfig.url?: string`
+   * exactly (needed for mutual assignability - plan.md "feat(axiosRef):
+   * make it a real axios instance"). A `URL`/`UrlObject` is still accepted
+   * everywhere a URL is given *outside* a config object - `request(url,
+   * options)`, `get(url, config)`, etc. all take it as a separate,
+   * independently-typed first parameter (see `HttpService`/`AxiosRef`) -
+   * only `config.url` itself (the single-arg `request(config)` form) is
+   * `string`-only, like axios.
+   */
+  url?: string;
   method?: string;
   baseURL?: string;
   headers?: Record<string, any> | AxiosHeaders;
@@ -86,7 +96,17 @@ export interface AxiosLikeRequestConfig<D = any> {
   transformResponse?:
     | ((data: any, headers?: any, status?: number) => any)
     | Array<(data: any, headers?: any, status?: number) => any>;
-  cancelToken?: AxiosCancelTokenLike;
+  /**
+   * axios' `CancelToken` is deprecated in favour of `signal`. Typed `any`
+   * (rather than `AxiosCancelTokenLike`, still exported and used at
+   * *runtime* by `resolveSignal` in `axios-request.adapter.ts` for its
+   * duck-typed `subscribe`/`promise`/`reason` shape) so a real axios
+   * `CancelToken` instance - a concrete class with methods this library has
+   * no equivalent for (`throwIfRequested`/`unsubscribe`/`toAbortSignal`) -
+   * is still assignable both ways (plan.md "feat(axiosRef): make it a real
+   * axios instance").
+   */
+  cancelToken?: any;
   signal?: AbortSignal | AxiosLikeAbortSignal;
   /**
    * Unix domain socket path (module- or request-level). Applied to the
@@ -98,6 +118,21 @@ export interface AxiosLikeRequestConfig<D = any> {
   dispatcher?: Dispatcher;
   /** Accepted for axios compatibility; a no-op, like axios itself on Node.js. */
   withCredentials?: boolean;
+  /**
+   * A custom axios-style adapter: `(config) => Promise<AxiosLikeResponse>`,
+   * called with the final config instead of dispatching through undici -
+   * this is what makes `axios-mock-adapter` work (plan.md "feat(axiosRef):
+   * make it a real axios instance"). Its resolved response still runs
+   * through `validateStatus`, response interceptors and
+   * `transformResponse`, exactly like a real network response. A string
+   * adapter name (axios accepts `'http'`/`'xhr'`/`'fetch'`) is accepted for
+   * type compatibility but ignored: this library always dispatches through
+   * undici.
+   */
+  adapter?:
+    | ((config: any) => Promise<any>)
+    | string
+    | Array<((config: any) => Promise<any>) | string>;
   /** Custom fields set by an interceptor (e.g. a retry flag) survive a round trip through `response.config` / `error.config`. */
   [key: string]: any;
 }
@@ -113,23 +148,24 @@ export interface InternalAxiosLikeRequestConfig<
   D = any,
 > extends AxiosLikeRequestConfig<D> {
   /**
-   * Non-optional (unlike the base type's `headers?:`): axiosRef request
-   * interceptors, `response.config` and `error.config` always have it
-   * populated (`buildAxiosConfig`/`buildLazyAxiosConfig` never leave it
-   * `undefined`), so `config.headers['Authorization'] = ...` and
-   * `config.headers.set(...)` type-check under `strict` without a null
-   * check first - matching axios' own `InternalAxiosRequestConfig.headers:
-   * AxiosRequestHeaders` (also non-optional). Still `Record<string, any> |
-   * AxiosHeaders`, not narrowed to just `AxiosHeaders`: our `AxiosHeaders`
-   * class doesn't mirror every one of axios' own class's overloaded
-   * `set`/`get`/`toJSON` call shapes (only the ones this library itself
-   * needs), so narrowing here would make this type *stricter* than what
-   * axios' own `InternalAxiosRequestConfig` requires, rejecting plain test
-   * fixtures (`{ headers: {} }`) for no compatibility gain - see
-   * `tests/types/usage.ts` cases 5/9/15, still tracked under "feat(axiosRef):
-   * make it a real axios instance" (full AxiosHeaders).
+   * Non-optional (unlike the base type's `headers?:`) and narrowed to just
+   * `AxiosHeaders`: axiosRef request interceptors, `response.config` and
+   * `error.config` always carry a real `AxiosHeaders` instance here
+   * (`buildAxiosConfig`/`buildLazyAxiosConfig` never leave it a plain object
+   * or `undefined`), matching axios' own `InternalAxiosRequestConfig.headers:
+   * AxiosRequestHeaders` (`RawAxiosRequestHeaders & AxiosHeaders`, also
+   * effectively "always a real `AxiosHeaders`" once axios itself has run
+   * `dispatchRequest`). This narrowing is what makes `config.headers.set(...)`
+   * assignable both ways against axios' own `InternalAxiosRequestConfig`
+   * (plan.md "feat(axiosRef): make it a real axios instance" - full
+   * `AxiosHeaders` casing/overload parity): a wider `Record<string, any> |
+   * AxiosHeaders` union can never be assignable to axios' class-shaped
+   * header type (the `Record<string, any>` branch has none of its methods),
+   * so the union had to go once this class mirrored axios' own overloads
+   * closely enough for the narrower type to type-check on both sides -
+   * see `tests/types/usage.ts` case 5/9 and `drop-in.ts`.
    */
-  headers: Record<string, any> | AxiosHeaders;
+  headers: AxiosHeaders;
 }
 
 /**

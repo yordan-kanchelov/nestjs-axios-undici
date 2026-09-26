@@ -86,7 +86,7 @@ JSON is parsed only for JSON content types, and unknown binary content types are
 
 ## Convenience Methods
 
-`request(config)`, `get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `postForm`, `putForm` and `patchForm` accept the same arguments as their axios counterparts, including `params`, `paramsSerializer`, `data`, `auth`, `baseURL`, `timeout`, `signal`, `cancelToken`, `responseType`, `validateStatus` and `maxRedirects`. Request data is serialized like axios: objects as JSON, `URLSearchParams` url-encoded, `FormData` as multipart, strings and buffers as-is. `postForm` with a plain object sends it url-encoded (axios sends multipart).
+`request(config)`, `get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `query`, `postForm`, `putForm` and `patchForm` accept the same arguments as their axios counterparts, including `params`, `paramsSerializer`, `data`, `auth`, `baseURL`, `timeout`, `signal`, `cancelToken`, `responseType`, `validateStatus` and `maxRedirects`. Request data is serialized like axios: objects as JSON, `URLSearchParams` url-encoded, `FormData` as multipart, strings and buffers as-is. `postForm`/`putForm`/`patchForm` send a plain object as multipart too, matching axios.
 
 ## Axios Configuration Auto-mapping
 

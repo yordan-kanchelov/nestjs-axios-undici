@@ -12,7 +12,7 @@ import type {
 export interface AxiosInterceptorEntry<T> {
   fulfilled?: (value: T) => T | Promise<T>;
   rejected?: (error: any) => any;
-  runWhen?: (config: any) => boolean;
+  runWhen?: ((config: any) => boolean) | null;
   synchronous?: boolean;
 }
 

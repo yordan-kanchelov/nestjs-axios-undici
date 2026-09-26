@@ -27,7 +27,12 @@ import type {
   AxiosLikeResponse,
   AxiosRef,
 } from '../interfaces';
-import { createAxiosRef } from '../adapters/axios-ref.factory';
+import { AxiosHeaders } from '../interfaces/axios-headers';
+import {
+  createAxiosRef,
+  createAxiosRefDefaults,
+  type AxiosInstanceContext,
+} from '../adapters/axios-ref.factory';
 import {
   createInterceptorStore,
   type AxiosInterceptorEntry,
@@ -35,14 +40,16 @@ import {
 } from '../adapters/axios-interceptor.adapter';
 import {
   buildAxiosConfig,
+  buildFormRequestConfig,
   isAxiosRequestConfig,
-  mergeHeaders,
   normalizeAxiosRequest,
   serializeAxiosConfig,
-  toUrlEncodedForm,
 } from '../adapters/axios-request.adapter';
-import { toAxiosLikeResponse } from '../adapters/axios-response.adapter';
-import { toAxiosError } from '../errors/axios-error';
+import {
+  STATUS_TEXT_MAP,
+  toAxiosLikeResponse,
+} from '../adapters/axios-response.adapter';
+import { createStatusError, toAxiosError } from '../errors/axios-error';
 import {
   DEFAULT_MAX_REDIRECTS,
   buildRedirectHop,
@@ -59,6 +66,26 @@ type UndiciResponse = Dispatcher.ResponseData;
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
+}
+
+/**
+ * `defaults.adapter`/`config.adapter` may be a function, a string adapter
+ * name (`'http'`/`'xhr'`/`'fetch'`, ignored - this library always dispatches
+ * through undici) or an array of either (axios' fallback-list form; the
+ * first function wins). Returns the function to call, if any.
+ */
+function resolveFunctionAdapter(
+  adapter: unknown,
+):
+  | ((config: InternalAxiosLikeRequestConfig) => Promise<AxiosLikeResponse>)
+  | undefined {
+  if (typeof adapter === 'function') return adapter as any;
+  if (Array.isArray(adapter)) {
+    for (const candidate of adapter) {
+      if (typeof candidate === 'function') return candidate as any;
+    }
+  }
+  return undefined;
 }
 
 /** The one member of `http-cookie-agent/undici` this module needs. */
@@ -245,6 +272,12 @@ export class HttpService {
     createInterceptorStore<InternalAxiosLikeRequestConfig>();
   private readonly axiosResponseInterceptors =
     createInterceptorStore<AxiosLikeResponse>();
+  // The context `request()` dispatches with by default: this service's own
+  // `defaults`/interceptors (the same objects `this._axiosRef` exposes).
+  // `axiosRef.create()`-derived instances dispatch through
+  // `dispatchAxiosConfig` with their own context instead - see
+  // `axios-ref.factory.ts`.
+  private readonly axiosContext: AxiosInstanceContext;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -262,13 +295,23 @@ export class HttpService {
         .map(interceptor => interceptor as HttpInterceptorFunction);
     }
 
-    // Initialize axios-compatible axiosRef (interceptors, defaults, promise methods)
+    // Initialize axios-compatible axiosRef (interceptors, defaults, promise
+    // methods). `HttpModule.register()`/`.registerAsync()` options seed
+    // `defaults` once here, exactly like `axios.create(moduleOptions)` -
+    // from then on `defaults` is the single source of truth (see
+    // `createAxiosRefDefaults`'s doc comment).
+    const defaults = createAxiosRefDefaults(this.moduleOptions);
     this._axiosRef = createAxiosRef(
       this,
+      defaults,
       this.axiosRequestInterceptors,
       this.axiosResponseInterceptors,
-      this.instanceOptions,
     );
+    this.axiosContext = {
+      defaults,
+      requestInterceptors: this.axiosRequestInterceptors,
+      responseInterceptors: this.axiosResponseInterceptors,
+    };
 
     // Setup custom dispatcher based on axios compatibility options
     this.setupDispatcher();
@@ -466,77 +509,119 @@ export class HttpService {
     urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig<D>,
     requestOptions?: AxiosLikeRequestConfig<D>,
   ): Observable<AxiosLikeResponse<T, D>> {
-    // `defer()` makes the Observable cold and re-runs everything below (config
-    // normalization, the axiosRef request interceptors, the actual request)
-    // on every subscription, as `@nestjs/axios`' `makeObservable` does. This
-    // matters for `get().pipe(retry())`: each attempt must build its own
-    // headers/config rather than reusing the first attempt's.
+    return this.dispatch<T, D>(urlOrConfig, requestOptions, this.axiosContext);
+  }
+
+  /**
+   * `AxiosRefHost.dispatchAxiosConfig`: the single entry point every
+   * axios-like instance `createAxiosRef` builds (the top-level `axiosRef`,
+   * and every `axiosRef.create()`-derived instance) dispatches a request
+   * through, using *its own* `context` (`defaults`/interceptors) rather than
+   * this service's. Shares everything else - the transport/dispatcher,
+   * module-registered generic interceptors, redirect handling - with the
+   * rest of this `HttpService`.
+   */
+  public dispatchAxiosConfig<T = any, D = any>(
+    config: AxiosLikeRequestConfig<D>,
+    context: AxiosInstanceContext,
+  ): Observable<AxiosLikeResponse<T, D>> {
+    return this.dispatch<T, D>(config, undefined, context);
+  }
+
+  /**
+   * Shared implementation behind `request()` and `dispatchAxiosConfig()`.
+   * `defer()` makes the Observable cold and re-runs everything below (config
+   * normalization, the axiosRef request interceptors, the actual request)
+   * on every subscription, as `@nestjs/axios`' `makeObservable` does. This
+   * matters for `get().pipe(retry())`: each attempt must build its own
+   * headers/config rather than reusing the first attempt's.
+   */
+  private dispatch<T = any, D = any>(
+    urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig<D>,
+    requestOptions: AxiosLikeRequestConfig<D> | undefined,
+    context: AxiosInstanceContext,
+  ): Observable<AxiosLikeResponse<T, D>> {
     return defer(() => {
-      if (!this.hasAxiosPipeline(urlOrConfig, requestOptions)) {
-        return this.dispatchFastPath<T>(urlOrConfig, requestOptions);
+      if (!this.hasAxiosPipeline(urlOrConfig, requestOptions, context)) {
+        return this.dispatchFastPath<T>(urlOrConfig, requestOptions, context);
       }
       // axiosRef request/response interceptors (or a transformRequest/
-      // transformResponse) are in play: build the single axios-shaped config
-      // object up front and run it through the axios pipeline, instead of
-      // the undici-options fast path below.
+      // transformResponse/adapter) are in play: build the single
+      // axios-shaped config object up front and run it through the axios
+      // pipeline, instead of the undici-options fast path below.
       const config = buildAxiosConfig(urlOrConfig, requestOptions, {
-        defaults: this._axiosRef.defaults,
+        defaults: context.defaults,
         instanceOptions: this.instanceOptions,
       });
-      return this.runAxiosPipeline<T>(config);
+      return this.runAxiosPipeline<T>(config, context);
     });
   }
 
   /**
    * True when this request needs the axiosRef pipeline (`runAxiosPipeline`):
-   * a live axiosRef request/response interceptor, or a `transformRequest`/
-   * `transformResponse` (module- or request-level). A plain request with
-   * none of these keeps the fast path below, which never builds a full axios
-   * config object.
+   * a live axiosRef request/response interceptor, a function `adapter`
+   * (module-, defaults- or request-level), or a `transformRequest`/
+   * `transformResponse` (module-, defaults- or request-level). A plain
+   * request with none of these keeps the fast path below, which never builds
+   * a full axios config object.
    */
   private hasAxiosPipeline(
     urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig,
-    requestOptions?: AxiosLikeRequestConfig,
+    requestOptions: AxiosLikeRequestConfig | undefined,
+    context: AxiosInstanceContext,
   ): boolean {
     if (
-      this.axiosRequestInterceptors.entries.some(Boolean) ||
-      this.axiosResponseInterceptors.entries.some(Boolean)
+      context.requestInterceptors.entries.some(Boolean) ||
+      context.responseInterceptors.entries.some(Boolean)
     ) {
       return true;
     }
+    const defaults = context.defaults;
     const moduleOpts = this.moduleOptions as any;
-    if (moduleOpts?.transformRequest || moduleOpts?.transformResponse) {
+    if (
+      moduleOpts?.transformRequest ||
+      moduleOpts?.transformResponse ||
+      defaults.transformRequest ||
+      defaults.transformResponse
+    ) {
       return true;
     }
     const configForm: any = isAxiosRequestConfig(urlOrConfig)
       ? urlOrConfig
       : undefined;
     const opts: any = requestOptions;
-    return !!(
+    if (
       configForm?.transformRequest ||
       configForm?.transformResponse ||
       opts?.transformRequest ||
       opts?.transformResponse
+    ) {
+      return true;
+    }
+    return !!resolveFunctionAdapter(
+      configForm?.adapter ?? opts?.adapter ?? defaults.adapter,
     );
   }
 
   /**
    * The axiosRef pipeline: run the axios-shaped config through the request
-   * interceptors (LIFO), dispatch it, then the response interceptors (FIFO) -
+   * interceptors (LIFO), dispatch it (through a function `adapter` when one
+   * is configured, otherwise undici), then the response interceptors (FIFO) -
    * see `chainStep`/`activeAxiosInterceptors`. Any module-registered generic
    * interceptor (`this.interceptors`, e.g. size limits) still runs around the
-   * actual dispatch, via `executeInterceptorChain`.
+   * actual undici dispatch, via `executeInterceptorChain`.
    */
   private runAxiosPipeline<T = any>(
     config: InternalAxiosLikeRequestConfig,
+    context: AxiosInstanceContext,
   ): Observable<AxiosLikeResponse<T>> {
     const requestChain = activeAxiosInterceptors(
-      this.axiosRequestInterceptors.entries,
+      context.requestInterceptors.entries,
       true,
       config,
     );
     const responseChain = activeAxiosInterceptors(
-      this.axiosResponseInterceptors.entries,
+      context.responseInterceptors.entries,
       false,
     );
 
@@ -546,14 +631,100 @@ export class HttpService {
     }
 
     let response$: Observable<AxiosLikeResponse> = config$.pipe(
-      mergeMap(finalConfig =>
-        this.executeInterceptorChain(serializeAxiosConfig(finalConfig)),
-      ),
+      mergeMap(finalConfig => {
+        const adapterFn = resolveFunctionAdapter(finalConfig.adapter);
+        return adapterFn
+          ? this.executeAdapter(adapterFn, finalConfig)
+          : this.executeInterceptorChain(serializeAxiosConfig(finalConfig));
+      }),
     );
     for (const entry of responseChain) {
       response$ = chainStep(response$, entry.fulfilled, entry.rejected);
     }
     return response$ as Observable<AxiosLikeResponse<T>>;
+  }
+
+  /**
+   * Dispatches through a function `adapter` instead of undici - this is what
+   * makes `axios-mock-adapter` work. `serializeAxiosConfig` prepares `config`
+   * exactly like it would for a real dispatch (headers as `AxiosHeaders`,
+   * `baseURL`/`params` combined into `url`, `data` run through
+   * `transformRequest`, the POST/PUT/PATCH default Content-Type) and is
+   * reused here for that prep only - its undici-shaped `{ url, options }`
+   * result is discarded; the adapter gets `config` itself, as axios' own
+   * `dispatchRequest` does. The resolved response still runs through
+   * `validateStatus`, `transformResponse` and (back in `runAxiosPipeline`)
+   * any response interceptors, exactly like a real network response.
+   */
+  private executeAdapter<T = any>(
+    adapterFn: (
+      config: InternalAxiosLikeRequestConfig,
+    ) => Promise<AxiosLikeResponse<T>>,
+    config: InternalAxiosLikeRequestConfig,
+  ): Observable<AxiosLikeResponse<T>> {
+    serializeAxiosConfig(config);
+    return new Observable<AxiosLikeResponse<T>>(subscriber => {
+      let settled = false;
+      Promise.resolve()
+        .then(() => adapterFn(config))
+        .then(
+          rawResponse => {
+            if (settled) return;
+            settled = true;
+            const status = rawResponse?.status ?? 200;
+            const statusText =
+              rawResponse?.statusText || STATUS_TEXT_MAP[status] || 'Unknown';
+            const rawHeaders = rawResponse?.headers;
+            const headers =
+              rawHeaders && typeof (rawHeaders as any).toJSON === 'function'
+                ? (rawHeaders as any).toJSON()
+                : (rawHeaders ?? {});
+            let data = rawResponse?.data;
+            if (config.transformResponse) {
+              const transforms = Array.isArray(config.transformResponse)
+                ? config.transformResponse
+                : [config.transformResponse];
+              data = transforms.reduce(
+                (value: any, fn: any) =>
+                  fn.call(config, value, headers, status),
+                data,
+              );
+            }
+            const response: AxiosLikeResponse<T> = {
+              data,
+              status,
+              statusText,
+              headers,
+              config,
+              request: rawResponse?.request ?? {},
+            };
+            const validateStatus =
+              config.validateStatus || ((s: number) => s >= 200 && s < 300);
+            if (!validateStatus(status)) {
+              subscriber.error(createStatusError(response));
+              return;
+            }
+            subscriber.next(response);
+            subscriber.complete();
+          },
+          error => {
+            if (settled) return;
+            settled = true;
+            if (error && typeof error === 'object') {
+              if ((error as any).config === undefined) {
+                (error as any).config = config;
+              }
+              if ((error as any).isAxiosError === undefined) {
+                (error as any).isAxiosError = true;
+              }
+            }
+            subscriber.error(error);
+          },
+        );
+      return () => {
+        settled = true;
+      };
+    });
   }
 
   /**
@@ -566,14 +737,15 @@ export class HttpService {
    */
   private dispatchFastPath<T = any>(
     urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig,
-    requestOptions?: AxiosLikeRequestConfig,
+    requestOptions: AxiosLikeRequestConfig | undefined,
+    context: AxiosInstanceContext,
   ): Observable<AxiosLikeResponse<T>> {
     // Apply axios semantics (config form, baseURL, params, data, headers, auth, ...)
     const { url, options, raw } = normalizeAxiosRequest(
       urlOrConfig,
       requestOptions,
       {
-        defaults: this._axiosRef.defaults,
+        defaults: context.defaults,
         instanceOptions: this.instanceOptions,
       },
     ) as {
@@ -1071,8 +1243,27 @@ export class HttpService {
   }
 
   /**
-   * Shared implementation of postForm/putForm/patchForm. FormData bodies are
-   * sent as multipart; everything else is url-encoded.
+   * Convenience method for the HTTP `QUERY` method (@nestjs/axios 12, axios
+   * >=1.13 - see `AxiosRef.query`).
+   * @param url The URL to request
+   * @param data The data to send in the body
+   * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
+   */
+  public query<T = any, D = any>(
+    url: string | URL | UrlObject,
+    data?: D,
+    config?: AxiosLikeRequestConfig<D>,
+  ): Observable<AxiosLikeResponse<T, D>> {
+    return this.request(url, { ...config, method: 'QUERY', data });
+  }
+
+  /**
+   * Shared implementation of postForm/putForm/patchForm - see
+   * `buildFormRequestConfig` (shared with `axiosRef.postForm`/`putForm`/
+   * `patchForm` in `axios-ref.factory.ts`, so both build the exact same
+   * request). FormData bodies are sent as multipart; everything else is
+   * url-encoded.
    */
   private formRequest<T = any>(
     method: 'POST' | 'PUT' | 'PATCH',
@@ -1080,20 +1271,6 @@ export class HttpService {
     data?: any,
     config?: AxiosLikeRequestConfig,
   ): Observable<AxiosLikeResponse<T>> {
-    const isMultipart =
-      data?.[Symbol.toStringTag] === 'FormData' ||
-      typeof data?.getHeaders === 'function';
-    if (isMultipart) {
-      return this.request(url, { ...config, method, data });
-    }
-    return this.request(url, {
-      ...config,
-      method,
-      data: toUrlEncodedForm(data),
-      headers: mergeHeaders(
-        { 'Content-Type': 'application/x-www-form-urlencoded' },
-        config?.headers,
-      ),
-    });
+    return this.request(buildFormRequestConfig(method, url, data, config));
   }
 }

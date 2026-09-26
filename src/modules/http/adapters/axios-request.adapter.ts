@@ -2,6 +2,7 @@ import { PassThrough, Readable } from 'stream';
 import type { UrlObject } from 'node:url';
 import type {
   AxiosCancelTokenLike,
+  AxiosLikeRequestConfig,
   AxiosParamsSerializer,
   InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
@@ -218,6 +219,70 @@ export function toUrlEncodedForm(data: any): string {
         `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
     )
     .join('&');
+}
+
+/**
+ * A plain object/array turned into a global `FormData`, one `append()` per
+ * flattened `[key, value]` pair (same flattening `params`/url-encoded
+ * bodies use - nested objects/arrays as `a[b]=1`/`a[]=1`). Lets
+ * `buildFormRequestConfig` hand the *existing* global-`FormData` body path
+ * (`serializeRequestData`'s `isGlobalFormData` branch, `globalFormDataToStream`)
+ * do the actual multipart encoding (boundary, `Content-Type`) - exactly as
+ * it already does for a `FormData` instance a caller builds by hand.
+ */
+function toGlobalFormData(data: any): FormData {
+  const form = new FormData();
+  if (data != null) {
+    for (const [key, value] of flattenParams(data, {})) {
+      form.append(key, value);
+    }
+  }
+  return form;
+}
+
+/**
+ * Shared `postForm`/`putForm`/`patchForm` config-building, matching axios'
+ * own `generateHTTPMethod(isForm=true)`: a `FormData`-like body (the global
+ * `FormData`, or the `form-data` package) is sent as multipart as-is.
+ * Anything else (a plain object/array) is *also* sent as multipart, like
+ * axios (`Content-Type: multipart/form-data`, the object converted with
+ * `toGlobalFormData` above) - even when the caller's own `config.headers`
+ * names a different `Content-Type` (confirmed against real axios: an
+ * explicit `Content-Type: application/x-www-form-urlencoded` passed to
+ * `postForm` is still sent as multipart - the method's own default headers
+ * win). A caller who actually wants url-encoded form data uses `post()`
+ * with `data: new URLSearchParams(...)` instead, not `postForm()`. Used by
+ * both `HttpService.postForm`/`putForm`/`patchForm` and
+ * `axiosRef.postForm`/`putForm`/`patchForm` (`axios-ref.factory.ts`), so
+ * both build the exact same request.
+ */
+export function buildFormRequestConfig<D = any>(
+  method: 'POST' | 'PUT' | 'PATCH',
+  url: Url,
+  data: D | undefined,
+  config: AxiosLikeRequestConfig<D> | undefined,
+): AxiosLikeRequestConfig<D> {
+  // A URLSearchParams body is already form-encoded: send it as is (its
+  // `a=1&b=2` body and urlencoded Content-Type) rather than flattening it
+  // into an empty FormData - it has no enumerable own keys.
+  const isFormDataLike =
+    (data as any)?.[Symbol.toStringTag] === 'FormData' ||
+    typeof (data as any)?.getHeaders === 'function' ||
+    isGlobalFormData(data) ||
+    data instanceof URLSearchParams;
+  if (isFormDataLike) {
+    return { ...config, url: url as any, method, data };
+  }
+
+  // Multipart by default, like axios' postForm - `data` becomes a real
+  // FormData, and the existing global-FormData body path sets the
+  // `Content-Type`/boundary itself (no header set here).
+  return {
+    ...config,
+    url: url as any,
+    method,
+    data: toGlobalFormData(data) as any,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -485,7 +550,13 @@ function resolveSignal(
 // Entry point
 // ---------------------------------------------------------------------------
 
-const METHOD_HEADER_KEYS = new Set([
+/**
+ * The axios-style header buckets (`common`, and one per HTTP method).
+ * Exported for `axios-ref.factory.ts`'s `createAxiosRefDefaults`, which
+ * seeds `axiosRef.defaults.headers` from module options the same way this
+ * file flattens them per request.
+ */
+export const METHOD_HEADER_KEYS = new Set([
   'common',
   'get',
   'delete',
@@ -633,13 +704,22 @@ function getHeaderBase(
 
   const entry: HeaderBaseCache = {
     sources: snapshots,
+    // Precedence: request > axiosRef.defaults > module (raw `instanceHeaders`).
+    // `defaultHeaders` is merged *after* `instanceHeaders` here so a runtime
+    // mutation of `axiosRef.defaults.headers` always wins over the original
+    // module-level value it was seeded from at setup (`createAxiosRefDefaults`)
+    // - one coherent "request > defaults" rule, matching axios'
+    // `mergeConfig(this.defaults, config)` and this library's existing
+    // `timeout`/`maxRedirects` precedence (see docs/axios-supported-options.md
+    // "Precedence"). This is a breaking change from the PR #16 rule ("module
+    // headers always win over axiosRef.defaults").
     base: mergeHeaders(
-      defaultHeaders?.common,
-      defaultHeaders?.[lowerMethod],
-      flatDefaultHeaders(defaultHeaders),
       instanceHeaders?.common,
       instanceHeaders?.[lowerMethod],
       flatDefaultHeaders(instanceHeaders),
+      defaultHeaders?.common,
+      defaultHeaders?.[lowerMethod],
+      flatDefaultHeaders(defaultHeaders),
     ),
     hasWork: headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod),
   };
@@ -738,6 +818,9 @@ export function normalizeAxiosRequest(
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects =
     input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
+  // Precedence: request > axiosRef.defaults > module - see the header
+  // comment below.
+  const baseParams = defaults?.params ?? instance.params;
 
   // Fast path: nothing axios-specific to do for this request. In practice
   // this only triggers for calls that bypass HttpService's axiosRef defaults
@@ -748,10 +831,14 @@ export function normalizeAxiosRequest(
     (input.method !== undefined && input.method !== method) ||
     input.headers !== undefined ||
     (typeof url === 'string' && !!baseURL) ||
-    instance.params !== undefined ||
+    baseParams !== undefined ||
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
+    (defaults?.validateStatus !== undefined &&
+      input.validateStatus === undefined) ||
+    (defaults?.responseType !== undefined &&
+      input.responseType === undefined) ||
     (headerBase
       ? headerBase.hasWork
       : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
@@ -782,20 +869,23 @@ export function normalizeAxiosRequest(
     url = combineURLs(baseURL, url);
   }
   const mergedParams =
-    isPlainObject(instance.params) && isPlainObject(params)
-      ? { ...instance.params, ...params }
-      : (params ?? instance.params);
+    isPlainObject(baseParams) && isPlainObject(params)
+      ? { ...baseParams, ...params }
+      : (params ?? baseParams);
   if (mergedParams) {
     url = buildURL(
       url.toString(),
       mergedParams,
-      paramsSerializer ?? instance.paramsSerializer,
+      paramsSerializer ??
+        defaults?.paramsSerializer ??
+        instance.paramsSerializer,
     );
   }
 
-  // Headers, lowest to highest priority: axiosRef defaults (the axios-style
-  // request defaults, including the built-in Accept/User-Agent/
-  // Accept-Encoding) -> module (`register()`) headers -> per-request headers.
+  // Headers, lowest to highest priority: module (`register()`) headers ->
+  // axiosRef defaults (the axios-style request defaults, including the
+  // built-in Accept/User-Agent/Accept-Encoding, and seeded from module
+  // headers at setup - see `createAxiosRefDefaults`) -> per-request headers.
   // Each axios-style source is itself `common` -> `<method>` -> flat, so a
   // header set for one method (or unqualified) is overridden by a more
   // specific one from the same source before the next source is applied.
@@ -806,12 +896,12 @@ export function normalizeAxiosRequest(
       ? { ...headerBase.base }
       : mergeHeaders(headerBase.base, options.headers)
     : mergeHeaders(
-        defaultHeaders?.common,
-        defaultHeaders?.[lowerMethod],
-        flatDefaultHeaders(defaultHeaders),
         instanceHeaders?.common,
         instanceHeaders?.[lowerMethod],
         flatDefaultHeaders(instanceHeaders),
+        defaultHeaders?.common,
+        defaultHeaders?.[lowerMethod],
+        flatDefaultHeaders(defaultHeaders),
         options.headers,
       );
 
@@ -843,6 +933,23 @@ export function normalizeAxiosRequest(
   }
   if (options.timeout === undefined && defaultTimeout !== undefined) {
     options.timeout = defaultTimeout;
+  }
+  // `validateStatus`/`responseType` from `axiosRef.defaults`, read at
+  // request time (not seeded once) so a runtime mutation takes effect
+  // immediately, even on this fast path (no axiosRef interceptors/adapter/
+  // transforms in play) - `toAxiosLikeResponse` reads both straight off
+  // `request.options`.
+  if (
+    options.validateStatus === undefined &&
+    defaults?.validateStatus !== undefined
+  ) {
+    options.validateStatus = defaults.validateStatus;
+  }
+  if (
+    options.responseType === undefined &&
+    defaults?.responseType !== undefined
+  ) {
+    options.responseType = defaults.responseType;
   }
 
   const signal = resolveSignal(options.signal, cancelToken);
@@ -965,22 +1072,25 @@ export function buildAxiosConfig(
     ...rest
   } = input;
 
+  const baseParams = defaults?.params ?? instance.params;
   const mergedParams =
-    isPlainObject(instance.params) && isPlainObject(params)
-      ? { ...instance.params, ...params }
-      : (params ?? instance.params);
+    isPlainObject(baseParams) && isPlainObject(params)
+      ? { ...baseParams, ...params }
+      : (params ?? baseParams);
 
+  // Precedence: request > axiosRef.defaults > module - see the matching
+  // comment in `normalizeAxiosRequest` above.
   const headerPlain = headerBase
     ? inputHeaders === undefined
       ? { ...headerBase.base }
       : mergeHeaders(headerBase.base, inputHeaders)
     : mergeHeaders(
-        defaultHeaders?.common,
-        defaultHeaders?.[lowerMethod],
-        flatDefaultHeaders(defaultHeaders),
         instanceHeaders?.common,
         instanceHeaders?.[lowerMethod],
         flatDefaultHeaders(instanceHeaders),
+        defaultHeaders?.common,
+        defaultHeaders?.[lowerMethod],
+        flatDefaultHeaders(defaultHeaders),
         inputHeaders,
       );
 
@@ -998,7 +1108,10 @@ export function buildAxiosConfig(
     url: typeof url === 'string' ? url : String(url),
     baseURL,
     params: mergedParams,
-    paramsSerializer: paramsSerializer ?? instance.paramsSerializer,
+    paramsSerializer:
+      paramsSerializer ??
+      defaults?.paramsSerializer ??
+      instance.paramsSerializer,
     method: lowerMethod,
     data,
     headers,
@@ -1007,14 +1120,25 @@ export function buildAxiosConfig(
     timeout: input.timeout ?? defaultTimeout,
     maxRedirects,
     beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
-    validateStatus: input.validateStatus ?? instance.validateStatus,
-    responseType: input.responseType ?? instance.responseType,
+    validateStatus:
+      input.validateStatus ??
+      defaults?.validateStatus ??
+      instance.validateStatus,
+    responseType:
+      input.responseType ?? defaults?.responseType ?? instance.responseType,
     decompress: input.decompress ?? instance.decompress,
     maxContentLength: input.maxContentLength ?? instance.maxContentLength,
     maxBodyLength: input.maxBodyLength ?? instance.maxBodyLength,
-    transformRequest: input.transformRequest ?? instance.transformRequest,
-    transformResponse: input.transformResponse ?? instance.transformResponse,
+    transformRequest:
+      input.transformRequest ??
+      defaults?.transformRequest ??
+      instance.transformRequest,
+    transformResponse:
+      input.transformResponse ??
+      defaults?.transformResponse ??
+      instance.transformResponse,
     socketPath: input.socketPath ?? instance.socketPath,
+    adapter: input.adapter ?? defaults?.adapter ?? instance.adapter,
   };
 
   return config;

@@ -264,14 +264,18 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: postForm(url, object) is url-encoded (axios: multipart)', async () => {
-      const response = await firstValueFrom(
-        undiciService.postForm(`${base}/echo`, { a: 1, b: 'x y' }),
-      );
-      expect(echo(response)).toMatchObject({
-        contentType: 'application/x-www-form-urlencoded',
-        body: 'a=1&b=x%20y',
+    it('postForm(url, object) is multipart, matching axios (fixed: plan.md phase 2 "feat(axiosRef): make it a real axios instance")', async () => {
+      const [a, u] = await both(async s => {
+        const result = echo(
+          await first(s.postForm(`${base}/echo`, { a: 1, b: 'x y' })),
+        );
+        return {
+          contentType: result.contentType.split(';')[0],
+          hasA: result.body.includes('name="a"'),
+          hasB: result.body.includes('name="b"'),
+        };
       });
+      expect(u).toEqual(a);
     });
   });
 
