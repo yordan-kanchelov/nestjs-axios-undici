@@ -62,6 +62,7 @@ import {
 import {
   STATUS_TEXT_MAP,
   RequestInfo,
+  joinDuplicateHeaders,
   toAxiosLikeResponse,
 } from '../adapters/axios-response.adapter';
 import {
@@ -1529,7 +1530,12 @@ export class HttpService implements OnModuleDestroy {
                 method: currentOptions.method,
                 headers: currentOptions.headers,
                 body: currentOptions.body,
-                responseHeaders: res.headers as Record<string, any>,
+                // Same Node/axios duplicate-header shape `beforeRedirect`
+                // sees in axios (follow-redirects hands it Node's joined
+                // `IncomingMessage.headers`).
+                responseHeaders: joinDuplicateHeaders(
+                  res.headers as Record<string, string | string[]>,
+                ),
                 beforeRedirect:
                   requestBeforeRedirect ??
                   (this.moduleOptions as any)?.beforeRedirect,

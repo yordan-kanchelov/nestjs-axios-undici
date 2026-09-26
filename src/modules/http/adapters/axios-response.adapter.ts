@@ -305,6 +305,79 @@ function guardStreamMaxContentLength(
 }
 
 /**
+ * The header names Node's `IncomingMessage.headers` getter keeps only the
+ * FIRST occurrence of when the same name arrives more than once (all other
+ * repeats are silently dropped) - ported from `_http_incoming.js`'s
+ * `matchKnownFields` (Node 22/24/26: unchanged since Node 12, verified
+ * against the shipped source of each). Every other header name - including
+ * one Node doesn't special-case at all - joins repeats with `', '` instead
+ * (RFC 2616 §4.2), and axios inherits both behaviours for free by running
+ * on Node's own `http`. `cookie` (joins with `'; '`) and `set-cookie`
+ * (always an array) are handled separately in `joinDuplicateHeaders` below,
+ * since neither fits this "keep-first" rule.
+ */
+const SINGLE_VALUE_HEADERS = new Set([
+  'age',
+  'authorization',
+  'content-length',
+  'content-type',
+  'etag',
+  'expires',
+  'from',
+  'host',
+  'if-modified-since',
+  'if-unmodified-since',
+  'last-modified',
+  'location',
+  'max-forwards',
+  'proxy-authorization',
+  'referer',
+  'retry-after',
+  'server',
+  'user-agent',
+]);
+
+/**
+ * Matches axios' own response headers on Node exactly, by replicating
+ * `IncomingMessage.headers`'s per-name join rules (see
+ * `SINGLE_VALUE_HEADERS`'s doc comment) on top of undici's raw parsed
+ * headers - undici's own `parseHeaders` (`core/util.js`) has no such
+ * per-name behaviour, and just accumulates every repeated header name into
+ * an array uniformly, which is the one place the two disagree (found by a
+ * differential check against real axios; the response.diff.spec.ts
+ * "headers: casing, multi-value set-cookie, duplicates" case used to assert
+ * this as a `knownDifference`).
+ *
+ * `set-cookie` keeps undici's array as-is (Node/axios always give an
+ * array there too); `cookie` joins repeats with `'; '`; the
+ * `SINGLE_VALUE_HEADERS` names keep only the first value; everything else
+ * joins repeats with `', '`.
+ *
+ * Perf: a duplicated header is rare (most responses have none at all), so
+ * this only ever pays for what it finds. The loop itself is one
+ * `Array.isArray` check per header name - cheap even on a response with a
+ * dozen headers - and the input object is returned unchanged, with no copy
+ * and no allocation, unless at least one value actually needs rewriting.
+ */
+export function joinDuplicateHeaders<
+  T extends Record<string, string | string[]>,
+>(headers: T): T {
+  let out: Record<string, string | string[]> | undefined;
+  for (const key in headers) {
+    const value = headers[key];
+    if (!Array.isArray(value) || key === 'set-cookie') continue;
+    out ??= { ...headers };
+    out[key] =
+      key === 'cookie'
+        ? value.join('; ')
+        : SINGLE_VALUE_HEADERS.has(key)
+          ? value[0]
+          : value.join(', ');
+  }
+  return (out as T | undefined) ?? headers;
+}
+
+/**
  * Converts an undici response to the axios-compatible response format,
  * reading and parsing the body and rejecting with an axios-like error when
  * the status fails `validateStatus`. `HttpService` applies it at the end of
@@ -323,15 +396,24 @@ export async function toAxiosLikeResponse(
     request.url,
     String((request.options as any)?.method || 'GET'),
   );
+  // Node/axios header-join semantics (see `joinDuplicateHeaders`'s doc
+  // comment), applied once so every read below (`content-type`,
+  // `content-encoding`, `content-length`, `transformResponse`'s own
+  // `headers` argument, and the headers object handed to the caller) sees
+  // the same, axios-shaped values - not undici's raw, uniformly-arrayed
+  // ones.
+  const headers = joinDuplicateHeaders(
+    undiciResponse.headers as Record<string, string | string[]>,
+  );
   // Parse the body based on content type
-  const contentType = (undiciResponse.headers['content-type'] as string) || '';
+  const contentType = (headers['content-type'] as string) || '';
   let parsedData: any;
 
   // Check if maxContentLength is set in options
   const maxContentLength = (request.options as any)?.maxContentLength;
   const responseType = (request.options as any)?.responseType;
   const decompress = (request.options as any)?.decompress;
-  const contentEncodingHeader = undiciResponse.headers['content-encoding'];
+  const contentEncodingHeader = headers['content-encoding'];
   const contentEncoding = Array.isArray(contentEncodingHeader)
     ? contentEncodingHeader[0]
     : contentEncodingHeader;
@@ -365,7 +447,7 @@ export async function toAxiosLikeResponse(
   if (body && (onDownloadProgress || rawMaxRate !== undefined)) {
     const { download: maxDownloadRate } = resolveMaxRates(rawMaxRate);
     if (onDownloadProgress || maxDownloadRate) {
-      const contentLengthHeader = undiciResponse.headers['content-length'];
+      const contentLengthHeader = headers['content-length'];
       const total =
         typeof contentLengthHeader === 'string'
           ? Number(contentLengthHeader) || undefined
@@ -406,7 +488,7 @@ export async function toAxiosLikeResponse(
           fn.call(
             request.axiosConfig,
             value,
-            undiciResponse.headers,
+            headers,
             undiciResponse.statusCode,
           ),
         raw,
@@ -491,7 +573,7 @@ export async function toAxiosLikeResponse(
     undiciResponse.statusText ||
       STATUS_TEXT_MAP[undiciResponse.statusCode] ||
       'Unknown',
-    undiciResponse.headers as Record<string, string | string[]>,
+    headers,
     request,
     requestInfo,
   );
