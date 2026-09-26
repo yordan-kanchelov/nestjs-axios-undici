@@ -64,17 +64,10 @@ allow(ALLOWLIST, 'HttpService', ['instance', 'makeObservable'], {
 allow(
   ALLOWLIST,
   'axiosRef.defaults',
-  [
-    'hasOwnProperty',
-    'xsrfCookieName',
-    'xsrfHeaderName',
-    'maxContentLength',
-    'maxBodyLength',
-    'env',
-  ],
+  ['hasOwnProperty', 'xsrfCookieName', 'xsrfHeaderName', 'env'],
   {
     reason:
-      'not part of this item: axios options this library never maps at module level either (xsrfCookieName/xsrfHeaderName are a documented no-op; maxContentLength/maxBodyLength are read straight off module/request options, not defaults; env/hasOwnProperty are axios internals with no equivalent here). `transitional` is now populated - see plan.md phase 2 "transitional.silentJSONParsing".',
+      'not part of this item: axios options this library never maps at module level either (xsrfCookieName/xsrfHeaderName are a documented no-op; env/hasOwnProperty are axios internals with no equivalent here). `transitional` is now populated - see plan.md phase 2 "transitional.silentJSONParsing". `maxContentLength`/`maxBodyLength` are now populated too - see the CodeRabbit review fix for `axiosRef.create()`/`axiosRef.defaults` dropping options (docs/axios-supported-options.md).',
     tracked: 'docs/axios-supported-options.md',
   },
 );

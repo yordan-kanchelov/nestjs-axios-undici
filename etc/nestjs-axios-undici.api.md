@@ -316,8 +316,22 @@ export interface AxiosRef {
 // @public
 export interface AxiosRefDefaults<D = any> {
     adapter?: ((config: any) => Promise<any>) | string | Array<((config: any) => Promise<any>) | string>;
+    allowAbsoluteUrls?: boolean;
+    auth?: {
+        username: string;
+        password: string;
+    };
     // (undocumented)
     baseURL?: string;
+    beforeRedirect?: (options: Record<string, any>, responseDetails: {
+        headers: Record<string, any>;
+        statusCode: number;
+    }, requestDetails: {
+        url: string;
+        method: string;
+        headers: Record<string, any>;
+    }) => void;
+    decompress?: boolean;
     formSerializer?: FormSerializerOptions;
     headers: {
         common: AxiosHeaders;
@@ -329,6 +343,8 @@ export interface AxiosRefDefaults<D = any> {
         put: AxiosHeaders;
         patch: AxiosHeaders;
     };
+    maxBodyLength?: number;
+    maxContentLength?: number;
     maxRate?: number | [number, number];
     // (undocumented)
     maxRedirects?: number;
@@ -344,8 +360,10 @@ export interface AxiosRefDefaults<D = any> {
     // (undocumented)
     responseType?: AxiosResponseType;
     sensitiveHeaders?: string[];
+    socketPath?: string | null;
     // (undocumented)
     timeout?: number;
+    timeoutErrorMessage?: string;
     // (undocumented)
     transformRequest?: ((data: any, headers?: any) => any) | Array<(data: any, headers?: any) => any>;
     // (undocumented)
