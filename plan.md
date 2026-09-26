@@ -147,7 +147,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - Typed `HttpModuleOptions`. Done.
   - Optional `axios` peer so `instanceof axios.AxiosError` works. Done (`instanceof axios.CanceledError` specifically doesn't - a prototype chain is linear; documented in `linkOptionalAxiosPeer`'s doc comment in `axios-error.ts`, use `isCancel()`).
   - Full `AxiosHeaders`, with `response.headers` as `AxiosHeaders`. Partly done: `AxiosHeaders` gained `concat`/`toString`/`normalize`/`getSetCookie`/the `get/set/has*` shorthands. `response.headers` stays a plain object at runtime - measured (this library's `AxiosHeaders`, a typical response, 200k iterations) at about 955ns more per response just to construct (before the Proxy-trap cost on every later read), not worth it against the CI regression check's `+10%` budget, paid on every response unconditionally. Typed `Record<string, any>` (assignable to/from axios' own response header types) regardless.
-- [~] **feat(axiosRef): make it a real axios instance.** PR #23 open (`claude/axiosref-instance`).
+- [x] **feat(axiosRef): make it a real axios instance.** PR #23, merged.
   - Full `AxiosHeaders` parity: keep the header name casing as given, as axios does. Today names are stored lower-cased, so `normalize(true)` can't title-case and `toJSON()` returns lower-case names (PR #22 review). The remaining 3 `@ts-expect-error` markers in `tests/types` (axios' overloaded `AxiosHeaders` signatures) also belong here.
   - Callable, `getUri`, `create`, `*Form`, `query`.
   - A function `adapter` (so axios-mock-adapter works) and the full `defaults`.
@@ -283,3 +283,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - `axiosRef.create()` copies object and array defaults (`params`, `transformRequest`, and so on), as axios' `mergeConfig` does, so a later parent mutation no longer leaks into the child.
   - `setAcceptEncoding`/`getAcceptEncoding`/`hasAcceptEncoding` are back as runtime-only methods: axios has them at runtime but not in its `.d.ts`, so removing them was a needless break.
   Each fix has a test that fails without it.
+- 2026-09-26: PR #23 merged: `axiosRef` is a real axios instance (callable, `create`, `getUri`, `*Form`, `query`, runtime defaults, function `adapter` so axios-mock-adapter works, header casing kept), with one precedence rule: request > `axiosRef.defaults`, seeded from module options. 22 known differences, 1 `@ts-expect-error` left. CI all green. Next: fix(errors).
