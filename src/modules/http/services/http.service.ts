@@ -264,6 +264,131 @@ function activeAxiosInterceptors<T>(
 /** Upper bound on cached per-request `socketPath` Agents (see `getSocketPathDispatcher`). */
 const MAX_SOCKET_PATH_DISPATCHERS = 32;
 
+/**
+ * Grace period `closeDispatcher` gives an owned dispatcher's graceful
+ * `close()` (finish in-flight requests, then resolve) before force-
+ * `destroy()`-ing it instead (aborts whatever is left, including an
+ * abandoned `responseType: 'stream'` body nobody ever read or `.destroy()`d
+ * - see the `signal`/"Always consume or `.destroy()`" note in
+ * `docs/axios-supported-options.md`). Without this, `onModuleDestroy` (and
+ * `setDispatcher`, which closes the dispatcher it replaces the same way)
+ * would wait on `close()` forever whenever such a stream is left open,
+ * hanging application shutdown indefinitely (plan.md phase 2, "decide:
+ * `HttpService.onModuleDestroy` waits forever...").
+ *
+ * 5 seconds: long enough that a normal in-flight request/response - even a
+ * slow one - finishes gracefully well within it (this is not a per-request
+ * timeout; it only bounds how long shutdown waits once `close()` itself is
+ * called), short enough that a shutdown with something genuinely abandoned
+ * doesn't hang for an unreasonable time. Matches the same order of
+ * magnitude as Node's own default HTTP `keepAliveTimeout` (5s) and
+ * Kubernetes' default `terminationGracePeriodSeconds` (30s, of which this
+ * is a small fraction, leaving headroom for the rest of the shutdown
+ * sequence).
+ *
+ * Deliberately not a public option - see plan.md: this bounds a resource-
+ * cleanup implementation detail, not request behaviour a caller configures
+ * per module/request. Overridable only for this package's own tests via an
+ * internal, undocumented environment variable (never read outside this
+ * function, never mentioned in the public docs) - the value itself is a
+ * plain internal constant.
+ */
+const DEFAULT_SHUTDOWN_GRACE_MS = 5000;
+function shutdownGraceMs(): number {
+  const override = process.env.__NESTJS_AXIOS_UNDICI_TEST_SHUTDOWN_GRACE_MS;
+  if (override !== undefined) {
+    const parsed = Number(override);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return DEFAULT_SHUTDOWN_GRACE_MS;
+}
+
+/**
+ * Closes `dispatcher` gracefully (`close()` - lets in-flight requests
+ * finish), racing it against `shutdownGraceMs()`. If the grace period
+ * elapses first, forces everything still outstanding to actually stop:
+ *
+ * - Aborts every request-level signal in `openStreamAborts` (see
+ *   `HttpService#trackOpenStream`) - one per still-open, un-drained
+ *   `responseType: 'stream'` body dispatched through `dispatcher`. This is
+ *   the part that does the real work: confirmed directly against undici
+ *   (`lib/dispatcher/agent.js`) that `Agent#close()` - and `ProxyAgent`/
+ *   `EnvHttpProxyAgent`, both built on the same `Agent` - clears their own
+ *   per-origin bookkeeping *synchronously*, the instant `close()` is
+ *   called, before its promise ever settles. A `destroy()` call on that
+ *   same instance afterward therefore has nothing left to reach (its own
+ *   internals iterate an already-empty registry and resolve as a silent
+ *   no-op) - `Agent#destroy()` alone, called after `close()`, does **not**
+ *   force-abort an abandoned stream still open on it (verified with a real
+ *   server: the socket stayed open indefinitely). Aborting the request's
+ *   own `signal` instead works regardless: it's undici's own per-request
+ *   abort path (the same one a caller's own `AbortSignal` or this
+ *   library's deadline timeout already uses - see `executeRequest`), and a
+ *   still-open, zero-listener body reacts to it without an unhandled
+ *   `'error'` (confirmed directly against undici's `BodyReadable`).
+ * - Calls `dispatcher.destroy()` too, for whatever it can still reach (a
+ *   dispatcher with no tracked open stream at all, or a future undici
+ *   version without the limitation above) - harmless either way, never
+ *   awaited for its effect.
+ *
+ * Never rejects: every failure above is swallowed, matching
+ * `closeDispatcher`'s existing "never fail the caller" contract. The grace
+ * timer is `unref()`d (so it alone can't keep the process alive) and
+ * cleared as soon as `close()` wins the race, so a clean shutdown is never
+ * delayed by it and it never outlives this call.
+ */
+function closeDispatcherWithGrace(
+  dispatcher: Dispatcher,
+  openStreamAborts: Set<RequestAbortSignal> | undefined,
+): Promise<void> {
+  const closed = Promise.resolve(dispatcher.close()).then(
+    () => undefined,
+    () => undefined,
+  );
+  return new Promise<void>(resolve => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (openStreamAborts) {
+        for (const abortSignal of openStreamAborts) {
+          abortSignal.abort(new ShutdownGraceAbortReason());
+        }
+      }
+      Promise.resolve(dispatcher.destroy())
+        .catch(() => undefined)
+        .finally(resolve);
+    }, shutdownGraceMs());
+    timer.unref?.();
+    void closed.then(() => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/**
+ * `abortSignal.abort()`'s reason when `closeDispatcherWithGrace`'s grace
+ * period forces an abandoned `responseType: 'stream'` body closed. A
+ * distinct class (rather than a plain string/Error) only so anything that
+ * inspects `error.cause`/a caught error can tell this apart from a real
+ * network failure if it ever needs to - nothing in this library currently
+ * reads it back (unlike `DeadlineTimeoutReason`/`isDeadlineTimeoutReason`,
+ * which `fail()` does branch on): by the time this fires, the stream has
+ * already been handed to the caller and the request Observable has long
+ * since settled, so there's no `AxiosError` left to shape - the caller's
+ * own stream just sees an aborted read, exactly as if they had called
+ * `.destroy()` on it themselves.
+ */
+class ShutdownGraceAbortReason extends Error {
+  constructor() {
+    super('HttpService.onModuleDestroy: shutdown grace period elapsed');
+    this.name = 'ShutdownGraceAbortReason';
+  }
+}
+
 class RequestAbortSignal {
   aborted = false;
   reason: unknown = undefined;
@@ -527,6 +652,28 @@ export class HttpService implements OnModuleDestroy {
   // relying on that and keeps `Promise.allSettled` results in
   // `onModuleDestroy` free of the same object's rejection twice.
   private readonly closedDispatchers = new WeakSet<Dispatcher>();
+  // Tracks every currently-open, un-drained `responseType: 'stream'` body
+  // this service handed back, keyed by the dispatcher it was actually
+  // dispatched through - populated by `trackOpenStream` (called from
+  // `executeRequest`'s `onResponse`), and only ever read by
+  // `closeDispatcher`/`closeDispatcherWithGrace` to force-abort what's left
+  // once an owned dispatcher's shutdown grace period elapses (see that
+  // function's doc comment for *why* this is needed - `Agent#destroy()`
+  // alone, called after `Agent#close()`, can't reach it). A `Map`, not a
+  // `WeakMap`: entries are removed explicitly (by `trackOpenStream`'s own
+  // `'close'` listener) once each stream finishes, not left for GC - so
+  // this never grows unbounded, and each entry holds only the streams
+  // genuinely still open on that dispatcher. Populated the same way
+  // regardless of which dispatcher a request resolves to, including a
+  // user-supplied one - simpler than checking ownership on every stream
+  // response, and harmless: `closeDispatcher` (the only reader) is never
+  // called for a dispatcher the caller supplied, so that entry is simply
+  // never looked at, and its own `'close'` listener still cleans it up
+  // exactly the same either way.
+  private readonly openStreamAbortsByDispatcher = new Map<
+    Dispatcher,
+    Set<RequestAbortSignal>
+  >();
   // Perf item 2: `createInterceptorHandler` builds a linked list of one
   // handler object per interceptor; that chain never changes shape between
   // requests unless `this.interceptors` itself is replaced or grown, so it's
@@ -868,11 +1015,45 @@ export class HttpService implements OnModuleDestroy {
   /** Closes `dispatcher` gracefully, at most once, swallowing any error - a
    * dispatcher this service is discarding is never awaited or allowed to
    * fail the caller (`setDispatcher`, `onModuleDestroy`'s per-dispatcher
-   * catch). */
+   * catch). Bounded by `closeDispatcherWithGrace`'s grace period, so a
+   * `close()` that never resolves (an unconsumed `responseType: 'stream'`
+   * response keeps the dispatcher open) doesn't wait forever either -
+   * falls back to `destroy()` instead. */
   private closeDispatcher(dispatcher: Dispatcher): Promise<void> {
     if (this.closedDispatchers.has(dispatcher)) return Promise.resolve();
     this.closedDispatchers.add(dispatcher);
-    return Promise.resolve(dispatcher.close()).catch(() => undefined);
+    return closeDispatcherWithGrace(
+      dispatcher,
+      this.openStreamAbortsByDispatcher.get(dispatcher),
+    );
+  }
+
+  /**
+   * Registers `abortSignal` (`executeRequest`'s per-request
+   * `RequestAbortSignal`, already wired as undici's own dispatch-level
+   * `signal` option) against `dispatcher` for as long as `stream` (the
+   * `responseType: 'stream'` body just handed back to the caller) stays
+   * open - removed the instant it closes, however that happens (fully
+   * read, `.destroy()`d, or errored - Node's `Readable` emits `'close'` in
+   * every case). Only `closeDispatcher`'s shutdown-grace fallback
+   * (`closeDispatcherWithGrace`) ever reads this back; see its doc comment
+   * for why aborting the request's own signal, not the dispatcher's own
+   * `destroy()`, is what actually frees an abandoned stream's connection.
+   */
+  private trackOpenStream(
+    dispatcher: Dispatcher,
+    abortSignal: RequestAbortSignal,
+    stream: Readable,
+  ): void {
+    let aborts = this.openStreamAbortsByDispatcher.get(dispatcher);
+    if (!aborts) {
+      aborts = new Set();
+      this.openStreamAbortsByDispatcher.set(dispatcher, aborts);
+    }
+    aborts.add(abortSignal);
+    stream.once('close', () => {
+      aborts!.delete(abortSignal);
+    });
   }
 
   /**
@@ -881,9 +1062,18 @@ export class HttpService implements OnModuleDestroy {
    * `EnvHttpProxyAgent`/`CookieAgent`, whichever `setupDispatcher` built),
    * and every cached `socketPath` `Agent` - gracefully (`close()`, which lets
    * in-flight requests finish rather than aborting them, unlike
-   * `destroy()`). A `dispatcher` the caller supplied directly, through
-   * module options or `setDispatcher()`, is never touched here (plan.md
-   * phase 3 "Resource cleanup").
+   * `destroy()`), all concurrently (so N cached `socketPath` Agents don't
+   * add up to N times the grace period below - see `Promise.all`). A
+   * `dispatcher` the caller supplied directly, through module options or
+   * `setDispatcher()`, is never touched here (plan.md phase 3 "Resource
+   * cleanup").
+   *
+   * Each `close()` is bounded by a grace period (`closeDispatcherWithGrace`/
+   * `DEFAULT_SHUTDOWN_GRACE_MS`): past it, `destroy()` takes over and aborts
+   * whatever is left, so an abandoned, never-consumed `responseType:
+   * 'stream'` response can no longer keep this method - and application
+   * shutdown - waiting forever (plan.md phase 2, "decide:
+   * `HttpService.onModuleDestroy` waits forever...").
    */
   public async onModuleDestroy(): Promise<void> {
     const closing: Promise<void>[] = [
@@ -1769,12 +1959,20 @@ export class HttpService implements OnModuleDestroy {
           // `abortSignal.abort()` this then triggers into the `CanceledError`
           // the caller's own `data.on('error', ...)` sees.
           const data = (axiosRes as any).data;
-          if (
-            onUserAbort &&
-            data &&
+          const isOpenStream =
+            !!data &&
             typeof data.pipe === 'function' &&
-            typeof data.once === 'function'
-          ) {
+            typeof data.once === 'function';
+          if (isOpenStream) {
+            // plan.md phase 2 "decide: HttpService.onModuleDestroy waits
+            // forever...": tracked independently of `onUserAbort` below -
+            // this is what lets `onModuleDestroy`'s shutdown grace period
+            // force-abort an abandoned stream even when the caller never
+            // passed a `signal` of their own. See `trackOpenStream`'s doc
+            // comment.
+            this.trackOpenStream(dispatcher, abortSignal, data as Readable);
+          }
+          if (onUserAbort && isOpenStream) {
             openStream = data as Readable;
             openStream.once('close', () => {
               openStream = undefined;
