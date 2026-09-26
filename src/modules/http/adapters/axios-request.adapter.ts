@@ -1548,13 +1548,9 @@ export function normalizeAxiosRequest(
  * URL, no serialisation, no `AxiosHeaders` wrap); falls back to reconstructing
  * from `options` for requests that reach here some other way.
  *
- * Called by `attachLazyAxiosConfig`'s getter, on first read - not by
- * `AxiosLikeResponseImpl`'s/`AxiosError`'s constructors directly, which would
- * pay this (an `AxiosHeaders` construction plus a ~15-field object literal)
- * on every response/error whether or not `.config` is ever read. None of the
- * benchmark scenarios (`benchmarks/micro/client.js`) read `response.config`/
- * `error.config` at all, so this used to run, and be thrown away, on every
- * single request.
+ * Builds the whole config at once. `response.config` and `error.config` use
+ * `attachLazyAxiosConfig` instead, which defers the `AxiosHeaders` wrap to
+ * the first read.
  */
 export function buildLazyAxiosConfig(
   request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
@@ -1587,47 +1583,97 @@ export function buildLazyAxiosConfig(
 }
 
 // ---------------------------------------------------------------------------
-// Lazy `config` accessor for `AxiosLikeResponseImpl`/`AxiosError` - shared so
-// installing it costs one `Object.defineProperty` call per instance, not two
-// per-instance closures (a `get`/`set` pair written inline in each
-// constructor would each be a fresh function allocation per instance; these
-// two are module-level and shared by every instance instead, the same
-// symbol-keyed-field trade-off `axios-headers.ts`'s `STORE` doc comment
-// explains for the same reason).
+// Lazy `config` for `AxiosLikeResponseImpl`/`AxiosError`.
+//
+// At construction, `attachLazyAxiosConfig` copies the few fields `config`
+// shows into a small seed object, with a shallow copy of the headers. Later
+// changes to the request object, such as an interceptor editing
+// `request.options.headers` after the response arrives, don't reach
+// `config`, and the seed holds no dispatcher, signal or progress callback.
+// Only the `AxiosHeaders` wrap and the config object are deferred to the
+// first read. The built value is cached on the seed, not on the target, so
+// a response frozen before its first `.config` read still works.
 // ---------------------------------------------------------------------------
 
-const LAZY_CONFIG_REQUEST: unique symbol = Symbol('lazyConfigRequest');
-const LAZY_CONFIG_VALUE: unique symbol = Symbol('lazyConfigValue');
+interface LazyConfigSeed {
+  value: InternalAxiosLikeRequestConfig | undefined;
+  url: string;
+  baseURL: string | undefined;
+  params: any;
+  method: string;
+  data: any;
+  headers: Record<string, string | string[]> | undefined;
+  timeout: number | undefined;
+  maxRedirects: number | undefined;
+  validateStatus: any;
+  responseType: any;
+}
+
+const LAZY_CONFIG_SEED: unique symbol = Symbol('lazyConfigSeed');
+
+function captureLazyConfigSeed(
+  request: HttpInterceptorRequest & { raw?: NormalizedRequestSeed },
+): LazyConfigSeed {
+  const options: any = request.options || {};
+  const raw = request.raw;
+  const url = raw ? raw.url : request.url;
+  return {
+    value: request.axiosConfig as InternalAxiosLikeRequestConfig | undefined,
+    url: typeof url === 'string' ? url : String(url),
+    baseURL: raw?.baseURL,
+    params: raw?.params,
+    method: raw ? raw.method : String(options.method || 'GET').toLowerCase(),
+    data: options.body,
+    headers:
+      options.headers && typeof options.headers === 'object'
+        ? { ...options.headers }
+        : undefined,
+    timeout: options.headersTimeout || options.bodyTimeout,
+    maxRedirects: options.maxRedirections,
+    validateStatus: options.validateStatus,
+    responseType: options.responseType,
+  };
+}
 
 function getLazyConfig(this: any): InternalAxiosLikeRequestConfig {
-  return (
-    this[LAZY_CONFIG_VALUE] ??
-    (this[LAZY_CONFIG_VALUE] = buildLazyAxiosConfig(this[LAZY_CONFIG_REQUEST]))
-  );
+  const seed: LazyConfigSeed = this[LAZY_CONFIG_SEED];
+  return (seed.value ??= {
+    url: seed.url,
+    baseURL: seed.baseURL,
+    params: seed.params,
+    method: seed.method,
+    data: seed.data,
+    headers: new AxiosHeaders(seed.headers),
+    timeout: seed.timeout,
+    maxRedirects: seed.maxRedirects,
+    validateStatus: seed.validateStatus,
+    responseType: seed.responseType,
+  } as InternalAxiosLikeRequestConfig);
 }
 
 function setLazyConfig(this: any, value: InternalAxiosLikeRequestConfig): void {
-  this[LAZY_CONFIG_VALUE] = value;
+  // A frozen target had a read-only `config` data property before this was
+  // an accessor, so assignment throws, as it would in strict mode.
+  if (Object.isFrozen(this)) {
+    throw new TypeError(
+      "Cannot assign to read only property 'config' of object",
+    );
+  }
+  this[LAZY_CONFIG_SEED].value = value;
 }
 
 /**
- * Installs an own, enumerable `config` accessor on `target` (an
- * `AxiosLikeResponseImpl` or `AxiosError` instance) that calls
- * `buildLazyAxiosConfig(request)` only on first read, and caches the result -
- * a plain `target.config = ...` write (before or after that first read)
- * overrides it directly, same as a plain field. Deliberately an *own*
- * accessor, installed per instance via `Object.defineProperty` - not a
- * class-body `get config()`, which lands on the *prototype* and is
- * non-enumerable there, so `{ ...target }`/`JSON.stringify(target)` would
- * silently drop `config` instead of copying its resolved value, unlike
- * axios' own plain `config` field (checked against this library's own "should
- * survive being spread" test, `http.service.config-transform.spec.ts`).
+ * Installs an own, enumerable `config` accessor on `target`. `config` is
+ * built on first read from a seed captured now, then cached. Assigning
+ * `target.config` replaces it, as with a plain field. It is an own accessor,
+ * not a class `get config()`, because a prototype getter is not enumerable,
+ * so `{ ...target }` and `JSON.stringify(target)` would drop `config`.
  */
 export function attachLazyAxiosConfig(
   target: object,
   request: HttpInterceptorRequest,
 ): void {
-  (target as any)[LAZY_CONFIG_REQUEST] = request;
+  (target as any)[LAZY_CONFIG_SEED] = captureLazyConfigSeed(request);
   Object.defineProperty(target, 'config', {
     enumerable: true,
     configurable: true,

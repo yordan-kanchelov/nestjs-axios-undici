@@ -150,10 +150,8 @@ export class RequestInfo {
 }
 
 /**
- * `AxiosLikeResponse` with `config` built lazily, from a `config` getter on
- * the prototype (defined once) rather than a `Object.defineProperty` call
- * per instance - the getter itself costs nothing until `.config` is read,
- * unlike installing a per-instance accessor on every response.
+ * `AxiosLikeResponse` with `config` built on first read, see
+ * `attachLazyAxiosConfig`.
  */
 class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
   // `config` is installed as an own accessor by `attachLazyAxiosConfig`

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, tap } from 'rxjs';
 import * as http from 'http';
 import { AddressInfo } from 'net';
 import { Readable } from 'stream';
@@ -58,6 +58,71 @@ describe('HttpService - response.config and transformResponse', () => {
     const error = await firstValueFrom(service.get(`${url}/404`)).catch(e => e);
     expect(Object.prototype.hasOwnProperty.call(error, 'config')).toBe(true);
     expect({ ...error }.config).toMatchObject({ method: 'get' });
+  });
+
+  it('response.config can be read after the response is frozen', async () => {
+    const res = Object.freeze(await firstValueFrom(service.get(`${url}/json`)));
+    expect(res.config).toMatchObject({ method: 'get' });
+    expect(res.config).toBe(res.config);
+    expect(() => {
+      (res as any).config = {};
+    }).toThrow(TypeError);
+  });
+
+  it('error.config can be read after the error is frozen', async () => {
+    const error = Object.freeze(
+      await firstValueFrom(service.get(`${url}/404`)).catch(e => e),
+    );
+    expect(error.config).toMatchObject({ method: 'get' });
+  });
+
+  it('response.config shows the headers that were sent, not later edits to the request', async () => {
+    const interceptingService = new HttpService(
+      {},
+      {
+        interceptors: [
+          (request, next) =>
+            next.handle(request).pipe(
+              tap(() => {
+                (request.options.headers as any).authorization = 'changed';
+              }),
+            ),
+        ],
+      },
+    );
+    try {
+      const res = await firstValueFrom(
+        interceptingService.get(`${url}/json`, {
+          headers: { Authorization: 'original' },
+        }),
+      );
+      expect(res.config.headers.get('authorization')).toBe('original');
+    } finally {
+      await interceptingService.onModuleDestroy();
+    }
+  });
+
+  it('a response does not keep the request progress callbacks alive', async () => {
+    const onDownloadProgress = () => undefined;
+    const res = await firstValueFrom(
+      service.get(`${url}/json`, { onDownloadProgress } as any),
+    );
+    const reachable = new Set<unknown>();
+    const walk = (value: unknown, depth: number) => {
+      if (depth > 4 || value === null || typeof value !== 'object') return;
+      if (reachable.has(value)) return;
+      reachable.add(value);
+      for (const key of Reflect.ownKeys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor && 'value' in descriptor) {
+          if (descriptor.value === onDownloadProgress)
+            reachable.add(onDownloadProgress);
+          walk(descriptor.value, depth + 1);
+        }
+      }
+    };
+    walk(res, 0);
+    expect(reachable.has(onDownloadProgress)).toBe(false);
   });
 
   it("transformResponse with responseType 'arraybuffer' receives the raw bytes", async () => {
