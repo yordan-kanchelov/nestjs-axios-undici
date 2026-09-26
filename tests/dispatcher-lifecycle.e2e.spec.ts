@@ -163,8 +163,10 @@ describe('dispatcher lifecycle (e2e)', () => {
       const ref = service.undiciRef;
       expect(Object.isFrozen(ref)).toBe(true);
       expect(
-        Object.prototype.hasOwnProperty.call(ref, '__resolvedConfig'),
-      ).toBe(false);
+        Object.keys(ref as unknown as Record<string, unknown>).filter(k =>
+          k.startsWith('__'),
+        ),
+      ).toEqual([]);
       expect(() => {
         'use strict';
         (ref as unknown as Record<string, unknown>).dispatcher = undefined;

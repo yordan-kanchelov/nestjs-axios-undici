@@ -254,12 +254,12 @@ describe('HttpService redirects', () => {
 
   it('keeps Authorization on a same-host, same-port redirect', async () => {
     const response: any = await firstValueFrom(
-      service.request(`${baseUrl}/start`, {
+      service.request(`${baseUrl}/post-redirect`, {
         headers: { Authorization: 'Bearer secret' },
       }),
     );
 
-    expect(response.status).toBe(200);
+    expect(response.data.headers.authorization).toBe('Bearer secret');
   });
 
   /**
@@ -292,13 +292,13 @@ describe('HttpService redirects', () => {
 
     it('keeps a custom header on a genuine same-host, same-port redirect', async () => {
       const response: any = await firstValueFrom(
-        service.request(`${baseUrl}/start`, {
+        service.request(`${baseUrl}/post-redirect`, {
           headers: { 'X-Api-Key': 'secret' },
           sensitiveHeaders: ['X-Api-Key'],
         }),
       );
 
-      expect(response.status).toBe(200);
+      expect(response.data.headers['x-api-key']).toBe('secret');
     });
 
     it('module-level sensitiveHeaders applies too', async () => {

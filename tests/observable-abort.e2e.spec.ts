@@ -75,14 +75,20 @@ describe('HttpService Observable semantics: abort on unsubscribe', () => {
     await new Promise<void>(resolve => server.close(() => resolve()));
   });
 
+  let module: TestingModule;
+
   beforeEach(async () => {
     retryAttempts = [];
     pendingCloses.clear();
     pendingStarts.clear();
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       imports: [HttpModule.register({})],
     }).compile();
     service = module.get<HttpService>(HttpService);
+  });
+
+  afterEach(async () => {
+    await module.close();
   });
 
   it('rxjs timeout() unsubscribing aborts the upstream request', async () => {

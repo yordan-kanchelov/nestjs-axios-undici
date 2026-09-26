@@ -107,8 +107,7 @@ const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
 
 // axios rejects some non-plain-object bodies (number, boolean) with a config
 // TypeError; this library's dispatcher forwards them as-is, so what the server
-// sees on the wire differs. A POST with no body/a Blob body also gets a
-// default Content-Type here that axios doesn't send / doesn't preserve.
+// sees on the wire differs.
 const bodyKnownDifference = new Map<string, string>([
   ['number 5', ERRORS],
   ['boolean true', ERRORS],
@@ -310,10 +309,11 @@ differential('Differential: request serialization', routes, [
     // set adds `'` specifically for http(s) - so it comes out as `%27`
     // regardless of what string this library handed it. Not fixable without
     // bypassing undici's own URL parsing (out of scope).
-    name: "params: '' encodes as %27 (WHATWG URL parsing)",
+    name: "params: ' encodes as %27 (WHATWG URL parsing)",
     run: (s, ctx) => s.get(echo(ctx), { params: { q: "a'b" } }),
     normalize: (o: any) => lastRequest(o)?.url,
-    knownDifference: 'plan.md phase 2: fix(errors): match axios errors',
+    knownDifference:
+      "plan.md phase 2: fix(errors): match axios errors (by design, not fixable: undici's own WHATWG URL parsing)",
   },
   ...joinCases.map(([name, b, u]) => ({
     name: `baseURL join: ${name}`,

@@ -96,6 +96,10 @@ describe('HttpService TLS options (httpsAgent)', () => {
     });
     // httpAgent (even TLS-shaped) is only read for keep-alive/maxSockets/
     // timeout - never for TLS - so the default verification still applies.
-    await expect(firstValueFrom(service.get(baseUrl))).rejects.toBeDefined();
+    await expect(firstValueFrom(service.get(baseUrl))).rejects.toMatchObject({
+      code: expect.stringMatching(
+        /DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE/,
+      ),
+    });
   });
 });

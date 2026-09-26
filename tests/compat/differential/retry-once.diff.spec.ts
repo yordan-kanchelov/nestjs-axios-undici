@@ -41,19 +41,9 @@ const routes = {
   },
 };
 
-/**
- * `axiosRef` isn't (yet) callable, unlike a real axios instance - see
- * plan.md phase 2 "feat(axiosRef): make it a real axios instance". Both
- * axios-retry and axios-auth-refresh need a callable to replay a request
- * through, so wrap ours the same way any consumer would in the meantime
- * (`(config) => axiosRef.request(config)`); a real axios instance is
- * already callable and is used as-is.
- */
+/** Both axios-retry and axios-auth-refresh replay through a callable instance; axiosRef is one. */
 function callableRef(s: any): any {
-  const ref = s.axiosRef;
-  if (typeof ref === 'function') return ref;
-  const callable = (config: any) => ref.request(config);
-  return Object.assign(callable, ref);
+  return s.axiosRef;
 }
 
 differential('Differential: retry-once interceptor pattern', routes, [
