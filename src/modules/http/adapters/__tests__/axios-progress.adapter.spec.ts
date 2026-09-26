@@ -248,5 +248,96 @@ describe('axios-progress.adapter', () => {
         process.nextTick = realNextTick;
       }
     });
+
+    // plan.md phase 2 / plan/reports/undici-slow-consumer.md: undici's h1
+    // client can error a fully-delivered body with `UND_ERR_SOCKET: other
+    // side closed` if the server closes the (already fully-drained)
+    // keep-alive socket while a slow consumer left the parser paused on
+    // backpressure. Since maxRate/onDownloadProgress is what makes this
+    // package the slow consumer, meterDownloadBody swallows exactly that
+    // false positive - but only once every `Content-Length` byte has
+    // actually reached the caller.
+    describe('undici slow-consumer mitigation (UND_ERR_SOCKET)', () => {
+      it('a fully-delivered body that errors with UND_ERR_SOCKET after Content-Length is satisfied ends normally instead of erroring', async () => {
+        const source = new Readable({ read() {} });
+        const wrapped = meterDownloadBody(source, { total: 5 });
+
+        const chunks: Buffer[] = [];
+        const errors: unknown[] = [];
+        wrapped.on('data', c => chunks.push(c));
+        wrapped.on('error', e => errors.push(e));
+        const ended = new Promise(resolve => wrapped.on('end', resolve));
+
+        source.push(Buffer.from('hello'));
+        await new Promise(r => setImmediate(r));
+
+        const err = new Error('other side closed') as NodeJS.ErrnoException;
+        err.code = 'UND_ERR_SOCKET';
+        source.emit('error', err);
+
+        await ended;
+        expect(Buffer.concat(chunks).toString()).toBe('hello');
+        expect(errors).toEqual([]);
+      });
+
+      it('a genuinely premature UND_ERR_SOCKET (fewer bytes than Content-Length) still errors', async () => {
+        const source = new Readable({ read() {} });
+        const wrapped = meterDownloadBody(source, { total: 10 });
+
+        const errors: unknown[] = [];
+        wrapped.on('data', () => undefined);
+        wrapped.on('error', e => errors.push(e));
+
+        source.push(Buffer.from('hello')); // only 5 of the promised 10 bytes
+        await new Promise(r => setImmediate(r));
+
+        const err = new Error('other side closed') as NodeJS.ErrnoException;
+        err.code = 'UND_ERR_SOCKET';
+        source.emit('error', err);
+
+        await new Promise(r => setImmediate(r));
+        expect(errors).toHaveLength(1);
+        expect((errors[0] as NodeJS.ErrnoException).code).toBe(
+          'UND_ERR_SOCKET',
+        );
+      });
+
+      it('a different error is never swallowed, even with the full body already delivered', async () => {
+        const source = new Readable({ read() {} });
+        const wrapped = meterDownloadBody(source, { total: 5 });
+
+        const errors: unknown[] = [];
+        wrapped.on('data', () => undefined);
+        wrapped.on('error', e => errors.push(e));
+
+        source.push(Buffer.from('hello'));
+        await new Promise(r => setImmediate(r));
+
+        source.emit('error', new Error('boom'));
+
+        await new Promise(r => setImmediate(r));
+        expect(errors).toHaveLength(1);
+        expect((errors[0] as Error).message).toBe('boom');
+      });
+
+      it('with no Content-Length (chunked/unknown length), UND_ERR_SOCKET is never swallowed', async () => {
+        const source = new Readable({ read() {} });
+        const wrapped = meterDownloadBody(source, {});
+
+        const errors: unknown[] = [];
+        wrapped.on('data', () => undefined);
+        wrapped.on('error', e => errors.push(e));
+
+        source.push(Buffer.from('hello'));
+        await new Promise(r => setImmediate(r));
+
+        const err = new Error('other side closed') as NodeJS.ErrnoException;
+        err.code = 'UND_ERR_SOCKET';
+        source.emit('error', err);
+
+        await new Promise(r => setImmediate(r));
+        expect(errors).toHaveLength(1);
+      });
+    });
   });
 });
