@@ -196,21 +196,21 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
     - merge the promise `.then()` calls
     - avoid `AxiosHeaders` Proxy access on the hot path
 - [x] ★ **Abort the request on unsubscribe.** Done in PR #15. This is the same item as in phase 2. It costs 1–3 µs per request.
-- [~] ★ **bench: a fair app set.** PR #29 open (`claude/bench-fair`).
+- [x] ★ **bench: a fair app set.** PR #29, merged.
   - Configurations: `@nestjs/axios` and nestjs-axios-undici in identical apps, each with and without the same axiosRef interceptor (no stdout logging), plus raw undici as the floor.
   - The mock backend runs with `logger: false`.
   - Drop `nestjs-fastify-undici`, the upstream `nestjs-undici` dependency, and the 3 separate compose files.
   - Decided: both Express and Fastify.
   - Update the k6 script and the report generator to match.
-- [~] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. PR #29 open (`claude/bench-fair`). Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
+- [x] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. PR #29, merged. Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
 - [ ] Later: cheaper request-adapter paths (saves 2–8 µs), a streaming `maxContentLength` check, instruction-count benchmarks, and the full k6 run on the version PR before publish.
 
 ### Phase 5: docs (see `plan/reports/docs-critic.md`)
 
-- [~] bench: rewrite the report generator. The README and docs headline are generated from the same numbers, as ratios, with no caveats. PR #29 open (`claude/bench-fair`).
+- [x] bench: rewrite the report generator. The README and docs headline are generated from the same numbers, as ratios, with no caveats. PR #29, merged.
 - [ ] docs: present the package on its own terms. Delete `docs/features.md`, trim the migration guide, keep the fork mention only in the README Credits.
 - [ ] docs: fix inaccurate or stale statements, keep the dispatcher snippet in one place, and use consistent terminology.
-- [~] bench: turn `benchmarks/README.md` into a short how-to-run page. PR #29 open (`claude/bench-fair`).
+- [x] bench: turn `benchmarks/README.md` into a short how-to-run page. PR #29, merged.
 
 ### Phase 6: 1.0.0 release
 
@@ -311,3 +311,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - The setup is fair: byte-identical app code, the same logging-free interceptor, keep-alive on both sides.
   - The reviewer's own run reproduced about 3.9x.
   - Fixes: the README's stale hand-typed "About 2x" lead-in is replaced by a number-free one; the generated headline now labels local-run numbers as preliminary until the full Docker + k6 run replaces them; the k6 harness shuffles the service order each run, instead of always running axios first.
+- 2026-09-26: PR #29 merged: fair benchmarks (one shared Nest app, Express+Fastify, identical interceptor, raw-undici floor, shuffled k6 order), rewritten generator (ratio headline marked preliminary until a full Docker+k6 run), `bench:ab` informational PR check, how-to-run README. The full release benchmark run will replace the preliminary 4x local-run headline. PR #28's upstream job failed on first CI run (strategy b deadline hit and an IPv6 env-dependent test), sent back to its worker.
