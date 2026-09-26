@@ -26,7 +26,22 @@ describe('HttpService duplicate response headers', () => {
 
   beforeAll(async () => {
     server = createServer(socket => {
-      socket.once('data', () => {
+      socket.once('data', data => {
+        if (data.toString('latin1').startsWith('GET /redirect ')) {
+          socket.end(
+            [
+              'HTTP/1.1 302 Found',
+              'Location: /',
+              'X-Foo: one',
+              'X-Foo: two',
+              'Content-Length: 0',
+              'Connection: close',
+              '',
+              '',
+            ].join('\r\n'),
+          );
+          return;
+        }
         socket.end(
           [
             'HTTP/1.1 200 OK',
@@ -80,6 +95,23 @@ describe('HttpService duplicate response headers', () => {
   it('joins a duplicate cookie header with "; ", like axios/Node', async () => {
     const response = await firstValueFrom(service.request(baseUrl));
     expect(response.headers['cookie']).toBe('c=1; d=2');
+  });
+
+  it('hands beforeRedirect the same joined headers, like axios/follow-redirects', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const response = await firstValueFrom(
+      service.request({
+        url: `${baseUrl}/redirect`,
+        beforeRedirect: (
+          _options: unknown,
+          details: { headers: Record<string, unknown> },
+        ) => {
+          seen = details.headers;
+        },
+      } as any),
+    );
+    expect(response.data).toBe('ok');
+    expect(seen?.['x-foo']).toBe('one, two');
   });
 
   it('leaves a response with no duplicated headers untouched', async () => {
