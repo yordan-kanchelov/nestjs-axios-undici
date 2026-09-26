@@ -2,7 +2,9 @@ import type {
   AxiosLikeRequestConfig,
   AxiosLikeResponse,
   AxiosParamsSerializer,
+  AxiosProgressEvent,
   AxiosResponseType,
+  FormSerializerOptions,
   InternalAxiosLikeRequestConfig,
 } from './axios-compatible.interface';
 import type { AxiosHeaders } from './axios-headers';
@@ -116,6 +118,14 @@ export interface AxiosRefDefaults<D = any> {
     | Array<((config: any) => Promise<any>) | string>;
   /** Accepted for axios compatibility; a no-op, like axios itself on Node.js. */
   withCredentials?: boolean;
+  /** See `AxiosLikeRequestConfig.onUploadProgress`. */
+  onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /** See `AxiosLikeRequestConfig.onDownloadProgress`. */
+  onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /** See `AxiosLikeRequestConfig.maxRate`. */
+  maxRate?: number | [number, number];
+  /** See `AxiosLikeRequestConfig.formSerializer`. */
+  formSerializer?: FormSerializerOptions;
 }
 
 /**

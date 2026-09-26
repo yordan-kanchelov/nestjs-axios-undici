@@ -10,7 +10,9 @@ import type {
 import type { AxiosHeaders } from '../interfaces/axios-headers';
 import type {
   AxiosParamsSerializer,
+  AxiosProgressEvent,
   AxiosResponseType,
+  FormSerializerOptions,
 } from '../interfaces/axios-compatible.interface';
 
 export type UndiciURLType = string | URL | UrlObject;
@@ -126,6 +128,14 @@ export interface HttpModuleOptions {
   /** Ignored (a warning is logged); implement XSRF headers with an interceptor. */
   xsrfCookieName?: string;
   xsrfHeaderName?: string;
+  /** Seeded into `axiosRef.defaults.onUploadProgress`; a per-request value wins. */
+  onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /** Seeded into `axiosRef.defaults.onDownloadProgress`; a per-request value wins. */
+  onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /** Seeded into `axiosRef.defaults.maxRate`. */
+  maxRate?: number | [number, number];
+  /** Seeded into `axiosRef.defaults.formSerializer`. */
+  formSerializer?: FormSerializerOptions;
 
   // --- not an axios option: opt-in cookie storage/replay ---
   /**

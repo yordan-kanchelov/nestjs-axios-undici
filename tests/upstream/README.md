@@ -124,6 +124,14 @@ both axios expected-failures files rather than given a fixed expected
 outcome: it fails in a sandbox with no IPv6 and passes on a real Actions
 runner, and neither outcome says anything about this package.
 
+### Internet access
+
+`should not throw TypeError when a proxy agent stream does not define
+setKeepAlive (regression #10908)` passes a mock `transport`, a Node
+http-specific option this package ignores, so the request goes out for real
+to `http://example.com/`. It passes on a runner with internet access and
+fails offline, so it's `environmentDependent` in both axios files too.
+
 ## Licence
 
 `@nestjs/axios` and `axios` are both MIT licensed. This package clones them at
