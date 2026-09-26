@@ -114,9 +114,9 @@ function buildHeadline(runs) {
   // headline itself, until the next full run replaces them.
   const local = runs.some((r) => /^Local run/i.test(r.data.test_info?.environment ?? ''));
   return (
-    `Same NestJS app, only the import changed: **nestjs-axios-undici served ${range(throughput)}x the requests/s of ` +
-    `@nestjs/axios, with ${range(p95, 0)}% lower p95 latency** (Express and Fastify, Node.js ${versions}).` +
-    (local ? ' Preliminary: from a short local run; the full Docker + k6 benchmark replaces these numbers on the next release.' : '')
+    `In the same NestJS app, with only the import changed, **nestjs-axios-undici served ${range(throughput)}x the requests per second ` +
+    `of @nestjs/axios, with ${range(p95, 0)}% lower p95 latency**, on Express and Fastify with Node.js ${versions}.` +
+    (local ? ' These numbers are preliminary, from a short local run. The full Docker and k6 benchmark replaces them on the next release.' : '')
   );
 }
 
@@ -146,23 +146,25 @@ function niceStep(max, target = 5) {
   return [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((step) => step >= raw);
 }
 
-// Horizontal bars of average latency for one Node.js version, colored by HTTP client
+const clientOf = (key) => (key === 'undici_raw' ? 'raw' : key.includes('undici') ? 'undici' : 'axios');
+
+// Horizontal bars of one metric for one Node.js version, colored by HTTP client
 // (undici blue, axios orange, the raw-undici floor grey). Always the light palette:
 // the docs site is light-only, so a dark-mode override would put white text on a
 // white page (see the "readable benchmark chart in dark mode" fix).
-function latencyChart(run) {
+function barChart(run, { field, valueText, titleText, ariaLabel, valueWidth = 80 }) {
   const bars = CONFIGS.map((c) => ({
+    key: c.key,
     label: c.label,
-    value: metric(run, c.key, 'duration_avg'),
-    p95: metric(run, c.key, 'duration_p95'),
-    client: c.key === 'undici_raw' ? 'raw' : c.key.includes('undici') ? 'undici' : 'axios',
+    value: metric(run, c.key, field),
+    client: clientOf(c.key),
   })).filter((b) => isNum(b.value));
   const labelWidth = 260;
   const plotWidth = 400;
   const rowHeight = 30;
   const barHeight = 16;
   const top = 36;
-  const width = labelWidth + plotWidth + 80;
+  const width = labelWidth + plotWidth + valueWidth;
   const height = top + bars.length * rowHeight + 28;
   const step = niceStep(Math.max(...bars.map((b) => b.value)));
   const axisMax = Math.ceil(Math.max(...bars.map((b) => b.value)) / step) * step;
@@ -182,11 +184,11 @@ function latencyChart(run) {
     const x0 = labelWidth;
     const d = `M${x0},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${barHeight - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;
     return (
-      `<g class="bar"><title>${escapeXml(`${b.label}: ${formatNumber(b.value)} ms average, ${formatNumber(b.p95)} ms p95`)}</title>` +
+      `<g class="bar"><title>${escapeXml(titleText(b))}</title>` +
       `<rect x="0" y="${top + i * rowHeight}" width="${width}" height="${rowHeight}" fill="transparent"/>` +
       `<text class="label" x="${labelWidth - 10}" y="${y + barHeight / 2}" text-anchor="end" dominant-baseline="central">${escapeXml(b.label)}</text>` +
       `<path class="${b.client}" d="${d}"/>` +
-      `<text class="value" x="${x(b.value) + 6}" y="${y + barHeight / 2}" dominant-baseline="central">${formatNumber(b.value, 1)} ms</text></g>`
+      `<text class="value" x="${x(b.value) + 6}" y="${y + barHeight / 2}" dominant-baseline="central">${escapeXml(valueText(b))}</text></g>`
     );
   });
   const legend =
@@ -199,7 +201,7 @@ function latencyChart(run) {
 
   return [
     '<div style="overflow-x:auto">',
-    `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:620px" role="img" aria-label="Average response time in milliseconds on Node.js ${run.version}, lower is better">`,
+    `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:620px" role="img" aria-label="${escapeXml(ariaLabel)}">`,
     '<style>',
     '.bench-chart{--ink:#0b0b0b;--ink-2:#52514e;--grid:#e4e3df;--undici:#2a78d6;--axios:#eb6834;--raw:#9a9890;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
     '.bench-chart .label{fill:var(--ink)}.bench-chart .value,.bench-chart .tick{fill:var(--ink-2);font-variant-numeric:tabular-nums}',
@@ -212,6 +214,43 @@ function latencyChart(run) {
     '</svg>',
     '</div>',
   ].join('');
+}
+
+function latencyChart(run) {
+  return barChart(run, {
+    field: 'duration_avg',
+    valueText: (b) => `${formatNumber(b.value, 1)} ms`,
+    titleText: (b) => `${b.label}: ${formatNumber(b.value)} ms average, ${formatNumber(metric(run, b.key, 'duration_p95'))} ms p95`,
+    ariaLabel: `Average response time in milliseconds on Node.js ${run.version}, lower is better`,
+  });
+}
+
+// Requests/s per configuration. Each nestjs-axios-undici bar also shows its
+// multiple of the @nestjs/axios bar on the same platform (the PAIRS table), so
+// the "Nx the requests" figure reads straight off the chart.
+function throughputChart(run) {
+  const rps = (v) => Math.round(v).toLocaleString('en-US');
+  const ratioOf = (key) => {
+    const pair = PAIRS.find((p) => p.undici === key);
+    const ratio = pair ? throughputRatio(run, pair.undici, pair.axios) : NaN;
+    return isNum(ratio) ? ratio : undefined;
+  };
+  return barChart(run, {
+    field: 'rps',
+    valueWidth: 150,
+    valueText: (b) => {
+      const ratio = ratioOf(b.key);
+      return ratio === undefined ? `${rps(b.value)} req/s` : `${rps(b.value)} req/s (${ratio.toFixed(1)}x)`;
+    },
+    titleText: (b) => {
+      const pair = PAIRS.find((p) => p.undici === b.key);
+      const ratio = ratioOf(b.key);
+      return ratio === undefined
+        ? `${b.label}: ${rps(b.value)} requests/s`
+        : `${b.label}: ${rps(b.value)} requests/s, ${ratio.toFixed(2)}x ${labelOf(pair.axios)}`;
+    },
+    ariaLabel: `Throughput in requests per second on Node.js ${run.version}, higher is better`,
+  });
 }
 
 function ratioTable(runs) {
@@ -253,9 +292,15 @@ function buildDocsPage(runs) {
     '',
     '## Throughput and latency ratios',
     '',
-    'nestjs-axios-undici against `@nestjs/axios`, same platform, same app, only the import changed. Lower latency is better; a throughput ratio above 1x means more requests/s.',
+    'Each row compares nestjs-axios-undici with `@nestjs/axios` in the same app on the same platform. Only the import changes. A throughput ratio above 1x means more requests per second.',
     '',
     ratioTable(runs),
+    '',
+    `## Throughput on Node.js ${latest.version}`,
+    '',
+    'Requests per second; higher is better. Each nestjs-axios-undici bar shows its multiple of `@nestjs/axios` on the same platform.',
+    '',
+    throughputChart(latest),
     '',
     `## Average response time on Node.js ${latest.version}`,
     '',
@@ -265,13 +310,13 @@ function buildDocsPage(runs) {
     '',
     "## What's measured",
     '',
-    `- Each app makes 5 parallel GET calls to a mock backend and returns the parsed bodies; only the \`HttpModule\`/\`HttpService\` import changes between the two rows for a given platform - see [\`benchmarks/apps/nestjs-app\`](${repo}/tree/main/benchmarks/apps/nestjs-app).`,
-    '- The "with an interceptor" rows add the same `axiosRef` request/response interceptor to both clients (it sets a header and times the call), with no per-request logging.',
+    `- Each request to the app makes 5 parallel GET calls to a mock backend and returns the parsed bodies. For a given platform, only the \`HttpModule\`/\`HttpService\` import changes between the two rows. The app is [\`benchmarks/apps/nestjs-app\`](${repo}/tree/main/benchmarks/apps/nestjs-app).`,
+    '- The "with an interceptor" rows add the same `axiosRef` request and response interceptor to both clients. It sets a header and times the call, and logs nothing per request.',
     `- [\`benchmarks/apps/undici-raw\`](${repo}/tree/main/benchmarks/apps/undici-raw) calls undici directly, with no \`HttpModule\`/\`HttpService\` at all, as a floor for the other rows.`,
     '',
     '## Full results',
     '',
-    `Tested on Node.js ${versions}. See Environment below for how these numbers were produced.`,
+    `Tested on Node.js ${versions}. The Environment section below says where these numbers come from.`,
     '',
     '### Average response time (ms)',
     '',
