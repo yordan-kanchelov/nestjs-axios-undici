@@ -6,10 +6,10 @@ files of the two projects it's a drop-in replacement for: `@nestjs/axios` and
 - see `plan/reports/upstream-test-suites.md`) because they're runnable,
 maintained CI jobs now, not one-off explorations, but under their own
 `tests/upstream/` folder rather than plain `tests/*.spec.ts` because Jest's
-`testRegex` must never pick up the files they generate or copy from an
-upstream clone (see the root `jest.config.js`'s `roots`/`testRegex`, which
-only cover `src/` and `tests/` outside `tests/upstream/scripts` themselves;
-none of the runner scripts below are named `*.spec.*`/`*.test.*`).
+`testRegex` (`(/__tests__/.*|(\.|/)(test|spec))\.(t|j)s$`, in the root
+`jest.config.js`) must never pick up a spec file this suite copies out of an
+upstream clone at run time - none of the files below are named
+`*.spec.*`/`*.test.*` themselves, so `npm run test:jest` never sees them.
 
 ## What runs, and why two axios strategies
 
@@ -59,9 +59,42 @@ printed to the console and appended to `$GITHUB_STEP_SUMMARY` in CI.
 
 `tests/upstream/axios/run.mjs` also keeps a small `HARD_EXCLUDES` list (tests
 that must never even start, e.g. because they hang the whole file rather than
-failing - see that file's comment for the one bisected, concrete case) as a
-regex passed to vitest's `-t`, separate from `expected-failures*.json` since
+failing - see that file's comment for each bisected, concrete case) as a
+filter passed to vitest's `-t`, separate from `expected-failures*.json` since
 those tests never run at all.
+
+## Keeping the axios suite from hanging
+
+A full, unfiltered run of axios' `tests/unit/adapters/http.test.js` hung early
+when first prototyped (see `plan/reports/upstream-test-suites.md`). Bisecting
+it found two real causes, both fixed here (not in `src/`):
+
+- Upstream's own fixture (`tests/setup/server.js`, not modified) calls
+  `server.listen(port, callback)` and only ever invokes `callback` on success
+  - a bind failure (`EADDRINUSE`) has no way to reach it. Around 200 of this
+    file's tests share one fixed port; if a previous test's socket hadn't
+    fully released it yet, the next one could hang forever waiting for a
+    callback that was never coming. `adapters/ephemeral-ports.cjs` patches
+    `net.Server.prototype.listen` to swap that fixture's fixed ports for `0`
+    (an OS-assigned one) transparently - every test reads the real bound port
+    back off `server.address().port` anyway, except one that hardcodes the
+    literal port number in a redirect `Location` header, listed as an
+    expected failure instead of fixed.
+- An undrained response body on a `buildRedirectHop` security-check failure
+  (a thrown `beforeRedirect`, a cross-origin header-stripping check) leaked
+  its connection; fixed in `adapters/undici-adapter.cjs` by draining the body
+  on that path too, matching `HttpService.executeRequest`.
+
+Even so, this specific (heavily shared, contended) sandbox occasionally still
+needs a retry for reasons not fully pinned down beyond "socket-level timing
+under load" - a real, dedicated CI runner is expected to need this far less.
+`run.mjs` runs the file across several vitest processes instead of one (a
+fresh process reclaims the OS port instantly on exit, unlike the graceful,
+in-process `server.close()` the fixture's own cleanup relies on), and
+recursively splits and retries any chunk that doesn't produce a report, down
+to one test at a time, bounded by a per-strategy wall-clock deadline
+(`STRATEGY_DEADLINE_MS`) so a bad run degrades to "some tests reported as
+failed, not evaluated" rather than hanging the whole job.
 
 ## Licence
 

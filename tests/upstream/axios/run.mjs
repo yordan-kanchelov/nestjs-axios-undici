@@ -48,6 +48,8 @@ const HARD_EXCLUDES = {
     "harness limitation: simulates a hung TCP connect with a custom Node http.Agent (HangingConnectAgent, a stubbed net.Socket that never connects) passed as config.httpAgent - undici has no concept of a Node http.Agent, so this adapter ignores it and makes a REAL DNS lookup for the test's fake hostname (connect-timeout.test) instead. In a network-restricted sandbox/CI runner that lookup can hang well past the test's own guard timeout (it blocks a libuv threadpool worker, not cancelled by aborting the request), which was bisected as the actual cause of the harness hang this file's header describes: it wedged the threadpool and cascaded 15s timeouts into every later test in the file.",
   'should not time out immediately for timeout set to zero during TCP connect':
     'harness limitation: same HangingConnectAgent/fake-hostname pattern as the case above, same reason.',
+  'should allow passing FormData':
+    "harness limitation: real axios' own http adapter detects a form-data-shaped body (a `getHeaders()` method) and merges its computed headers - crucially the multipart boundary - into the request; this bare test adapter doesn't reimplement that (it isn't part of the response/error/redirect code it reuses from src/), so the request goes out with the test's own plain `Content-Type: multipart/form-data` and no boundary. The server side's multipart parser (formidable, upstream's own fixture) then waits indefinitely for a boundary it never finds, which hangs the whole request rather than failing it - confirmed to reproduce even with this one test running alone. Strategy (a) (axiosRef as the instance) exercises this package's real `postForm`/multipart handling instead.",
 };
 
 function escapeRegExp(s) {
@@ -78,7 +80,7 @@ function writeSetup(file, contents) {
 // that runs into the issue can only ever cost that one chunk, never cascade
 // into the rest of the file - and each chunk still has a hard timeout
 // (below), so a genuine hang inside one is bounded, not fatal to the run.
-const CHUNK_SIZE = 15;
+const CHUNK_SIZE = 25;
 const CHUNK_TIMEOUT_MS = 20_000;
 // A hard ceiling on how long the split-and-retry dance above is allowed to
 // keep going, for one strategy, before it gives up on whatever's left and
@@ -86,7 +88,7 @@ const CHUNK_TIMEOUT_MS = 20_000;
 // in bounded time instead of chasing it arbitrarily long (see CI's "keep it
 // well under 5 minutes" budget: two strategies, each capped here, plus the
 // nestjs-axios suite's few seconds, comfortably fits).
-const STRATEGY_DEADLINE_MS = 90_000;
+const STRATEGY_DEADLINE_MS = 150_000;
 
 /** `vitest list --json`: the ordered, full list of test names in the file (no filter applied). */
 function listTests({ cloneDir, vitestConfigPath, env }) {
@@ -295,11 +297,14 @@ export async function main(argv = process.argv.slice(2)) {
   console.log('[axios] [4/4] running both strategies ...');
   let failing = false;
 
+  const ephemeralPortsImport = `import ${JSON.stringify(path.join(HERE, 'adapters', 'ephemeral-ports.cjs'))};\n`;
+
   if (STRATEGY === 'a' || STRATEGY === 'both') {
     failing =
       (await runStrategy({
         name: 'a',
         cloneDir: CLONE_DIR,
+        setupContents: ephemeralPortsImport,
         aliasTarget: path.join(HERE, 'adapters', 'axiosref-instance.mjs'),
         expectedFailuresFile: path.join(
           HERE,
@@ -309,7 +314,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   if (STRATEGY === 'b' || STRATEGY === 'both') {
-    const setupContents = `import axios from ${JSON.stringify(path.join(CLONE_DIR, 'index.js'))};
+    const setupContents = `${ephemeralPortsImport}import axios from ${JSON.stringify(path.join(CLONE_DIR, 'index.js'))};
 import buildFullPath from ${JSON.stringify(path.join(CLONE_DIR, 'lib', 'core', 'buildFullPath.js'))};
 import { makeAdapter } from ${JSON.stringify(path.join(HERE, 'adapters', 'undici-adapter.cjs'))};
 

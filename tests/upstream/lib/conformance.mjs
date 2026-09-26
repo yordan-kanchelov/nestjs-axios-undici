@@ -102,16 +102,25 @@ export function normalizeTestName(name) {
  * Runs a Jest- or Vitest-produced JSON report (both use the same
  * `--json`/`--reporter=json` `testResults[].assertionResults[]` shape, with
  * `fullName` and `status` per test) into a flat list of
- * `{ fullName, status }`, `status` one of 'passed' | 'failed' | 'other'.
+ * `{ fullName, status }`, `status` one of 'passed' | 'failed'.
+ *
+ * Everything else (`pending`/`skipped`/`todo` - a test the `-t` filter
+ * didn't select for this run) is dropped rather than kept as some third
+ * status: a chunked run (tests/upstream/axios/run.mjs) merges *several*
+ * reports together, each one covering the whole upstream file but only
+ * really running its own slice - every other test in it shows up here as
+ * `skipped`. Keeping those entries around would let one file's "skipped"
+ * silently clobber another file's real "passed"/"failed" for the same test
+ * once the caller merges by name (last write wins) - dropping them here
+ * instead means only an actual pass or fail for a test is ever recorded.
  */
 export function readJsonReport(file) {
   const raw = JSON.parse(readFileSync(file, 'utf8'));
   const out = [];
   for (const suite of raw.testResults ?? []) {
     for (const a of suite.assertionResults ?? []) {
-      const status =
-        a.status === 'passed' || a.status === 'failed' ? a.status : 'other';
-      out.push({ fullName: normalizeTestName(a.fullName), status });
+      if (a.status !== 'passed' && a.status !== 'failed') continue;
+      out.push({ fullName: normalizeTestName(a.fullName), status: a.status });
     }
   }
   return out;
