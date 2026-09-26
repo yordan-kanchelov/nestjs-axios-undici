@@ -36,7 +36,7 @@ describe('CatsService', () => {
 });
 ```
 
-## Using Undici MockAgent
+## Using undici's MockAgent
 
 `MockAgent` intercepts requests inside the Node.js process, so the real `HttpService` logic (interceptors, response and error handling) is exercised.
 
@@ -71,7 +71,7 @@ describe('CatsService (Integration)', () => {
 });
 ```
 
-## Testing Interceptors
+## Testing interceptors
 
 An interceptor is a function (or an `intercept()` method) that takes a request and a handler, so it can be tested without a module or a server. Stub `next.handle()` and check the request it receives:
 
@@ -143,7 +143,7 @@ To test an interceptor together with the real `HttpService`, register it on `Htt
 
 ## Upstream conformance suites
 
-This package's own test suite is one thing; whether it actually behaves like `@nestjs/axios` and axios is another. `tests/upstream/` runs each project's *own, unmodified* test files against this package: `@nestjs/axios`'s `http.service.spec.ts`/`http.module.spec.ts` against `HttpModule`/`HttpService`, and axios' `tests/unit/adapters/http.test.js` against both `axiosRef` (as the axios instance) and a small adapter backed by this package's transport code. Each upstream project is cloned at a pinned tag at run time (never vendored), and a checked-in `expected-failures*.json` per suite tracks the known, already-understood gaps - the run fails on any *new* failure, and on any expected failure that starts passing (a fix landed; remove it from the list).
+This package's own test suite is one thing; whether it actually behaves like `@nestjs/axios` and axios is another. `tests/upstream/` runs each project's *own, unmodified* test files against this package: `@nestjs/axios`'s `http.service.spec.ts`/`http.module.spec.ts` against `HttpModule`/`HttpService`, and axios' `tests/unit/adapters/http.test.js` against both `axiosRef` (as the axios instance) and a small adapter backed by this package's transport code. Each upstream project is cloned at a pinned tag at run time (never vendored), and a checked-in `expected-failures*.json` per suite tracks the known, already-understood gaps. The run fails on any *new* failure, and on any expected failure that starts passing (a fix landed, so it's removed from the list).
 
 ```bash
 npm run test:upstream          # both suites
