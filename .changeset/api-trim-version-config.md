@@ -20,7 +20,7 @@ Trims the public API to a deliberate, explicit export list, checked against a co
 
 **`reflect-metadata` is no longer this package's own peer dependency.** Nothing in this library's source imports it; it's still required, transitively, because `@nestjs/common`/`@nestjs/core` themselves declare it as *their* peer dependency, so any app using this package already has to install it to satisfy Nest itself.
 
-See the [migration guide](/docs/migration-guide.md#public-api-trim) for the full list and replacements.
+See the [migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide?id=types) for the full list and replacements.
 
 ---
 

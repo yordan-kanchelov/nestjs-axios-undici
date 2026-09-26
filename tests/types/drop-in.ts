@@ -3,7 +3,7 @@
 // that already holds is plain code; a case that doesn't yet hold is pinned
 // with `@ts-expect-error` and a reason, so fixing it forces this file to be
 // updated (the stale directive then fails to compile).
-// Port of plan/prototypes/automation/differential/drop-in.types.ts (plan.md phase 1 item C).
+// Drop-in type checks (plan.md phase 1 item C).
 import type {
   HttpService as RefHttpService,
   HttpModuleOptions as RefHttpModuleOptions,
