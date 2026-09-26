@@ -40,22 +40,34 @@ directory (`--clone-dir`, defaulting under `os.tmpdir()`), never vendored.
 ## Expected failures
 
 Each suite/strategy has an `expected-failures*.json`: `{ "<test full
-name>": "<reason>" }`. A reason is either a `plan.md` item (something still
-to fix) or one of `deliberate difference` / `Node http-specific` /
-`harness limitation` (see each file for specifics). The runner
-(`tests/upstream/lib/conformance.mjs`) diffs the actual pass/fail set against
-this list on every run, the same `knownDifference` discipline
-`tests/compat/differential/harness.ts` uses:
+name>": "<reason>" }`, or, for a test whose outcome depends on the runner's
+own environment rather than on this package (see "IPv6" below), `{ "<name>":
+{ "reason": "...", "environmentDependent": true } }`. A plain-string reason
+is either a `plan.md` item (something still to fix) or one of `deliberate
+difference` / `Node http-specific` / `harness limitation` (see each file for
+specifics). The runner (`tests/upstream/lib/conformance.mjs`) diffs the
+actual result set against this list on every run, the same `knownDifference`
+discipline `tests/compat/differential/harness.ts` uses:
 
 - an expected failure that still fails: fine, silently counted.
 - an expected failure that now **passes**: the run **fails** ("remove it from
   the list" - the underlying fix landed).
 - a failure **not** on the list: the run **fails** (a new regression).
 - an expected-failures entry for a test the suite no longer even runs (e.g. a
-  rename after bumping the pinned tag): the run **fails** (a stale entry).
+  rename after bumping the pinned tag): the run **fails** (a stale entry) -
+  an `environmentDependent` entry is exempt, since it's fine for one of those
+  to go unseen on a run where a filter didn't happen to select it.
+- an `environmentDependent` entry may pass **or** fail on any given run;
+  either way it's tracked in its own bucket, never treated as new or fixed.
+- a test whose chunk (see below) never produced a result at all - a genuine
+  hang, or the per-strategy deadline was reached first - is reported **NOT
+  EVALUATED**, in its own bucket, and **always fails the run**: pass/fail for
+  it is simply unknown, and this runner never silently folds "unknown" into
+  "expected" or "passed" the way a naive diff would.
 
-A short summary (passed / expected failures / new failures / fixed) is
-printed to the console and appended to `$GITHUB_STEP_SUMMARY` in CI.
+A short summary (passed / expected failures / new failures / fixed / not
+evaluated / environment-dependent) is printed to the console and appended to
+`$GITHUB_STEP_SUMMARY` in CI.
 
 `tests/upstream/axios/run.mjs` also keeps a small `HARD_EXCLUDES` list (tests
 that must never even start, e.g. because they hang the whole file rather than
@@ -66,8 +78,9 @@ those tests never run at all.
 ## Keeping the axios suite from hanging
 
 A full, unfiltered run of axios' `tests/unit/adapters/http.test.js` hung early
-when first prototyped (see `plan/reports/upstream-test-suites.md`). Bisecting
-it found two real causes, both fixed here (not in `src/`):
+when first prototyped (see `plan/reports/upstream-test-suites.md`), and again
+on a real, dedicated GitHub Actions runner once this suite first shipped.
+Bisecting it found two distinct, real causes:
 
 - Upstream's own fixture (`tests/setup/server.js`, not modified) calls
   `server.listen(port, callback)` and only ever invokes `callback` on success
@@ -79,22 +92,37 @@ it found two real causes, both fixed here (not in `src/`):
     (an OS-assigned one) transparently - every test reads the real bound port
     back off `server.address().port` anyway, except one that hardcodes the
     literal port number in a redirect `Location` header, listed as an
-    expected failure instead of fixed.
-- An undrained response body on a `buildRedirectHop` security-check failure
-  (a thrown `beforeRedirect`, a cross-origin header-stripping check) leaked
-  its connection; fixed in `adapters/undici-adapter.cjs` by draining the body
-  on that path too, matching `HttpService.executeRequest`.
+    expected failure instead of fixed. Fixed.
+- The file's `progress`/`Rate limit` describe blocks are genuinely,
+  deliberately slow **by test design**, not hung: e.g. "should support upload
+  progress capturing" `await`s a real `setTimeout(..., 1100)` ten times in its
+  own body (~11s), to produce ten distinct progress samples over real time.
+  Several such tests sit close together in file order; bundled into one
+  chunk (below), their legitimate durations simply add up past a short
+  per-attempt timeout, indistinguishable from a hang from the outside. This
+  isn't a bug to fix in the adapter - it just needs a per-attempt timeout
+  with headroom for a few such tests (`CHUNK_TIMEOUT_MS`), and a chunk small
+  enough that a cluster of them doesn't dominate one attempt (`CHUNK_SIZE`).
 
-Even so, this specific (heavily shared, contended) sandbox occasionally still
-needs a retry for reasons not fully pinned down beyond "socket-level timing
-under load" - a real, dedicated CI runner is expected to need this far less.
 `run.mjs` runs the file across several vitest processes instead of one (a
 fresh process reclaims the OS port instantly on exit, unlike the graceful,
 in-process `server.close()` the fixture's own cleanup relies on), and
 recursively splits and retries any chunk that doesn't produce a report, down
 to one test at a time, bounded by a per-strategy wall-clock deadline
-(`STRATEGY_DEADLINE_MS`) so a bad run degrades to "some tests reported as
-failed, not evaluated" rather than hanging the whole job.
+(`STRATEGY_DEADLINE_MS`). Once that deadline is reached, whatever's left is
+reported NOT EVALUATED (see "Expected failures" above) rather than silently
+treated as failed or dropped. `.github/workflows/upstream.yml` runs the
+nestjs-axios suite and axios' two strategies as **3 parallel matrix jobs**,
+not one job in sequence, so a slow strategy's own deadline doesn't eat into
+a sibling's budget or the job's `timeout-minutes`.
+
+### IPv6
+
+`should support IPv6 literal strings` needs IPv6 support/routing on the
+runner (an `::1` bind and connect). It's marked `environmentDependent` in
+both axios expected-failures files rather than given a fixed expected
+outcome: it fails in a sandbox with no IPv6 and passes on a real Actions
+runner, and neither outcome says anything about this package.
 
 ## Licence
 

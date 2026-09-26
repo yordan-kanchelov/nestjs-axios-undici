@@ -60,35 +60,49 @@ function writeSetup(file, contents) {
   writeFileSync(file, contents);
 }
 
-// One test file, run to completion, hangs early in this sandbox (see
-// tests/upstream/README.md and the report): several tests deliberately fail
-// a redirect hop for security reasons, and something about that sequence -
-// bisected down to this, not a leaked handle this adapter itself owns (a
-// dedicated, always-destroyed undici Agent per call made no difference; nor
-// did draining every response body on every error path) - occasionally
-// leaves the suite's one fixed test port (8020) unusable for long enough
-// that the *next* test's `server.listen()` never calls back at all: a real
-// bug in the fixture itself (tests/setup/server.js, upstream's file, not
-// modified here - `listen(port, cb)`'s callback only ever fires on
-// success, so a bind failure has no way to reach it; it only reproduces
-// with this package's adapter, not axios' own).
+// One test file, run to completion, hangs early in this sandbox and on a
+// real, dedicated GitHub Actions runner alike (see tests/upstream/README.md
+// and the report) - two real, distinct causes, both root-caused:
+//
+// 1. Several tests deliberately fail a redirect hop for security reasons;
+//    an undrained response body on that path could leave the suite's one
+//    fixed test port unusable long enough that the *next* test's
+//    `server.listen()` never calls back at all (a real bug in the fixture
+//    itself, tests/setup/server.js, not modified here - `listen(port, cb)`'s
+//    callback only ever fires on success). Fixed by draining the body on
+//    that path too (undici-adapter.cjs) and by `adapters/ephemeral-ports.cjs`
+//    (swaps the fixture's fixed ports for OS-assigned ones, so two tests can
+//    never contend for the same port in the first place).
+// 2. The file's `progress`/`Rate limit` describe blocks are genuinely,
+//    deliberately slow BY DESIGN, not hung: e.g. "should support upload
+//    progress capturing" awaits `setTimeout(..., 1100)` ten times in its own
+//    body (~11s), to produce ten distinct progress samples over real time.
+//    Several such tests (10-15s+ each) sit close together in file order;
+//    bundled into one chunk, their real, legitimate durations simply add up
+//    past a short per-attempt timeout, which looks identical to a hang from
+//    the outside (a `signal: null, status: 143` kill). This is the runner's
+//    own tuning problem, not a bug to fix in the adapter: give every attempt
+//    enough headroom for a few such tests, and this is bounded and correct.
 //
 // Splitting the single vitest invocation into several, each running one
-// contiguous slice of the file's tests, sidesteps it directly: a fresh
-// process reclaims the OS-level port immediately on exit (not the graceful,
-// in-process `server.close()` upstream's own cleanup relies on), so a chunk
-// that runs into the issue can only ever cost that one chunk, never cascade
-// into the rest of the file - and each chunk still has a hard timeout
-// (below), so a genuine hang inside one is bounded, not fatal to the run.
-const CHUNK_SIZE = 25;
-const CHUNK_TIMEOUT_MS = 20_000;
+// contiguous slice of the file's tests, handles cause 1 directly (a fresh
+// process reclaims the OS-level port immediately on exit) and, combined
+// with a per-attempt timeout generous enough for a handful of slow tests,
+// handles cause 2: a slice that's still too slow (several 10s+ tests
+// together) gets split into smaller slices until each fits comfortably.
+// Every test that hits the (long, but finite) per-strategy deadline anyway
+// is reported as NOT EVALUATED (see conformance.mjs's `diffResults`), never
+// silently folded into "expected failure" or "passed".
+const CHUNK_SIZE = 10;
+const CHUNK_TIMEOUT_MS = 25_000;
 // A hard ceiling on how long the split-and-retry dance above is allowed to
 // keep going, for one strategy, before it gives up on whatever's left and
-// marks it failed - so a run that hits the issue repeatedly still finishes
-// in bounded time instead of chasing it arbitrarily long (see CI's "keep it
-// well under 5 minutes" budget: two strategies, each capped here, plus the
-// nestjs-axios suite's few seconds, comfortably fits).
-const STRATEGY_DEADLINE_MS = 150_000;
+// reports it NOT EVALUATED - so a run that hits real, sustained slowness
+// still finishes in bounded time instead of chasing it arbitrarily long.
+// Each strategy (and the nestjs-axios suite) is its own parallel CI job
+// (.github/workflows/upstream.yml), so this doesn't share a budget with its
+// siblings the way it would in one serial job.
+const STRATEGY_DEADLINE_MS = 240_000;
 
 /** `vitest list --json`: the ordered, full list of test names in the file (no filter applied). */
 function listTests({ cloneDir, vitestConfigPath, env }) {
@@ -194,11 +208,11 @@ export default defineConfig({
     if (Date.now() > deadlineAt) {
       console.log(
         `[axios:${name}] slice "${label}" (${names.length} tests): strategy deadline ` +
-          `(${STRATEGY_DEADLINE_MS}ms) reached - not retrying further, treating as failed.`,
+          `(${STRATEGY_DEADLINE_MS}ms) reached - not retrying further, reporting NOT EVALUATED.`,
       );
       return names.map(n => ({
         fullName: normalizeTestName(n),
-        status: 'failed',
+        status: 'not_evaluated',
       }));
     }
     const resultsFile = path.join(
@@ -233,9 +247,11 @@ export default defineConfig({
     if (names.length === 1) {
       console.log(
         `[axios:${name}] "${names[0]}" produced no results file on its own ` +
-          `(signal: ${result.signal}, status: ${result.status}) - treating it as failed.`,
+          `(signal: ${result.signal}, status: ${result.status}) - reporting NOT EVALUATED.`,
       );
-      return [{ fullName: normalizeTestName(names[0]), status: 'failed' }];
+      return [
+        { fullName: normalizeTestName(names[0]), status: 'not_evaluated' },
+      ];
     }
     console.log(
       `[axios:${name}] slice "${label}" (${names.length} tests) produced no results file ` +

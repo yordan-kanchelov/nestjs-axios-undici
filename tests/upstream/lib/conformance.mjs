@@ -72,14 +72,37 @@ export function ensureClone({ url, ref, dir }) {
   );
 }
 
-/** Reads `expected-failures.json`: { "<test full name>": "<reason>" }. */
+/**
+ * Reads `expected-failures.json`: `{ "<test full name>": "<reason>" }`, or,
+ * for a test whose outcome depends on the environment rather than on this
+ * package (no IPv6 on the runner, a DNS/proxy quirk of one particular box -
+ * see `should support IPv6 literal strings`), `{ "<name>": { "reason":
+ * "...", "environmentDependent": true } }`: that entry is allowed to pass
+ * *or* fail on any given run, tracked separately, and never counted as a
+ * "new failure" or a stale "now passing, remove it" the way a plain string
+ * entry would be.
+ */
 export function loadExpectedFailures(file) {
   if (!existsSync(file)) return {};
   const data = JSON.parse(readFileSync(file, 'utf8'));
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error(`${file}: expected a JSON object of {testName: reason}`);
   }
+  for (const [name, value] of Object.entries(data)) {
+    const ok =
+      typeof value === 'string' ||
+      (value && typeof value === 'object' && typeof value.reason === 'string');
+    if (!ok) {
+      throw new Error(
+        `${file}: "${name}"'s value must be a reason string, or {reason, environmentDependent: true}`,
+      );
+    }
+  }
   return data;
+}
+
+function isEnvironmentDependent(entry) {
+  return !!(entry && typeof entry === 'object' && entry.environmentDependent);
 }
 
 /**
@@ -128,27 +151,55 @@ export function readJsonReport(file) {
 
 /**
  * Diffs a suite's actual results against its expected-failures list and
- * returns the four buckets the task asks for, plus whether the run should
- * fail: `newFailures.length > 0 || fixed.length > 0`.
+ * returns the buckets the task asks for, plus whether the run should fail.
+ *
+ * `results` may include a third status, `'not_evaluated'`: a test whose
+ * chunk (tests/upstream/axios/run.mjs) never produced a report at all
+ * (hung, or the per-strategy deadline was reached first). Those are
+ * *never* matched against `expected` - passing or failing is unknown, not
+ * "expected" or "new" - and always get their own bucket, reported
+ * separately, and always fail the run: an unevaluated test is exactly the
+ * silent gap this runner must not paper over.
+ *
+ * An `expected` entry marked `environmentDependent` (see
+ * `loadExpectedFailures`) is allowed to pass *or* fail on any given run;
+ * either way it's tracked in its own bucket, never `fixed` or `newFailures`.
  */
 export function diffResults(results, expected) {
   const passed = [];
   const expectedFail = [];
   const newFailures = [];
   const fixed = [];
+  const environmentDependent = [];
+  const notEvaluated = [];
   const seen = new Set();
 
-  // A chunked run (tests/upstream/axios/run.mjs) can, rarely, run the same
-  // test twice (a leaf title from one chunk matching as a substring inside
-  // another test's full name); keep only the last result for a given name
-  // rather than double-counting it.
+  // A chunked run can, rarely, run the same test twice (a leaf title from
+  // one chunk matching as a substring inside another test's full name);
+  // keep only the last result for a given name rather than double-counting
+  // it. A 'not_evaluated' result never overwrites a real passed/failed one
+  // for the same name (and vice versa isn't possible: each name is only
+  // ever in exactly one chunk's `names` list) - `not_evaluated` synthetic
+  // entries and real results never collide in practice, but prefer a real
+  // result if they ever do.
   const byName = new Map();
-  for (const r of results) byName.set(r.fullName, r);
+  for (const r of results) {
+    const prior = byName.get(r.fullName);
+    if (prior && prior.status !== 'not_evaluated' && r.status === 'not_evaluated') continue;
+    byName.set(r.fullName, r);
+  }
 
   for (const r of byName.values()) {
     seen.add(r.fullName);
+    const entry = expected[r.fullName];
     const isExpected = Object.prototype.hasOwnProperty.call(expected, r.fullName);
-    if (r.status === 'failed') {
+    const envDependent = isEnvironmentDependent(entry);
+
+    if (r.status === 'not_evaluated') {
+      notEvaluated.push(r);
+    } else if (envDependent) {
+      environmentDependent.push(r);
+    } else if (r.status === 'failed') {
       if (isExpected) expectedFail.push(r);
       else newFailures.push(r);
     } else if (r.status === 'passed') {
@@ -158,11 +209,24 @@ export function diffResults(results, expected) {
   }
 
   // An expected-failures entry for a test the suite no longer even runs
-  // (renamed/removed upstream) is just as stale as one that now passes -
-  // surface it the same way so the list stays accurate.
-  const stale = Object.keys(expected).filter(name => !seen.has(name));
+  // (renamed/removed upstream, or - this run - never evaluated) is just as
+  // stale as one that now passes for a plain entry - surface it the same
+  // way so the list stays accurate. An environment-dependent entry is
+  // exempt: it's fine for it to go unseen on a run where, say, this
+  // particular test didn't happen to be selected.
+  const stale = Object.keys(expected).filter(
+    name => !seen.has(name) && !isEnvironmentDependent(expected[name]),
+  );
 
-  return { passed, expectedFail, newFailures, fixed, stale };
+  return {
+    passed,
+    expectedFail,
+    newFailures,
+    fixed,
+    environmentDependent,
+    notEvaluated,
+    stale,
+  };
 }
 
 /** Prints the short summary the task asks for, and appends it to $GITHUB_STEP_SUMMARY if set. */
@@ -172,9 +236,18 @@ export function printSummary(suiteName, diff) {
   lines.push('');
   lines.push(
     `passed: ${diff.passed.length}, expected failures: ${diff.expectedFail.length}, ` +
-      `new failures: ${diff.newFailures.length}, fixed (remove from list): ${diff.fixed.length}` +
+      `new failures: ${diff.newFailures.length}, fixed (remove from list): ${diff.fixed.length}, ` +
+      `not evaluated: ${diff.notEvaluated.length}, environment-dependent: ${diff.environmentDependent.length}` +
       (diff.stale.length ? `, stale entries: ${diff.stale.length}` : ''),
   );
+  if (diff.notEvaluated.length) {
+    lines.push('');
+    lines.push(
+      'NOT EVALUATED (the chunk running these never produced a result - hung, or the ' +
+        'per-strategy deadline was reached first; pass/fail is unknown, not "expected"):',
+    );
+    for (const r of diff.notEvaluated) lines.push(`  - ${r.fullName}`);
+  }
   if (diff.newFailures.length) {
     lines.push('');
     lines.push('New failures (not in expected-failures.json):');
@@ -203,7 +276,12 @@ export function printSummary(suiteName, diff) {
 }
 
 export function isSuiteFailing(diff) {
-  return diff.newFailures.length > 0 || diff.fixed.length > 0 || diff.stale.length > 0;
+  return (
+    diff.newFailures.length > 0 ||
+    diff.fixed.length > 0 ||
+    diff.stale.length > 0 ||
+    diff.notEvaluated.length > 0
+  );
 }
 
 /** Thin wrapper around spawnSync that always inherits stdio and returns the exit status. */
