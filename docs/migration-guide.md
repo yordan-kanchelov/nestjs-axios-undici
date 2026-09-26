@@ -63,6 +63,8 @@ See the [benchmarks](/docs/benchmarks.md) for current throughput/latency numbers
 Only affects code that references this package's own type names (plain object literals for options/config are unaffected):
 
 - **`HttpModuleOptions` is strictly typed** - no more `& any`/`Partial<any>`. A typo (`{ timeuot: 5 }`) is now a compile error, as it always was against `@nestjs/axios`' own types.
+- **`HttpModule.registerAsync({})`** (none of `useFactory`/`useClass`/`useExisting` set) now throws a clear error at setup, instead of silently registering a broken provider.
+- **`response.headers`'s TypeScript type** changed from an `IncomingHttpHeaders`-based type to `Record<string, any>` (still a plain object at runtime - unaffected unless you referenced the old type by name).
 - **One request-config type.** `AxiosLikeRequestConfig`, `AxiosCompatibleRequestOptions`, `AxiosCompatibleRequestConfig` and `HttpRequestOptions` are merged into `AxiosLikeRequestConfig<D = any>`, used everywhere a request-level config is accepted. `post`/`put`/`patch` now have a real body type parameter: `post<T, D>(url, data?: D, config?: AxiosLikeRequestConfig<D>)`.
 - **`AxiosHeaders` casing.** Header names are now stored the way axios does - case-insensitive lookup, but `toJSON()`/`toString()`/iteration report the casing a header was *first set with*, and `normalize(true)` title-cases every name. If your code compared `Object.keys(headers.toJSON())` expecting lower-case keys, compare case-insensitively or use `headers.get()`/`.has()` instead. There's no `forEach()` (axios' own `AxiosHeaders` doesn't have one either) - use `for (const [key, value] of headers)`.
 - **`axiosRef` is now a real, callable axios instance**: `axiosRef(config)`, `getUri`, `create`, `postForm`/`putForm`/`patchForm`, `query`, a function `adapter`. `HttpService.query()` is implemented too.
@@ -75,6 +77,21 @@ Only affects code that references this package's own type names (plain object li
 - **Axios-named type aliases added**: `AxiosRequestConfig`/`AxiosResponse`/`AxiosInstance` are exported as aliases of this package's own `AxiosLikeRequestConfig`/`AxiosLikeResponse`/`AxiosRef`, so migrating code can drop its own `import ... from 'axios'` purely for these types (import under another name if a file already imports the same name from `axios` too).
 
 The full, frozen export list is checked in CI against [`etc/nestjs-axios-undici.api.md`](https://github.com/yordan-kanchelov/nestjs-axios-undici/blob/main/etc/nestjs-axios-undici.api.md).
+
+### Requests and responses
+
+See [Request config](/docs/axios-supported-options.md#request-config) and [Response](/docs/axios-supported-options.md#response) for the full behaviour:
+
+- **Requests now send axios' default headers**: `Accept: application/json, text/plain, */*`, `User-Agent: nestjs-axios-undici/<version>`, and `Accept-Encoding: gzip, deflate, br` (only when decompression is enabled). A POST/PUT/PATCH with no body still gets the default `Content-Type: application/x-www-form-urlencoded`, matching axios. Override any of these the axios way (`axiosRef.defaults.headers.common[...]`) or through module/per-request `headers`.
+- **Response bodies now decode like axios**: `+json` content types (e.g. `application/problem+json`) parse as JSON instead of coming back as a `Buffer`; a response with no `Content-Type`, or a text-ish one (`text/*`, `application/xml`, `application/x-www-form-urlencoded`, `image/svg+xml`, ...), decodes to a UTF-8 string, with a JSON-looking string parsed and silently falling back to the string on failure; `responseType: 'blob'` now returns a string, matching axios in Node.js; other binary content types are unaffected and still come back as a `Buffer`. `Content-Encoding: gzip`/`br`/`deflate` responses are now decompressed automatically (`decompress: false` opts out); `statusText` is now the server's real reason phrase.
+- **New capabilities**: `onUploadProgress`/`onDownloadProgress` (axios' own `AxiosProgressEvent` shape) and `maxRate` are now honoured (previously silently ignored), and `formSerializer` now drives `postForm`/`putForm`/`patchForm`. See [Progress callbacks, `maxRate` and `formSerializer`](/docs/axios-supported-options.md#progress-callbacks-maxrate-and-formserializer) for the couple of narrower gaps (e.g. no pre-computed `Content-Length` for a multipart upload's progress).
+
+### axiosRef interceptors
+
+- **Interceptor order now matches axios**: request interceptors run last-registered-first (LIFO), response interceptors first-registered-first (FIFO) - both were the other way round before.
+- **`response.config`/`error.config` are now one axios-shaped config object**, carried through from the request: raw (unserialised) `data`; `params` and `baseURL` as given (not merged into `url`); a lower-case `method`; `headers` as `AxiosHeaders`; and any custom field you set on the config (e.g. a `_retry` flag) survives the round trip. Before, these were rebuilt separately with the serialized body, the full combined URL, an upper-case method and no custom fields - so a "retry once on 401" interceptor looped forever and packages built on this pattern (`axios-retry`, `axios-auth-refresh`) didn't work. If you worked around either issue, you can remove the workaround.
+- **Unsubscribing from a request `Observable` before it emits now aborts the in-flight request** (rxjs `timeout()`, `switchMap`, `takeUntil`, `race`, ...), matching `@nestjs/axios`. Skipped once the response (or, for `responseType: 'stream'`, the headers) has already arrived.
+- **`axiosRef` request interceptors now run fresh on every subscription** instead of once when `get()`/`post()`/... is called, so `get().pipe(retry())` sends a new set of headers on each attempt instead of replaying the first one.
 
 ### Errors, timeouts and size limits
 
@@ -122,6 +139,7 @@ HttpModule.register({ cookieJar: new CookieJar() });
 - **`interceptorCount`** no longer counts a phantom interceptor or `axiosRef`'s own interceptors - it's the plain length of the module-registered chain.
 - **`undiciRef`** is now a read-only, frozen snapshot, not the live options object.
 - **Axios-only keys no longer leak into undici's dispatch options** (`auth`, `httpAgent`, `httpsAgent`, `proxy`, etc. are stripped once at setup).
+- **Axios-compatibility warnings are now logged through Nest's own `Logger`** (context `HttpModule`), not `console.warn`.
 
 ## Upgrading from `nestjs-undici-interceptors` (0.5.x)
 
@@ -144,7 +162,6 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 - Network, timeout and cancellation errors are wrapped in an `AxiosError` (`error.code` such as `ECONNREFUSED`, `ECONNABORTED`, `ERR_CANCELED`); the original undici error is kept in `error.cause`, so `instanceof undici.errors.*` checks must look at `error.cause`.
 - String and `Buffer` request bodies get `Content-Type: application/x-www-form-urlencoded` by default, as in axios (previously `application/json`). Falsy primitive bodies (`0`, `false`, `''`) are no longer sent.
 - Per-request headers are merged with module headers (case-insensitively) instead of replacing them.
-- Requests now send default `Accept`, `User-Agent` and `Accept-Encoding` headers, as axios does - see [Request config](/docs/axios-supported-options.md#request-config).
 - Module-level `timeout`, `auth`, `params` and `maxRedirects` now apply to every request, including with `registerAsync`.
 - `params`, `baseURL` joining, `responseType`, `signal`/`cancelToken`, `request(config)` and `axiosRef.defaults`/`axiosRef.get()` now work like axios - see [Axios Compatibility](/docs/axios-supported-options.md).
 
