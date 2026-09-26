@@ -1,6 +1,6 @@
 # Interceptors
 
-`nestjs-axios-undici` supports request/response interceptors in two styles: the axios-style `axiosRef.interceptors` API and native interceptors. You can also use [Undici's Dispatcher system](https://github.com/nodejs/undici#dispatcher) for lower-level control.
+`nestjs-axios-undici` supports request/response interceptors in two styles: the axios-style `axiosRef.interceptors` API and native interceptors. You can also use undici's own `Dispatcher` system for lower-level control - see [Custom Dispatchers](#custom-dispatchers) below.
 
 ## Axios-style Interceptors
 
@@ -42,7 +42,7 @@ this.httpService.axiosRef.interceptors.response.use(undefined, error => {
 });
 ```
 
-See [Supported Axios Options](/docs/axios-supported-options.md#axiosref).
+See [Axios Compatibility](/docs/axios-supported-options.md#axiosref).
 
 ## Native Interceptors
 
@@ -215,14 +215,4 @@ For testing interceptors, see [Testing](/docs/guides/testing.md#testing-intercep
 
 ## Custom Dispatchers
 
-For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module configuration (`dispatcher`), at runtime (`httpService.setDispatcher(...)`) or per request (`request(url, { dispatcher })`).
-
-```typescript
-import { Agent } from 'undici';
-
-HttpModule.register({
-  dispatcher: new Agent({ connections: 10 }),
-});
-```
-
-Please refer to the [Undici documentation](https://github.com/nodejs/undici) for `MockAgent`, `ProxyAgent` and other dispatchers.
+For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module options (`dispatcher`), at runtime (`httpService.setDispatcher(...)`) or per request (`request(url, { dispatcher })`). See [Advanced Configuration (Dispatchers)](/docs/guides/configuration.md#advanced-configuration-dispatchers) for how to build one, and the [undici documentation](https://github.com/nodejs/undici) for `MockAgent`, `ProxyAgent` and other dispatchers.
