@@ -111,6 +111,9 @@ See [Errors](/docs/axios-supported-options.md#errors) and [Request config](/docs
 - **`maxContentLength` is now also enforced for `responseType: 'stream'`** (previously uncapped).
 - **Header values with CRLF/other control characters are now sanitized like axios**, not rejected outright.
 - **`SizeLimitInterceptor`/`createSizeLimitInterceptor` are removed** - no replacement needed, the enforcement above is automatic.
+- **A numeric-string `timeout` (e.g. `timeout: '250'`) is now parsed and enforced like axios** - it used to reject with undici's raw `ERR_BAD_REQUEST`/"invalid headersTimeout" instead.
+- **A throwing `beforeRedirect` is now wrapped like axios (`follow-redirects`)** - `error.code` is `ERR_FR_REDIRECTION_FAILURE`, the message is `"Redirected request failed: <original message>"`, and `error.cause` is the original error. It used to propagate the raw, unwrapped error.
+- **BREAKING: a malformed request URL (an embedded null byte or other C0 control character, or a bare `\n`) now rejects synchronously** with `ERR_INVALID_URL`/`Invalid URL "...": missing "//" after protocol`, matching axios exactly. It used to be silently "fixed" (the offending characters stripped) and actually dispatched over the network.
 
 ### Redirects
 
