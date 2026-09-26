@@ -478,7 +478,7 @@ export class HttpService implements OnModuleDestroy {
   // The context `request()` dispatches with by default: this service's own
   // `defaults`/interceptors (the same objects `this._axiosRef` exposes).
   // `axiosRef.create()`-derived instances dispatch through
-  // `dispatchAxiosConfig` with their own context instead - see
+  // `dispatch()` with their own context instead - see
   // `axios-ref.factory.ts`.
   private readonly axiosContext: AxiosInstanceContext;
 
@@ -528,8 +528,13 @@ export class HttpService implements OnModuleDestroy {
     // from then on `defaults` is the single source of truth (see
     // `createAxiosRefDefaults`'s doc comment).
     const defaults = createAxiosRefDefaults(this.moduleOptions);
+    // The host is a closure over the private `dispatch()`, not `this`, so
+    // the bridge (and its internal context types) stays off the public API.
     this._axiosRef = createAxiosRef(
-      this,
+      {
+        dispatchAxiosConfig: (config, context) =>
+          this.dispatch(config, undefined, context),
+      },
       defaults,
       this.axiosRequestInterceptors,
       this.axiosResponseInterceptors,
@@ -842,23 +847,9 @@ export class HttpService implements OnModuleDestroy {
   }
 
   /**
-   * `AxiosRefHost.dispatchAxiosConfig`: the single entry point every
-   * axios-like instance `createAxiosRef` builds (the top-level `axiosRef`,
-   * and every `axiosRef.create()`-derived instance) dispatches a request
-   * through, using *its own* `context` (`defaults`/interceptors) rather than
-   * this service's. Shares everything else - the transport/dispatcher,
-   * module-registered generic interceptors, redirect handling - with the
-   * rest of this `HttpService`.
-   */
-  public dispatchAxiosConfig<T = any, D = any>(
-    config: AxiosLikeRequestConfig<D>,
-    context: AxiosInstanceContext,
-  ): Observable<AxiosLikeResponse<T, D>> {
-    return this.dispatch<T, D>(config, undefined, context);
-  }
-
-  /**
-   * Shared implementation behind `request()` and `dispatchAxiosConfig()`.
+   * Shared implementation behind `request()` and every axios-like instance
+   * built by `createAxiosRef` (the top-level `axiosRef` and each
+   * `axiosRef.create()` child), which pass their own `context`.
    * `defer()` makes the Observable cold and re-runs everything below (config
    * normalization, the axiosRef request interceptors, the actual request)
    * on every subscription, as `@nestjs/axios`' `makeObservable` does. This

@@ -325,7 +325,7 @@ The surface is now frozen and diffable: [API Extractor](https://api-extractor.co
 import type { AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'nestjs-axios-undici';
 ```
 
-`AxiosRequestConfig`/`AxiosResponse`/`AxiosInstance` are plain type aliases for this package's own `AxiosLikeRequestConfig`/`AxiosLikeResponse`/`AxiosRef` - no new behaviour, just a name migrating code already expects.
+`AxiosRequestConfig`/`AxiosResponse`/`AxiosInstance` are plain type aliases for this package's own `AxiosLikeRequestConfig`/`AxiosLikeResponse`/`AxiosRef` - no new behaviour, just a name migrating code already expects. If a file still imports the same name from `axios` too, TypeScript reports a duplicate identifier. Import one of them under another name, e.g. `import { AxiosResponse as UndiciAxiosResponse } from 'nestjs-axios-undici'`. The shapes are close but not identical to axios' own: `response.headers` is a plain object, not an `AxiosHeaders` instance.
 
 **`UNDICI_INSTANCE_TOKEN`/`HTTP_MODULE_OPTIONS`** stay exported: they're documented, supported injection tokens for overriding a test module's providers directly - see [Overriding the module's own providers](/docs/guides/testing.md#overriding-the-modules-own-providers).
 

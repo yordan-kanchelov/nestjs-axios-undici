@@ -38,7 +38,7 @@
     "test:e2e": "npm run test:jest -- tests/",
     "test:watch": "npm run test:jest -- --watch",
     "test:cov": "npm run test:jest -- --coverage",
-    "test:debug": "node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
+    "test:debug": "npm run generate:version && node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
     "test:examples": "npm run build && node scripts/run-examples.js",
     "changeset": "changeset",
     "version-packages": "changeset version",
