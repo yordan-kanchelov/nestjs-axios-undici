@@ -88,6 +88,8 @@ httpService.axiosRef.defaults.headers.common['User-Agent'] = 'my-app/2.0';
 
 ### Progress callbacks, `maxRate` and `formSerializer`
 
+As in axios, a progress callback runs decoupled from the request (via `process.nextTick`), so an exception it throws never alters or fails the response. It surfaces as an uncaught exception instead, which by default crashes a Node.js process, exactly as it would with axios. Catch errors inside the callback.
+
 `onUploadProgress`/`onDownloadProgress`/`maxRate` are only ever wired up when actually set - a plain request with none of these pays no measurable extra cost (a body/response is never wrapped in a counting stream otherwise).
 
 | Feature | Status | Notes |
