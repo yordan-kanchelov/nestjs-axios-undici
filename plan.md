@@ -173,6 +173,7 @@ Details and repro tests: `plan/reports/axios-compat.md` and `plan/prototypes/com
   - an unparsable `timeout` should give `ERR_BAD_OPTION_VALUE`, not `ERR_BAD_REQUEST`;
   - a synchronous config-normalization error (e.g. throwing inside `params`) should be wrapped as an AxiosError;
   - HTTP and interceptor errors should keep the call-site stack, as axios does.
+- [ ] investigate: reading a large response body slowly fails with `UND_ERR_SOCKET` "other side closed" when the server has a short `keepAliveTimeout` (Node's 5s default included). Found by the axios "should support download rate limit" upstream test once #30 made download `maxRate` real. Reproduces on raw undici 7.30 and 8.11 with no package code (1 MB echo read at 100 KB/s: fails at ~9.2s with keepAliveTimeout 1s or 5s, succeeds with 60s); Node `http` reads the same response fine. Root-cause in undici (socket end while the body is backpressured?), report or fix upstream, and document any workaround (e.g. `responseType: 'stream'` consumers reading slowly).
 - [ ] docs: update the compatibility page and the migration guide to match whatever differences remain.
 
 ### Phase 3: package quality and API (see `plan/reports/package-quality.md`)
@@ -330,3 +331,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - The reviewer's own run reproduced about 3.9x.
   - Fixes: the README's stale hand-typed "About 2x" lead-in is replaced by a number-free one; the generated headline now labels local-run numbers as preliminary until the full Docker + k6 run replaces them; the k6 harness shuffles the service order each run, instead of always running axios first.
 - 2026-09-26: PR #29 merged: fair benchmarks (one shared Nest app, Express+Fastify, identical interceptor, raw-undici floor, shuffled k6 order), rewritten generator (ratio headline marked preliminary until a full Docker+k6 run), `bench:ab` informational PR check, how-to-run README. The full release benchmark run will replace the preliminary 4x local-run headline. PR #28's upstream job failed on first CI run (strategy b deadline hit and an IPv6 env-dependent test), sent back to its worker.
+- 2026-09-26: PR #28 CI after merging #30: strategy (a) had 5 'now passing' tests. Four are #30's (progress x3, formSerializer) and were removed. The TCP-connect-timeout test depends on the runner's DNS and is now `environmentDependent`. One new failure, 'should support download rate limit', is a real undici slow-consumer issue (see the new phase 2 item) and is listed as a plan item.
