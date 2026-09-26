@@ -73,7 +73,7 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 
 ## Dispatchers and shutdown
 
-Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService` - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
+Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService`, bounded by a short internal grace period so an abandoned `responseType: 'stream'` response can't hang shutdown forever - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
 
 ## `interceptors`
 
