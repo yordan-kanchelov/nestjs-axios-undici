@@ -47,19 +47,23 @@ Per-request options (third argument of `post`, second of `get`, or the `request(
 | `headers` (plain object or `AxiosHeaders`) | ✅ | Merged case-insensitively with `axiosRef.defaults.headers` (which module headers seed at setup - see [Precedence](#precedence-axiosrefdefaults)). A header set to `undefined`/`null` removes a default, as in axios. |
 | Default `Accept`, `User-Agent`, `Accept-Encoding` headers | ⚠️ | `Accept: application/json, text/plain, */*` and `Content-Type` defaults match axios exactly. `User-Agent` is `nestjs-axios-undici/<version>` (axios: `axios/<version>`) - override it the axios way, `axiosRef.defaults.headers.common['User-Agent'] = '...'`. `Accept-Encoding` lists `gzip, deflate, br` (axios also advertises `compress`, an old scheme neither library decodes) and is only sent when decompression is enabled at module level (`register({ decompress: false })` omits it; a per-request `decompress: false` keeps the header and returns the raw compressed bytes, as axios does). Seeded into `axiosRef.defaults.headers.common` at setup; module `headers` and per-request `headers` override them (see [Precedence](#precedence-axiosrefdefaults) for how module headers relate to `axiosRef.defaults`). |
 | `data`: object → JSON, string, `URLSearchParams`, `Buffer`/typed arrays, streams, `FormData` (global or the `form-data` package) | ✅ | Same `Content-Type` defaults as axios. |
-| `auth` | ✅ | Becomes `Authorization: Basic ...` and overrides an existing Authorization header, as in axios. |
-| `timeout` | ⚠️ | Rejects with `ECONNABORTED` / `timeout of Nms exceeded`. Implemented with undici's `headersTimeout`/`bodyTimeout`, which have ~1s resolution, so sub-second timeouts fire late. |
+| `auth` | ✅ | Becomes `Authorization: Basic ...` and overrides an existing Authorization header, as in axios. Credentials embedded in the URL itself (`http://user:pass@host`) become `auth` too, when `auth` isn't also set - `auth` wins when both are given. |
+| `timeout` | ✅ | A total (deadline) timeout, like axios: from request start until the response body is fully read (or, for `responseType: 'stream'`, until the headers arrive). Rejects with `ECONNABORTED` / `timeout of Nms exceeded` (or `timeoutErrorMessage`, if set). One timer per request, created only when `timeout > 0`; undici's own `headersTimeout`/`bodyTimeout` are still set alongside it, as a backstop. |
+| `timeoutErrorMessage` | ✅ | Replaces the default `timeout of Nms exceeded` message. |
+| `transitional.clarifyTimeoutError` | ✅ | Reports a timeout as `ETIMEDOUT` instead of `ECONNABORTED`. `silentJSONParsing`/`forcedJSONParsing` are accepted for type compatibility but describe the default parsing this library already does unconditionally. |
 | `signal` (`AbortController`) | ✅ | Rejects with `CanceledError` (`ERR_CANCELED`). |
 | `cancelToken` | ✅ | Rejects with `CanceledError` carrying the cancel message. |
-| `validateStatus` | ⚠️ | Works; `validateStatus: null` is treated as the default (axios accepts every status). |
+| `validateStatus` | ✅ | `validateStatus: null` (or `undefined` set as an explicit key) means every status resolves, as in axios; leaving it unset entirely falls back to the default 2xx range. |
+| `allowAbsoluteUrls: false` (axios ≥1.8) | ✅ | With a `baseURL`, an absolute request `url` is combined with it anyway (naive concatenation), instead of replacing it outright - axios' own `buildFullPath` semantics. |
 | `maxRedirects` | ✅ | Follows up to 21 redirects by default, like axios. `maxRedirects: 0` returns the 3xx response as-is, through `validateStatus` like any other status. 301/302 turn `POST` into `GET`; 303 turns anything but `HEAD` into `GET` (both drop the body and `Content-*` headers); 307/308 keep the method and body. `Authorization`/`Cookie`/`Proxy-Authorization` are dropped across a protocol downgrade or a host (including port) change. Exceeding the limit rejects with `ERR_FR_TOO_MANY_REDIRECTS` ("Maximum number of redirects exceeded"), with no `response` - same as axios. A streamed request body (a `Readable`, not a `Buffer`/string/`FormData`) can't be resent on a redirect that keeps it (307/308, or a non-POST 301/302): that rejects with `ERR_FR_REDIRECTION_FAILURE` instead of sending a broken request; buffer the body yourself first, or use `maxRedirects: 0`. |
 | `beforeRedirect` | ✅ | Called before each hop with `(options, responseDetails, requestDetails)`, like axios; mutating `options.headers`/`.method`/`.protocol`/`.hostname`/`.port`/`.path` changes the next hop. Also settable at module level (`register({ beforeRedirect })`). |
 | `responseType: 'json' \| 'text' \| 'arraybuffer' \| 'blob' \| 'stream'` | ✅ | `arraybuffer` gives a `Buffer`; `blob` gives a UTF-8 string, matching axios in Node.js (no native `Blob` decoding there); `stream` gives the undici body (a Node.js `Readable`, transparently decompressed like axios). |
-| `maxContentLength` | ⚠️ | Enforced, but the error code is `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` (axios: `ERR_BAD_RESPONSE`). |
+| `maxContentLength` | ✅ | `ERR_BAD_RESPONSE`, "maxContentLength size of N exceeded" - same code/message as axios. Enforced while the response streams in (for an uncompressed body; a compressed one is buffered first, then the decoded size is checked). A per-request value wins over a module-level one. |
+| `maxBodyLength` | ✅ | A string/Buffer body over the limit rejects synchronously, before ever dispatching (`ERR_BAD_REQUEST`, "Request body larger than maxBodyLength limit" - checked upfront, same as axios). A stream body is checked as bytes are written; over the limit gives `ERR_FR_MAX_BODY_LENGTH_EXCEEDED` - the code axios' own default (redirect-following) transport uses for a streamed body. A per-request value wins over a module-level one. |
 | `decompress` | ✅ | gzip/br/deflate are decompressed when `Content-Encoding` is set. `decompress: false` returns the raw compressed body, as in axios. |
 | `transformRequest` / `transformResponse` per request | ✅ | Replaces default serialisation/parsing entirely, like axios: `transformRequest` gets the raw `data`; `transformResponse` gets the raw response body (not yet JSON-parsed). |
 | `socketPath` per request | ✅ | `Agent({ connect: { socketPath } })`, cached per path. Overrides a module-level `socketPath`. |
-| `proxy`, `httpAgent`, `httpsAgent`, `withCredentials`, `maxBodyLength` per request | ❌ | Module-level only (see below). |
+| `proxy`, `httpAgent`, `httpsAgent`, `withCredentials` per request | ❌ | Module-level only (see below). |
 | `cookieJar` per request | ❌ | Module-level only - not an axios option, see [Cookies: `cookieJar`](#cookies-cookiejar). Building a `CookieAgent` per jar per request would be expensive; pass different `cookieJar`s to different `HttpModule.register()` calls instead. |
 | `adapter` (a function) | ✅ | Called instead of dispatching through undici; see [`axiosRef`](#axiosref) above. A string name (`'http'`/`'xhr'`/`'fetch'`) is accepted but ignored. |
 | `xsrfCookieName` / `xsrfHeaderName`, `onUploadProgress` / `onDownloadProgress` | ❌ | |
@@ -92,19 +96,22 @@ httpService.axiosRef.defaults.headers.common['User-Agent'] = 'my-app/2.0';
 | `Content-Encoding: gzip \| br \| deflate` | ✅ | Decompressed automatically; `decompress: false` opts out. |
 | `response.headers` as `AxiosHeaders` (`headers.get()`) | ❌ | A plain object, deliberately: measured (this library's own `AxiosHeaders`, a typical response's headers, 200k iterations) at about 955ns more per response just to construct, before counting that every later read on it also pays a Proxy-trap cost a plain object doesn't - not worth it, unconditionally, on every response, against the `+10%` CPU-per-request budget the CI regression check enforces. Typed as `Record<string, any>` (assignable to/from axios' own `AxiosResponse.headers`) regardless - index into it the normal way (`response.headers['content-type']`). |
 | `response.config` | ⚠️ | Contains `url` (final URL including query string), `method` (upper-case), `headers` (an `AxiosHeaders` preserving the casing each header was first set with, matching axios), `timeout`, `validateStatus`; no `params`, `baseURL` or `data`. |
-| `response.request` | ⚠️ | A placeholder object, not the underlying request. `response.request.res.responseUrl` is set to the final hop's URL once a redirect was followed (unset otherwise), matching axios' `responseUrl`. |
+| `response.request` | ✅ | Built from the hop that was actually dispatched, not the real `http.ClientRequest` axios exposes: `path`, `method`, `host`, `protocol`, and `res.responseUrl` (the final hop's URL, whether or not a redirect was followed - matching axios' `responseUrl`, which is always set too). |
 
 ## Errors
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
 | `axios.isAxiosError(error)` / `error.isAxiosError` | ✅ | For status, network, timeout and cancellation errors. |
-| `error.code` | ✅ | `ERR_BAD_REQUEST` (4xx), `ERR_BAD_RESPONSE` (5xx and others), `ECONNABORTED` (timeout), `ERR_CANCELED`, and network codes such as `ECONNREFUSED`/`ENOTFOUND`. Undici socket errors map to `ECONNRESET`. |
-| `error.message` | ✅ | Same messages as axios (`Request failed with status code 404`, `timeout of 200ms exceeded`, `canceled`, ...). |
-| `error.response`, `error.config`, `error.status`, `error.toJSON()` | ✅ | |
+| `error.code` | ✅ | `ERR_BAD_REQUEST` (4xx, an unsupported protocol, undici argument-validation failures, `maxBodyLength` with a known-length body), `ERR_BAD_RESPONSE` (5xx and others, `maxContentLength`), `ECONNABORTED` (timeout - `ETIMEDOUT` with `transitional.clarifyTimeoutError`), `ERR_CANCELED`, `ERR_FR_MAX_BODY_LENGTH_EXCEEDED` (`maxBodyLength` with a stream body, axios' default transport's own code), and network codes such as `ECONNREFUSED`/`ENOTFOUND`. Undici socket errors map to `ECONNRESET`. |
+| `error.message` | ✅ | Same messages as axios (`Request failed with status code 404`, `timeout of 200ms exceeded`, `canceled`, `Unsupported protocol tel:`, `maxContentLength size of N exceeded`, `Request body larger than maxBodyLength limit`, ...). |
+| `error.request` | ✅ | See `response.request` above; not set for an error where axios itself never builds a request object either (a signal already aborted before the request was ever dispatched, an unsupported protocol). |
+| `error.response`, `error.config`, `error.status`, `error.toJSON()` | ✅ | `toJSON()` matches axios' key set, including the browser-only fields (always `undefined` on Node.js, as they are on a real axios error there too), and serialises `config.headers` as a plain object when it's an `AxiosHeaders` instance. |
 | `axios.isCancel(error)` | ✅ | |
 | `error instanceof AxiosError` | ✅ | True for this package's own `AxiosError`/`CanceledError` classes, always. **Also** true for `axios.AxiosError` when the optional `axios` peer is installed (`npm i axios`): this package lazily links its `AxiosError`'s prototype onto axios' own at module load. `error instanceof axios.CanceledError` specifically does not hold (a prototype chain is linear; see the doc comment on `linkOptionalAxiosPeer` in `axios-error.ts`) - use `isCancel()` (from either package) to detect cancellation. Without `axios` installed, nothing changes: use `isAxiosError()` (from either package) instead. |
 | `error.cause` | ✅ | The original undici/Node.js error for network, timeout and cancellation errors. |
+
+**Known remaining gaps** (see the differential test suite for the exact repros): a query-string apostrophe (`'`) always comes out `%27` - undici always dispatches through a WHATWG `new URL()` parse, which percent-encodes it for `http(s)` regardless of what string this library hands it, where axios' own encoder leaves it as-is; undici rejects a header value with an embedded `\n` where Node's own `http` module (what axios uses) silently strips it instead (this library's rejection is at least a well-formed `AxiosError` now, not a raw undici error); a timeout that lands after the response has already started streaming gives `ECONNABORTED`/"timeout of Nms exceeded" here, where axios' own internal race can instead give `ERR_BAD_RESPONSE`/"stream has been aborted", depending on whether axios' own response object happens to exist yet when its timeout fires.
 
 ```typescript
 import { AxiosError, isAxiosError, isCancel } from 'nestjs-axios-undici';
@@ -233,6 +240,8 @@ HttpModule.register({
   maxContentLength: 50 * 1024 * 1024, // 50MB response content limit
 });
 ```
+
+Both are also accepted per request, and a per-request value always wins over this module-level one, as in axios. See the [Errors](#errors) table above for the exact codes/messages.
 
 ### Cookies: `cookieJar`
 
