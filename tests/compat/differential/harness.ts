@@ -23,7 +23,7 @@
  * matching how this package's `HttpModule.register()` always scopes a
  * dedicated `undiciRef`/`axiosRef` per module.
  *
- * Ported and adapted from `plan/prototypes/automation/differential/`.
+ * Started as a planning-phase prototype (plan.md phase 1).
  */
 /* eslint-disable jest/no-export, jest/valid-title, jest/no-conditional-expect --
  * this is a reusable test-registration harness, not a spec: `differential()`

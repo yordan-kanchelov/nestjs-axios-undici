@@ -21,6 +21,6 @@ Every `HttpService` now owns its own undici dispatcher end to end, and closes wh
 
 **Fix: axios compatibility warnings are now logged through Nest's own `Logger`** (context `HttpModule`), not `console.warn`.
 
-See the [migration guide](/docs/migration-guide.md#dispatcher-lifecycle-and-httpservice-members) for the full list.
+See the [migration guide](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/migration-guide?id=dispatcher-lifecycle-and-httpservice-members) for the full list.
 
 **Tests using undici's `MockAgent` with `setGlobalDispatcher(mockAgent)` must change.** The mock no longer intercepts `HttpService` requests; they reach the real network. Pass it as `HttpModule.register({ dispatcher: mockAgent })` or call `httpService.setDispatcher(mockAgent)`.
