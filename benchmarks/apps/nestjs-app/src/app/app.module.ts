@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HttpModule } from './client';
 
 @Module({
-  imports: [HttpModule],
+  imports: [HttpModule.register({})],
   controllers: [AppController],
   providers: [AppService],
 })

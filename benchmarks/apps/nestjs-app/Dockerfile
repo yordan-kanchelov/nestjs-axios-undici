@@ -13,6 +13,6 @@ RUN npm ci --include=dev && node scripts/install-lib.js
 
 ENV NODE_ENV=production
 
-EXPOSE 3003
-
-CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-fastify-undici/tsconfig.app.json", "apps/nestjs-fastify-undici/src/main.ts"]
+# CLIENT (axios|undici), PLATFORM (express|fastify), INTERCEPTOR (0|1) and PORT
+# are set per service in the compose files - this is the one shared app image.
+CMD ["node_modules/.bin/ts-node", "--transpile-only", "--project", "apps/nestjs-app/tsconfig.app.json", "apps/nestjs-app/src/main.ts"]
