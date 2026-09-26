@@ -49,6 +49,10 @@ const DEFAULTS_PASSTHROUGH_KEYS = [
   'transformResponse',
   'adapter',
   'withCredentials',
+  'onUploadProgress',
+  'onDownloadProgress',
+  'maxRate',
+  'formSerializer',
 ] as const;
 
 /**
@@ -305,7 +309,15 @@ export function createAxiosRef(
       data?: D,
       config?: AxiosLikeRequestConfig<D>,
     ) =>
-      dispatch<T, D>(buildFormRequestConfig(method, url, data, config));
+      dispatch<T, D>(
+        buildFormRequestConfig(
+          method,
+          url,
+          data,
+          config,
+          defaults.formSerializer,
+        ),
+      );
 
   // A real function, like axios' own `bind(Axios.prototype.request, context)`
   // - `axiosRef(config)`/`axiosRef(url, config)` resolve like `axios(...)`

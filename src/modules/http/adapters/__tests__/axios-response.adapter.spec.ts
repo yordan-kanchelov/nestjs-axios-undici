@@ -1,4 +1,6 @@
-import { RequestInfo } from '../axios-response.adapter';
+import { Readable } from 'node:stream';
+import { RequestInfo, toAxiosLikeResponse } from '../axios-response.adapter';
+import type { HttpInterceptorRequest } from '../../interfaces/http-interceptor.interface';
 
 describe('RequestInfo (perf: response.request / error.request built lazily)', () => {
   it('parses nothing in the constructor; a field is parsed only on first read, and cached after', () => {
@@ -81,5 +83,102 @@ describe('RequestInfo (perf: response.request / error.request built lazily)', ()
       new URL('http://api/final?x=1'),
     );
     expect(info.res).toEqual({ responseUrl: 'http://api/final?x=1' });
+  });
+});
+
+/**
+ * Review fix (PR #30): a metered download (`onDownloadProgress`/download
+ * `maxRate` set) silently succeeded with an empty body on a real stream
+ * error (an abort, the source being destroyed, or - before the
+ * `asyncDecorator` fix - a throwing `onDownloadProgress` callback itself),
+ * instead of rejecting. `toAxiosLikeResponse`'s corrupt-gzip recovery
+ * fallback (a second raw-text read) was never meant for a metered stream (a
+ * plain `Transform`, not undici's own body - no `.bodyUsed`/`.text()`), and
+ * silently swallowed every one of those into `parsedData = ''`.
+ */
+describe('toAxiosLikeResponse: metered body error propagation', () => {
+  const fakeRequest = (
+    options: Record<string, any>,
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', ...options },
+  });
+
+  it('a source stream error while metered (onDownloadProgress) rejects, instead of falling back to an empty string', async () => {
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      body: source,
+    };
+    const promise = toAxiosLikeResponse(
+      fakeRequest({ onDownloadProgress: () => undefined }),
+      undiciResponse,
+    );
+    source.push(Buffer.from('{"partial":'));
+    source.emit('error', new Error('socket hang up'));
+    await expect(promise).rejects.toThrow('socket hang up');
+  });
+
+  it('a destroyed/aborted source stream while metered (maxRate) rejects, instead of resolving with an empty body', async () => {
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: source,
+    };
+    const promise = toAxiosLikeResponse(
+      fakeRequest({ maxRate: 1_000_000 }),
+      undiciResponse,
+    );
+    source.destroy(new Error('aborted'));
+    await expect(promise).rejects.toThrow('aborted');
+  });
+
+  it('a throwing onDownloadProgress callback is decoupled via process.nextTick, so it can never corrupt the response - matching real axios 1.20 (verified manually against it: the response resolves with the full, correct body, and the throw surfaces as a separate uncaughtException, entirely outside the response pipeline)', async () => {
+    const payload = { hello: 'world', big: 'x'.repeat(500) };
+    const bodyBuf = Buffer.from(JSON.stringify(payload));
+    const source = Readable.from([bodyBuf]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(bodyBuf.length),
+      },
+      body: source,
+    };
+
+    // Intercepts the real `process.nextTick` so the deferred callback can be
+    // invoked - and its throw safely caught - directly by this test, instead
+    // of letting it actually escape as a real, process-wide uncaught
+    // exception (which jest-circus attributes to whatever test happens to
+    // still be running, regardless of any `process.on('uncaughtException')`
+    // handler of the test's own - not a meaningful thing to assert on here).
+    const scheduled: Array<() => void> = [];
+    const realNextTick = process.nextTick;
+    (process as any).nextTick = (cb: () => void) => scheduled.push(cb);
+    try {
+      const response = await toAxiosLikeResponse(
+        fakeRequest({
+          onDownloadProgress: () => {
+            throw new Error('user callback boom');
+          },
+        }),
+        undiciResponse,
+      );
+      // The response already resolved, fully intact, without the deferred
+      // callback ever having run - proving it can't have any effect on it.
+      expect(response.data).toEqual(payload);
+      expect(scheduled.length).toBeGreaterThan(0);
+      // Running the deferred callback now (as the real event loop would)
+      // does throw, with the exact error the user's callback raised -
+      // exactly what becomes an uncaught exception in a real process.
+      expect(() => scheduled.forEach(fn => fn())).toThrow('user callback boom');
+    } finally {
+      process.nextTick = realNextTick;
+    }
   });
 });

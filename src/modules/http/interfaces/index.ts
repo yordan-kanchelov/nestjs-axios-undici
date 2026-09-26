@@ -18,6 +18,11 @@ export type {
   AxiosResponseType,
   AxiosRequestConfig,
   AxiosResponse,
+  AxiosProgressEvent,
+  FormDataLikeTarget,
+  SerializerVisitor,
+  FormDataVisitorHelpers,
+  FormSerializerOptions,
 } from './axios-compatible.interface';
 export type {
   AxiosInterceptorOptions,

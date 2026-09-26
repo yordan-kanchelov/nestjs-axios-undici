@@ -154,8 +154,93 @@ export interface AxiosLikeRequestConfig<D = any> {
     | ((config: any) => Promise<any>)
     | string
     | Array<((config: any) => Promise<any>) | string>;
+  /**
+   * Called as the request body is written, throttled the same way axios
+   * throttles it (at most every ~333ms, plus a final flush) - see
+   * `AxiosProgressEvent`. Wraps the body in a counting stream only when this
+   * (or `maxRate`) is actually set - see `adapters/axios-progress.adapter.ts`.
+   */
+  onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /** Called as response body bytes arrive. Works with the buffered response types and with `responseType: 'stream'`. */
+  onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void;
+  /**
+   * Caps transfer throughput in bytes/sec: one number for both directions, or
+   * `[upload, download]`. Wraps the request/response body in a throttling
+   * stream (see `adapters/axios-progress.adapter.ts`), only when actually
+   * set.
+   */
+  maxRate?: number | [number, number];
+  /**
+   * axios' options for turning a plain object/array into `FormData`
+   * (`postForm`/`putForm`/`patchForm`, and a plain request whose
+   * `Content-Type` is explicitly `multipart/form-data` or
+   * `application/x-www-form-urlencoded`) - see `toFormData`/`toURLEncodedForm`
+   * in real axios.
+   */
+  formSerializer?: FormSerializerOptions;
   /** Custom fields set by an interceptor (e.g. a retry flag) survive a round trip through `response.config` / `error.config`. */
   [key: string]: any;
+}
+
+/**
+ * Progress event shape passed to `onUploadProgress`/`onDownloadProgress`,
+ * matching axios' own `AxiosProgressEvent` exactly (field for field) so a
+ * callback typed against axios' own type still compiles here.
+ */
+export interface AxiosProgressEvent {
+  loaded: number;
+  total?: number;
+  progress?: number;
+  bytes: number;
+  rate?: number;
+  estimated?: number;
+  upload?: boolean;
+  download?: boolean;
+  event?: unknown;
+  lengthComputable: boolean;
+}
+
+/** The object a `formSerializer.visitor` appends resolved `[key, value]` pairs to - a real `FormData`, or an internal pairs collector for a url-encoded body. */
+export interface FormDataLikeTarget {
+  append(name: string, value: any): void;
+}
+
+/**
+ * A custom visitor called once per own, non-null/undefined key while walking
+ * `data` (matching axios' own `SerializerVisitor`): return `true` to also
+ * walk `value`'s own keys (only meaningful when `value` is itself a plain
+ * object/array), or `false` after appending a leaf value.
+ */
+export type SerializerVisitor = (
+  this: FormDataLikeTarget,
+  value: any,
+  key: string | number,
+  path: Array<string | number> | null,
+  helpers: FormDataVisitorHelpers,
+) => boolean;
+
+/** Passed as the 4th argument to a custom `formSerializer.visitor`. */
+export interface FormDataVisitorHelpers {
+  defaultVisitor: SerializerVisitor;
+  convertValue: (value: any) => any;
+  isVisitable: (value: any) => boolean;
+}
+
+/**
+ * axios' options for turning an object into `FormData`/a url-encoded body
+ * (`lib/helpers/toFormData.js`): a custom `visitor` replaces the default
+ * traversal entirely; `dots`/`indexes` control array/nested-object key
+ * rendering (see `docs/axios-supported-options.md` for the default,
+ * axios-matching bracket/`indexes: false` behaviour); `metaTokens` (default
+ * `true`) keeps a trailing `{}` token in a JSON-stringified field's own name;
+ * `maxDepth` (default 100) caps nesting, matching axios' own limit.
+ */
+export interface FormSerializerOptions {
+  visitor?: SerializerVisitor;
+  dots?: boolean;
+  metaTokens?: boolean;
+  indexes?: boolean | null;
+  maxDepth?: number;
 }
 
 /**
