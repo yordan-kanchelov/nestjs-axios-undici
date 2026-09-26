@@ -7,6 +7,7 @@ import {
   createStatusError,
 } from '../errors/axios-error';
 import {
+  DECODE_ERROR,
   hasContentLengthLimit,
   isDecodableEncoding,
   readBodyAsResponseType,
@@ -31,21 +32,33 @@ type ParsedRequestUrl = {
 };
 
 /**
- * True for a zlib decode failure (`Z_BUF_ERROR`, `Z_DATA_ERROR`, ...) -
- * every zlib error code Node's `zlib` module raises is prefixed `Z_`
- * (checked against `node:zlib`'s own source). Used to scope the
- * corrupt-compressed-body wrapping (both the buffered catch block and
- * `wrapStreamCancellation` below) to genuine decode failures only - a
- * network-level error (a dropped socket, `UND_ERR_SOCKET`, ...) that
- * happens to occur while decompression was configured must still reach
+ * True for a genuine decode failure - zlib/brotli/zstd itself failing to
+ * decode already-fully-read bytes - as opposed to a network-level error (a
+ * dropped socket, `UND_ERR_SOCKET`, an abort, ...) that happens to reach the
+ * same catch block, or the same stream's `'error'` event, while
+ * decompression was configured. Used to scope the corrupt-compressed-body
+ * wrapping (both the buffered catch block and `wrapStreamCancellation`
+ * below) to that case only - a network error must still reach
  * `fail()`/`toAxiosError`'s own, more specific shaping (e.g. `UND_ERR_SOCKET`
  * -> `ECONNRESET`) unwrapped, exactly as it would for an uncompressed
  * response - wrapping it here first would short-circuit that mapping
  * (`toAxiosError`'s very first check returns an already-`isAxiosError`
  * value unchanged).
+ *
+ * Checks the `DECODE_ERROR` tag `decompressBuffer`/`decompressStream`
+ * (`axios-response-type.adapter.ts`) set at the error's actual origin,
+ * rather than sniffing its `code`/`name` shape: an earlier version of this
+ * checked for a `Z_`-prefixed `code`, which only zlib (gzip/deflate) codecs
+ * raise - brotli and zstd's own decode failures have differently-shaped
+ * codes entirely, so that check silently under-wrapped them (found in PR
+ * #38 review; confirmed directly against real corrupt brotli/zstd bodies).
  */
-function isZlibErrorCode(code: unknown): boolean {
-  return typeof code === 'string' && code.startsWith('Z_');
+function isDecodeError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as any)[DECODE_ERROR] === true
+  );
 }
 
 /**
@@ -369,18 +382,22 @@ function guardStreamMaxContentLength(
  *
  * `wrapDecodeErrors` additionally covers plan.md's "corrupt/truncated
  * compressed body" item's streamed half: when the response is actually
- * being decompressed, any *other* error reaching this stream (a zlib
- * `Z_BUF_ERROR`/`Z_DATA_ERROR` from `decompressStream`'s decompressor, its
- * own bidirectional-destroy propagation from the raw body, ...) becomes a
- * real `AxiosError` too - `AxiosError.from(err, undefined, ..., requestInfo)`
- * (`code` falling back to `err.code`, e.g. `'Z_BUF_ERROR'`), matching axios'
- * own buffered-path shape (`AxiosError.from(err, null, config, lastRequest,
- * response)` in `lib/adapters/http.js`'s `handleStreamError`) applied to the
- * stream path too, so a caller's own `data.on('error', ...)` sees
- * `isAxiosError`/`.config`/`.request` there exactly as it would for the
- * buffered case's rejection. An error that's already axios-shaped (e.g.
- * `guardStreamMaxContentLength`'s own `AxiosError`, above) passes through
- * unchanged either way.
+ * being decompressed, a genuine decode failure reaching this stream (a zlib
+ * `Z_BUF_ERROR`/`Z_DATA_ERROR`, or brotli/zstd's own, differently-shaped
+ * decode error - `decompressStream`'s decompressor, tagged with
+ * `DECODE_ERROR` at its actual origin so this can tell it apart from the
+ * *same* decompressor's `'error'` firing secondhand for a network failure
+ * forwarded from the raw body - see `decompressStream`'s doc comment)
+ * becomes a real `AxiosError` too - `AxiosError.from(err, undefined, ...,
+ * requestInfo)` (`code` falling back to `err.code`, e.g. `'Z_BUF_ERROR'`),
+ * matching axios' own buffered-path shape (`AxiosError.from(err, null,
+ * config, lastRequest, response)` in `lib/adapters/http.js`'s
+ * `handleStreamError`) applied to the stream path too, so a caller's own
+ * `data.on('error', ...)` sees `isAxiosError`/`.config`/`.request` there
+ * exactly as it would for the buffered case's rejection. An error that's
+ * already axios-shaped (e.g. `guardStreamMaxContentLength`'s own
+ * `AxiosError`, above) passes through unchanged either way, as does a
+ * network-level error (which never carries the `DECODE_ERROR` tag).
  *
  * Only ever applied when at least one of the two triggers above, or an
  * active decompression, is actually possible for this request (see the call
@@ -404,7 +421,7 @@ function wrapStreamCancellation(
       wrapper.destroy(canceled);
       return;
     }
-    if (wrapDecodeErrors && isZlibErrorCode(err?.code) && !err.isAxiosError) {
+    if (wrapDecodeErrors && isDecodeError(err) && !err.isAxiosError) {
       const axiosError = AxiosError.from(
         err,
         undefined,
@@ -790,15 +807,15 @@ export async function toAxiosLikeResponse(
     // Content-Encoding: compress"'s buffered half): axios wraps this via
     // `AxiosError.from(err, null, config, lastRequest, response)` - checked
     // against real axios 1.20 (`lib/adapters/http.js`'s buffered
-    // `handleStreamError`) - `code` falling back to the raw zlib code (e.g.
-    // `'Z_BUF_ERROR'`/`'Z_DATA_ERROR'`), `response.data` never assigned
-    // (matching axios: the buffered read failed before any value could be).
-    // Scoped to an actual zlib decode failure (`isZlibErrorCode`): a
-    // network-level error (a dropped socket, an abort, ...) that happens to
-    // occur while decompression was configured must still reach
-    // `fail()`/`toAxiosError`'s own, more specific shaping unwrapped - see
-    // that helper's doc comment.
-    if (isZlibErrorCode((error as any)?.code)) {
+    // `handleStreamError`) - `code` falling back to the raw decode error's
+    // own code (e.g. `'Z_BUF_ERROR'`/`'Z_DATA_ERROR'` for zlib, differently
+    // shaped for brotli/zstd), `response.data` never assigned (matching
+    // axios: the buffered read failed before any value could be). Scoped to
+    // an actual decode failure (`isDecodeError`): a network-level error (a
+    // dropped socket, an abort, ...) that happens to occur while
+    // decompression was configured must still reach `fail()`/`toAxiosError`'s
+    // own, more specific shaping unwrapped - see that helper's doc comment.
+    if (isDecodeError(error)) {
       const partialResponse = new AxiosLikeResponseImpl(
         undefined,
         undiciResponse.statusCode,

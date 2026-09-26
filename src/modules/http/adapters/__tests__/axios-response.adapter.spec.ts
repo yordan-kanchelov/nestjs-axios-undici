@@ -807,6 +807,155 @@ describe('toAxiosLikeResponse: corrupt/truncated compressed body wraps as an Axi
     expect(caught.config).toBeTruthy();
   });
 
+  /**
+   * PR #38 review (HIGH): brotli and zstd decode failures weren't wrapped
+   * at all - the old gate sniffed `error.code` for a `Z_`-prefix, which
+   * only zlib (gzip/deflate) raises; brotli's own decode error code is
+   * `ERR__ERROR_FORMAT_PADDING_1`, zstd's is `ZSTD_error_prefix_unknown`
+   * (confirmed directly, `brotliDecompressSync`/`zstdDecompressSync`
+   * against the same garbage bytes as the gzip case above) - neither
+   * matched. Fixed by tagging the error at its actual origin
+   * (`DECODE_ERROR`, `decompressBuffer`/`decompressStream`) instead of
+   * sniffing its shape - these tests cover every codec uniformly.
+   */
+  it('buffered: a corrupt brotli body rejects with a real AxiosError, not the raw brotli error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'br' },
+      body: bodyFromBuffer(Buffer.from('this is not brotli at all')),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(typeof caught.code).toBe('string');
+    expect(caught.config).toBeTruthy();
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.status).toBe(200);
+  });
+
+  it('stream: a corrupt brotli body destroys the returned stream with a real AxiosError, not the raw brotli error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'br' },
+      body: Readable.from([Buffer.from('this is not brotli at all')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.config).toBeTruthy();
+  });
+
+  // Every Node version this package supports already has zstd (added in
+  // 22.15.0/23.8.0, `engines.node` is >=22.17.0 - `isZstdSupported` is
+  // always `true` here), so these run unconditionally, matching the rest
+  // of this describe block's other codec cases.
+  it('buffered: a corrupt zstd body rejects with a real AxiosError, not the raw zstd error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'zstd' },
+      body: bodyFromBuffer(Buffer.from('this is not zstd at all')),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(typeof caught.code).toBe('string');
+    expect(caught.config).toBeTruthy();
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.status).toBe(200);
+  });
+
+  it('stream: a corrupt zstd body destroys the returned stream with a real AxiosError, not the raw zstd error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'zstd' },
+      body: Readable.from([Buffer.from('this is not zstd at all')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.config).toBeTruthy();
+  });
+
+  it('a genuine network error (UND_ERR_SOCKET) while decompression is configured is NOT wrapped as a decode error - it still reaches the caller raw', async () => {
+    // `decompressStream`'s decompressor 'error' fires for two different
+    // reasons - see its own doc comment (`bodyErroredFirst`) - this pins
+    // the case that must NOT be tagged `DECODE_ERROR`: `body` (the raw
+    // undici stream) erroring first, forwarded to the decompressor purely
+    // so it gets cleaned up too, is a network failure, not a decode one.
+    const body = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    const socketError = Object.assign(new Error('other side closed'), {
+      code: 'UND_ERR_SOCKET',
+    });
+    let caught: any;
+    const drained = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    // `.destroy(err)`, not a bare `.emit('error', ...)`: a real undici body
+    // errors via destroy, which also marks it `destroyed`.
+    body.destroy(socketError);
+    await drained;
+    // Passed straight through: no `isAxiosError`/`.config` attached by the
+    // corrupt-body path (this library's own `fail()`/`toAxiosError`, for a
+    // real request that never got this far, is what remaps
+    // UND_ERR_SOCKET -> ECONNRESET before the response is ever handed
+    // back - out of scope for this direct `toAxiosLikeResponse` unit test,
+    // which only pins that the *stream*-side wrap doesn't misfire here).
+    expect(caught).toBe(socketError);
+    expect(caught.isAxiosError).toBeUndefined();
+  });
+
   it('an already-AxiosError (e.g. a maxContentLength guard failure) is never double-wrapped', async () => {
     const raw = Buffer.alloc(1_000, 'z');
     const undiciResponse: any = {

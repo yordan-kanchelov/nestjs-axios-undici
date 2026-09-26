@@ -323,24 +323,44 @@ const ZSTD_FLUSH_OPTIONS = {
   finishFlush: (zlibConstants as any).ZSTD_e_flush,
 } as const;
 
+/**
+ * Tags an error as an actual decode failure - thrown by zlib/brotli/zstd
+ * itself, decoding already-fully-read bytes - as opposed to a network-level
+ * error (a dropped socket, an abort, ...) that happens to reach the same
+ * catch block while decompression was configured. `toAxiosLikeResponse`'s
+ * catch block and `wrapStreamCancellation` (`axios-response.adapter.ts`)
+ * check for this tag, rather than the error's `code`/`name` shape: brotli
+ * and zstd don't raise `Z_*`-prefixed codes the way zlib (gzip/deflate)
+ * does, so a shape check alone under-wraps them (found in PR #38 review) -
+ * this instead marks the error at its actual origin, uniformly across every
+ * codec and both the buffered (`decompressBuffer`, below) and streamed
+ * (`decompressStream`) decode paths.
+ */
+export const DECODE_ERROR = Symbol('decodeError');
+
 /** Synchronously decompresses a full body buffer per `Content-Encoding`. */
 export function decompressBuffer(buffer: Buffer, encoding: string): Buffer {
   const e = normalizeEncoding(encoding);
-  if (GZIP_ENCODINGS.has(e)) return gunzipSync(buffer, GZIP_FLUSH_OPTIONS);
-  if (e === 'br') return brotliDecompressSync(buffer, BROTLI_FLUSH_OPTIONS);
-  if (e === 'deflate') {
-    try {
-      return inflateSync(buffer, GZIP_FLUSH_OPTIONS);
-    } catch {
-      // Some servers send raw (headerless) deflate under the same
-      // Content-Encoding; axios falls back to it the same way.
-      return inflateRawSync(buffer, GZIP_FLUSH_OPTIONS);
+  try {
+    if (GZIP_ENCODINGS.has(e)) return gunzipSync(buffer, GZIP_FLUSH_OPTIONS);
+    if (e === 'br') return brotliDecompressSync(buffer, BROTLI_FLUSH_OPTIONS);
+    if (e === 'deflate') {
+      try {
+        return inflateSync(buffer, GZIP_FLUSH_OPTIONS);
+      } catch {
+        // Some servers send raw (headerless) deflate under the same
+        // Content-Encoding; axios falls back to it the same way.
+        return inflateRawSync(buffer, GZIP_FLUSH_OPTIONS);
+      }
     }
+    if (e === 'zstd' && isZstdSupported) {
+      return zstdDecompressSync(buffer, ZSTD_FLUSH_OPTIONS);
+    }
+    return buffer;
+  } catch (error) {
+    if (error && typeof error === 'object') (error as any)[DECODE_ERROR] = true;
+    throw error;
   }
-  if (e === 'zstd' && isZstdSupported) {
-    return zstdDecompressSync(buffer, ZSTD_FLUSH_OPTIONS);
-  }
-  return buffer;
 }
 
 /**
@@ -390,6 +410,17 @@ export function isDecodableEncoding(encoding: string): boolean {
  * explicit `destroy()` calls on both streams (below) still fire too; they're
  * synchronous and race harmlessly against this function's listeners (both
  * check `!stream.destroyed` first), so nothing double-destroys.
+ *
+ * Also tags a genuine decode failure with `DECODE_ERROR` (see its own doc
+ * comment): the decompressor's `'error'` event fires for two different
+ * reasons - its own internal decode failure (corrupt/wrong-format input),
+ * or `body` erroring first (a network-level failure, forwarded here purely
+ * so the decompressor itself gets cleaned up too) - and only the first one
+ * is an actual decode error. `bodyErroredFirst` distinguishes them: it's set
+ * (synchronously, before the forwarding `.destroy()` call below ever runs)
+ * the moment `body` itself errors, so by the time the decompressor's own
+ * `'error'` listener runs, it can tell whether this is that same,
+ * already-network-attributed failure arriving secondhand.
  */
 export function decompressStream(body: Readable, encoding: string): Readable {
   const e = normalizeEncoding(encoding);
@@ -406,14 +437,21 @@ export function decompressStream(body: Readable, encoding: string): Readable {
   else return body;
 
   body.pipe(decompressor);
+  let bodyErroredFirst = false;
   const destroyBody = (err?: Error): void => {
     if (!body.destroyed) body.destroy(err);
   };
   const destroyDecompressor = (err?: Error): void => {
+    bodyErroredFirst = true;
     if (!decompressor.destroyed) decompressor.destroy(err);
   };
   body.once('error', destroyDecompressor);
-  decompressor.once('error', destroyBody);
+  decompressor.once('error', (err?: any) => {
+    if (!bodyErroredFirst && err && typeof err === 'object') {
+      err[DECODE_ERROR] = true;
+    }
+    destroyBody(err);
+  });
   decompressor.once('close', destroyBody);
   return decompressor as unknown as Readable;
 }
