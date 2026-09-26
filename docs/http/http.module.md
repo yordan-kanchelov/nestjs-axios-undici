@@ -12,7 +12,7 @@ import { HttpModule } from 'nestjs-axios-undici';
 export class AppModule {}
 ```
 
-Each import of `HttpModule`, `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Bare `HttpModule` (no `register()` call) gets empty options. Previously, every app that imported the bare module this way shared the *same* empty options object, so calling `setDispatcher()` (or the old `setGlobalDispatcher()`) in one app leaked into every other app's `HttpService` too. That's fixed now: each app gets its own.
+Each call to `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Importing the bare `HttpModule` (no `register()` call) is different: Nest treats it as a singleton module, so every feature module that imports it shares the same `HttpService`, with empty options. Previously, that shared instance also leaked across separate apps, for example multiple `TestingModule`s compiled in the same test run, because the empty options object was created once when the module class was declared, not once per app. That's fixed now: each app gets its own.
 
 ## `register(options)`
 

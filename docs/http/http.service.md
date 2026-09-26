@@ -35,7 +35,7 @@ All methods return `Observable<AxiosLikeResponse<T>>`.
 | `post<T>(url, data?, config?)` | |
 | `put<T>(url, data?, config?)` | |
 | `patch<T>(url, data?, config?)` | |
-| `query<T>(url, data?, config?)` | The HTTP `QUERY` method (matching `@nestjs/axios` 12 / axios ≥1.13). |
+| `query<T>(url, data?, config?)` | The HTTP `QUERY` method (matching `@nestjs/axios` 12 / axios ≥1.16). |
 | `postForm<T>(url, data?, config?)` | Sent as `multipart/form-data`, matching axios' own `postForm`: a `FormData`/`form-data` instance goes through as-is, a plain object is converted to one. An explicit `Content-Type` header doesn't change this, and neither does axios'. |
 | `putForm<T>(url, data?, config?)` | Same as `postForm`. |
 | `patchForm<T>(url, data?, config?)` | Same as `postForm`. |

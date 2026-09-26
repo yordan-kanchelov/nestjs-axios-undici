@@ -153,8 +153,7 @@ differential('Differential: HttpModule.register() options', routes, [
         `${ctx.base}/raw?ct=application/json&body={"big":12345678901234567890}`,
       ),
     normalize: (o: any) => o.result?.data,
-    // module-level transformResponse should replace default parsing and receive the raw
-    // string; here the default JSON parse already ran, so it receives an object instead.
+    // module-level transformResponse replaces default parsing and receives the raw string, as in axios.
   },
   {
     name: 'transformResponse receives headers and status',

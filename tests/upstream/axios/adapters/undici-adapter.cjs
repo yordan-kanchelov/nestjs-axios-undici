@@ -180,13 +180,17 @@ function makeAdapter({ buildFullPath }) {
 
     // `maxBodyLength`: a string/Buffer body is checked synchronously before
     // ever dispatching, matching HttpService.executeRequest.
+    const currentBodyLength =
+      typeof currentOptions.body === 'string'
+        ? Buffer.byteLength(currentOptions.body)
+        : Buffer.isBuffer(currentOptions.body)
+          ? currentOptions.body.length
+          : undefined;
     if (
       config.maxBodyLength !== undefined &&
       config.maxBodyLength > -1 &&
-      typeof currentOptions.body === 'string'
-        ? Buffer.byteLength(currentOptions.body) > config.maxBodyLength
-        : Buffer.isBuffer(currentOptions.body) &&
-          currentOptions.body.length > config.maxBodyLength
+      currentBodyLength !== undefined &&
+      currentBodyLength > config.maxBodyLength
     ) {
       clearDeadline();
       const err = new Error(`Request body larger than maxBodyLength limit`);
@@ -291,7 +295,15 @@ function makeAdapter({ buildFullPath }) {
           requestInfo,
         );
         axiosLikeResponse.config = config;
-        destroyDispatcher();
+        // For `responseType: 'stream'`, `axiosLikeResponse.data` is the
+        // still-unconsumed undici response body: destroying the dispatcher
+        // now can abort it before the caller ever reads it. Deferred until
+        // the stream itself ends, errors, or is closed.
+        if (config.responseType === 'stream') {
+          axiosLikeResponse.data.once('close', destroyDispatcher);
+        } else {
+          destroyDispatcher();
+        }
         return axiosLikeResponse;
       }
     } catch (error) {
