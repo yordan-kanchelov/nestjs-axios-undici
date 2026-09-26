@@ -28,6 +28,7 @@ export type {
 } from './axios-ref.interface';
 export type {
   AxiosHeaderValue,
+  CommonRequestHeaders,
   RawAxiosHeaders,
   AxiosRequestHeaders,
   AxiosHeaderMatcher,
