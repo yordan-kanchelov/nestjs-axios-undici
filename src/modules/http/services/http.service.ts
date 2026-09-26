@@ -49,7 +49,7 @@ import {
 } from '../adapters/axios-request.adapter';
 import {
   STATUS_TEXT_MAP,
-  buildRequestInfo,
+  RequestInfo,
   toAxiosLikeResponse,
 } from '../adapters/axios-response.adapter';
 import {
@@ -256,6 +256,39 @@ class RequestAbortSignal {
 const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**
+ * True when `url` starts with `http://` or `https://`, checked
+ * case-insensitively (axios itself always lowercases the protocol) via
+ * `charCodeAt` rather than a regex or a `.slice().toLowerCase()` - no
+ * substring/array allocation, just a handful of integer comparisons. This is
+ * the overwhelming majority of requests, so `unsupportedProtocol` below
+ * checks it first and skips the regex entirely once it matches.
+ */
+function isHttpOrHttpsPrefix(url: string): boolean {
+  // 'h'/'H'
+  if ((url.charCodeAt(0) | 0x20) !== 0x68) return false;
+  // 't'/'T', 't'/'T', 'p'/'P'
+  if (
+    (url.charCodeAt(1) | 0x20) !== 0x74 ||
+    (url.charCodeAt(2) | 0x20) !== 0x74 ||
+    (url.charCodeAt(3) | 0x20) !== 0x70
+  ) {
+    return false;
+  }
+  const c4 = url.charCodeAt(4);
+  if (c4 === 0x3a /* ':' */) {
+    return url.charCodeAt(5) === 0x2f && url.charCodeAt(6) === 0x2f; // '//'
+  }
+  if ((c4 | 0x20) === 0x73 /* 's'/'S' */) {
+    return (
+      url.charCodeAt(5) === 0x3a &&
+      url.charCodeAt(6) === 0x2f &&
+      url.charCodeAt(7) === 0x2f
+    );
+  }
+  return false;
+}
+
+/**
  * The URL's protocol, when it names one this library can't dispatch (e.g.
  * `tel:`, `ftp:`) - `undefined` for a supported protocol *or* a relative
  * URL/path (no scheme at all; resolved fine against a dispatcher's base).
@@ -271,6 +304,9 @@ function unsupportedProtocol(
   if (url instanceof URL) {
     protocol = url.protocol;
   } else if (typeof url === 'string') {
+    // Fast path: skip the regex entirely for a plain http(s) URL (see
+    // `isHttpOrHttpsPrefix`).
+    if (isHttpOrHttpsPrefix(url)) return undefined;
     // Cheap prefix check first: only a request whose URL *looks* absolute
     // (`<scheme>:...`) pays for anything more.
     const match = /^([a-z][a-z\d+\-.]*):/i.exec(url);
@@ -1056,7 +1092,7 @@ export class HttpService {
         clearDeadline();
         const info = preAborted
           ? undefined
-          : buildRequestInfo(currentUrl, currentOptions.method);
+          : new RequestInfo(currentUrl, currentOptions.method);
         if (isDeadlineTimeoutReason(abortSignal.reason)) {
           subscriber.error(
             createTimeoutError(abortSignal.reason, interceptorRequest, info),
@@ -1176,13 +1212,14 @@ export class HttpService {
         }
 
         // Built from the hop that was actually dispatched (matching axios'
-        // `response.request` - see `buildRequestInfo`'s doc comment):
-        // `res.responseUrl` is always the final hop's URL, whether or not a
-        // redirect was actually followed, exactly like axios' own.
-        const requestInfo = buildRequestInfo(
+        // `response.request` - see `RequestInfo`'s doc comment): `res`'s
+        // `responseUrl` (computed lazily, only if read) is always the final
+        // hop's URL, whether or not a redirect was actually followed,
+        // exactly like axios' own.
+        const requestInfo = new RequestInfo(
           currentUrl,
           currentOptions.method,
-          urlToString(currentUrl),
+          currentUrl,
         );
 
         toAxiosLikeResponse(interceptorRequest, res, requestInfo).then(

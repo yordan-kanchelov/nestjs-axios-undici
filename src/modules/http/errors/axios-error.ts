@@ -4,6 +4,7 @@ import type {
   InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 import { buildLazyAxiosConfig } from '../adapters/axios-request.adapter';
+import type { RequestInfo } from '../adapters/axios-response.adapter';
 
 /**
  * Axios-compatible error class.
@@ -279,7 +280,7 @@ export function isDeadlineTimeoutReason(
 export function createTimeoutError(
   reason: DeadlineTimeoutReason,
   request: HttpInterceptorRequest,
-  requestInfo?: Record<string, any>,
+  requestInfo?: RequestInfo | Record<string, any>,
 ): AxiosError {
   const error = new AxiosError(
     reason.timeoutErrorMessage || `timeout of ${reason.timeout}ms exceeded`,
@@ -357,15 +358,15 @@ const SYNCHRONOUS_ARG_ERROR_CODES = new Set(['UND_ERR_INVALID_ARG']);
  * `request.options.signal` (the pre-merge signal) for any other caller (e.g.
  * `executeAdapter`, which has no `RequestAbortSignal` of its own).
  * `requestInfo`, when given, becomes `error.request` (a network, timeout or
- * cancellation error, never a success) - a lightweight object built once by
- * the caller (`buildRequestInfo`), never allocated here on a path that
+ * cancellation error, never a success) - a lightweight `RequestInfo`
+ * instance built once by the caller, never allocated here on a path that
  * doesn't need it.
  */
 export function toAxiosError(
   error: any,
   request: HttpInterceptorRequest,
   effectiveSignal?: EffectiveAbortSignal,
-  requestInfo?: Record<string, any>,
+  requestInfo?: RequestInfo | Record<string, any>,
 ): any {
   if (isAxiosError(error)) {
     return error;

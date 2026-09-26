@@ -7,54 +7,105 @@ import {
   readText,
 } from './axios-response-type.adapter';
 import { buildLazyAxiosConfig } from './axios-request.adapter';
+import { urlToString } from './redirect.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
   AxiosLikeResponse,
   InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 
+type ParsedRequestUrl = {
+  protocol: string | undefined;
+  host: string | undefined;
+  path: string | undefined;
+};
+
 /**
  * A lightweight stand-in for axios' `response.request`/`error.request` (the
  * real `http.ClientRequest`, wrapped by `follow-redirects`): axios' own,
  * commonly-read fields (`path`, `method`, `host`, `protocol`, and
  * `res.responseUrl` - the final hop's URL, set whether or not a redirect was
- * actually followed) built from whatever this library already resolved for
- * the hop that was actually dispatched, at no cost beyond a handful of
- * property reads (a `new URL()` parse only for a string URL, cheap relative
- * to the network I/O and body decoding this runs alongside). Built once per
- * response/error - never per byte, and never at all on a code path that
- * doesn't reach a response or a network/timeout error (see `toAxiosError`).
+ * actually followed).
+ *
+ * Perf: the constructor only stores the raw inputs (no `new URL()` parse, no
+ * object allocation beyond `this`) - this is built on *every* response and
+ * error, so a request whose `.request`/`.response.request` is never read
+ * (the overwhelmingly common case) pays nothing beyond that. `path`/`host`/
+ * `protocol`/`res` are lazy prototype getters: the URL parse (or
+ * `urlToString`, for `res.responseUrl`) runs at most once, on first access,
+ * and its result is cached in a private field - a second read of the same
+ * field, or of `{ ...response }`'s copy (same instance, by reference), is
+ * then free.
  */
-export function buildRequestInfo(
-  url: string | URL | UrlObject,
-  method: string,
-  responseUrl?: string,
-): Record<string, any> {
-  let protocol: string | undefined;
-  let host: string | undefined;
-  let path: string | undefined;
-  if (url instanceof URL) {
-    protocol = url.protocol;
-    host = url.hostname;
-    path = `${url.pathname}${url.search}`;
-  } else if (typeof url === 'string') {
-    try {
-      const parsed = new URL(url);
-      protocol = parsed.protocol;
-      host = parsed.hostname;
-      path = `${parsed.pathname}${parsed.search}`;
-    } catch {
-      // Leave path/host/protocol undefined - same as axios itself would
-      // give for a request that never got far enough to resolve one.
-    }
-  } else if (url && typeof url === 'object') {
-    protocol = (url as UrlObject).protocol ?? undefined;
-    host = (url as UrlObject).hostname ?? undefined;
-    path = `${(url as UrlObject).pathname ?? ''}${(url as UrlObject).search ?? ''}`;
+export class RequestInfo {
+  private readonly _url: string | URL | UrlObject;
+  private readonly _method: string;
+  // `undefined` when this request never reached a response at all (e.g. a
+  // network/timeout error) - `res` then stays `undefined`, matching axios.
+  private readonly _responseUrlSource: string | URL | UrlObject | undefined;
+  private _parsed?: ParsedRequestUrl;
+  private _res?: { responseUrl: string };
+
+  constructor(
+    url: string | URL | UrlObject,
+    method: string,
+    responseUrlSource?: string | URL | UrlObject,
+  ) {
+    this._url = url;
+    this._method = method;
+    this._responseUrlSource = responseUrlSource;
   }
-  const info: Record<string, any> = { method, path, host, protocol };
-  if (responseUrl !== undefined) info.res = { responseUrl };
-  return info;
+
+  private parse(): ParsedRequestUrl {
+    if (this._parsed) return this._parsed;
+    let protocol: string | undefined;
+    let host: string | undefined;
+    let path: string | undefined;
+    const url = this._url;
+    if (url instanceof URL) {
+      protocol = url.protocol;
+      host = url.hostname;
+      path = `${url.pathname}${url.search}`;
+    } else if (typeof url === 'string') {
+      try {
+        const parsed = new URL(url);
+        protocol = parsed.protocol;
+        host = parsed.hostname;
+        path = `${parsed.pathname}${parsed.search}`;
+      } catch {
+        // Leave path/host/protocol undefined - same as axios itself would
+        // give for a request that never got far enough to resolve one.
+      }
+    } else if (url && typeof url === 'object') {
+      protocol = (url as UrlObject).protocol ?? undefined;
+      host = (url as UrlObject).hostname ?? undefined;
+      path = `${(url as UrlObject).pathname ?? ''}${(url as UrlObject).search ?? ''}`;
+    }
+    return (this._parsed = { protocol, host, path });
+  }
+
+  get method(): string {
+    return this._method;
+  }
+
+  get protocol(): string | undefined {
+    return this.parse().protocol;
+  }
+
+  get host(): string | undefined {
+    return this.parse().host;
+  }
+
+  get path(): string | undefined {
+    return this.parse().path;
+  }
+
+  get res(): { responseUrl: string } | undefined {
+    if (this._responseUrlSource === undefined) return undefined;
+    return (this._res ??= {
+      responseUrl: urlToString(this._responseUrlSource),
+    });
+  }
 }
 
 /**
@@ -100,7 +151,7 @@ class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
     statusText: string,
     headers: any,
     configRequest: HttpInterceptorRequest,
-    requestInfo: Record<string, any>,
+    requestInfo: RequestInfo | Record<string, any>,
   ) {
     this.data = data;
     this.status = status;
@@ -190,13 +241,13 @@ export async function toAxiosLikeResponse(
   request: HttpInterceptorRequest,
   undiciResponse: Dispatcher.ResponseData,
   // Built by `HttpService.executeRequest` from the hop that was actually
-  // dispatched (see `buildRequestInfo`), whether or not a redirect was
-  // followed, matching axios. Callers with no such hop tracking of their
-  // own (e.g. the standalone `AxiosResponseAdapterInterceptor`) can omit it;
-  // a reasonable one is then built from `request` itself.
-  requestInfo?: Record<string, any>,
+  // dispatched (a `RequestInfo`), whether or not a redirect was followed,
+  // matching axios. Callers with no such hop tracking of their own (e.g. the
+  // standalone `AxiosResponseAdapterInterceptor`) can omit it; a reasonable
+  // one is then built from `request` itself.
+  requestInfo?: RequestInfo | Record<string, any>,
 ): Promise<AxiosLikeResponse> {
-  requestInfo ??= buildRequestInfo(
+  requestInfo ??= new RequestInfo(
     request.url,
     String((request.options as any)?.method || 'GET'),
   );

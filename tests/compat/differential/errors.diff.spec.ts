@@ -4,6 +4,7 @@
  */
 import axios from 'axios';
 import { Readable } from 'node:stream';
+import { gzipSync } from 'node:zlib';
 import { differential, Ctx } from './harness';
 
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
@@ -30,6 +31,19 @@ const routes = {
       'Content-Encoding': 'gzip',
     });
     res.end('this is not gzip');
+  },
+  // A highly compressible body: small on the wire, large once decompressed -
+  // `maxContentLength` must be checked against the *decompressed* size, as
+  // in axios (`plan.md`: fix(maxContentLength for gzip)).
+  '/gzip-big': (req: any, res: any) => {
+    const n = Number(
+      new URL(req.url, 'http://x').searchParams.get('n') || 100000,
+    );
+    res.writeHead(200, {
+      'Content-Type': 'text/plain',
+      'Content-Encoding': 'gzip',
+    });
+    res.end(gzipSync(Buffer.alloc(n, 'x')));
   },
   '/redirect-loop': (_req: any, res: any) => {
     res.writeHead(302, { Location: '/redirect-loop' });
@@ -294,6 +308,16 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     name: 'maxContentLength per request',
     run: (s, ctx) =>
       s.get(`${ctx.base}/big?n=2000`, { maxContentLength: 1000 }),
+    normalize: (o: any) => ({ code: o.error?.code, name: o.error?.name }),
+  },
+  {
+    // A small gzip response that decompresses well past `maxContentLength`:
+    // axios enforces the limit on the decompressed stream (`lib/adapters/
+    // http.js`), not the (much smaller) compressed body on the wire - this
+    // must match, not just "reject somehow".
+    name: 'maxContentLength per request (gzip, checked against decompressed size)',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/gzip-big?n=100000`, { maxContentLength: 1000 }),
     normalize: (o: any) => ({ code: o.error?.code, name: o.error?.name }),
   },
   {
