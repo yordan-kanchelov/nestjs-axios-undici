@@ -1,12 +1,8 @@
 # Configuration Guide
 
-The `nestjs-axios-undici` module allows you to configure the underlying `undici` client options.
-
-> **Note**: The module always returns axios-compatible responses. No special configuration is needed for axios compatibility.
+`HttpModule.register()`/`.registerAsync()` accept axios-style options directly - the same ones you'd pass to `@nestjs/axios`' `HttpModule` - and map them to undici automatically. They also accept undici's own [request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) (such as a custom `dispatcher`) for anything the axios mapping doesn't cover. See [Axios Compatibility](/docs/axios-supported-options.md#module-level-axios-options) for the full option list.
 
 ## Basic Configuration
-
-Use the `register` method to configure the module synchronously. The configuration object matches the [Undici Request Options](https://github.com/nodejs/undici#undicirequesturl-options-promise).
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -15,9 +11,9 @@ import { HttpModule } from 'nestjs-axios-undici';
 @Module({
   imports: [
     HttpModule.register({
+      baseURL: 'https://api.example.com',
       // Default headers for all requests
       headers: {
-        'Content-Type': 'application/json',
         'User-Agent': 'MyApp/1.0',
       },
     }),
@@ -93,7 +89,7 @@ export class AppModule {}
 
 ## Advanced Configuration (Dispatchers)
 
-To configure advanced behavior like connection pooling, proxies, or mocks, you should use a custom `Dispatcher`. The `dispatcher` property can be passed in the configuration object, and always wins over any of the axios-style options below (`httpAgent`/`httpsAgent`, `socketPath`, `proxy`, `httpVersion`) - see [axios-supported-options.md](/docs/axios-supported-options.md#precedence-an-explicit-dispatcher-always-wins).
+To configure advanced behavior like connection pooling, proxies, or mocks, you should use a custom `Dispatcher`. The `dispatcher` property can be passed in the configuration object, and always wins over any of the axios-style options below (`httpAgent`/`httpsAgent`, `socketPath`, `proxy`, `httpVersion`) - see [Axios Compatibility](/docs/axios-supported-options.md#precedence-an-explicit-dispatcher-always-wins).
 
 For the common axios-style cases - TLS options via `httpsAgent`, `socketPath`, an explicit `proxy` or the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables, and `httpVersion: 2` - you don't need a `Dispatcher` at all; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options).
 
@@ -121,6 +117,16 @@ import { Agent } from 'undici';
 export class AppModule {}
 ```
 
+For a proxy, a mock, or anything else undici already has a `Dispatcher` for, pass it the same way - it always wins over the axios-style options above:
+
+```typescript
+import { ProxyAgent } from 'undici';
+
+HttpModule.register({ dispatcher: new ProxyAgent('http://proxy.example.com:8080') });
+```
+
+A `dispatcher` can also be set at runtime (`httpService.setDispatcher(...)`) or per request (`request(url, { dispatcher })`) - see [`setDispatcher`](/docs/http/http.service.md#setdispatcherdispatcher).
+
 ### Cookies (`cookieJar`)
 
 `withCredentials` (an axios option this module also accepts) is a no-op on Node.js, matching axios itself. Cookie storage/replay is opt-in instead, through an explicit `cookieJar` option - a [`tough-cookie`](https://www.npmjs.com/package/tough-cookie) `CookieJar` instance:
@@ -132,15 +138,3 @@ HttpModule.register({ cookieJar: new CookieJar() });
 ```
 
 Only a jar instance is accepted (never `true`), so you decide its scope explicitly - typically one jar per `register()` call. `http-cookie-agent` and `tough-cookie` are optional peer dependencies, loaded lazily only when `cookieJar` is set; install both (`npm i http-cookie-agent tough-cookie`) to use this option. See [Cookies: `cookieJar`](/docs/axios-supported-options.md#cookies-cookiejar) for the full details, including why there's no per-request `cookieJar`.
-
-## Environment Variables
-
-You can easily use environment variables within the `register` or `registerAsync` methods.
-
-```typescript
-HttpModule.register({
-  headers: {
-    'Authorization': process.env.API_KEY,
-  },
-});
-```

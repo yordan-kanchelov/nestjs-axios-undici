@@ -31,7 +31,7 @@ export class CatsService {
 }
 ```
 
-To accept other status codes, pass `validateStatus` in the module configuration or per request, as you would with axios.
+To accept other status codes, pass `validateStatus` in the module options or per request, as you would with axios.
 
 To tell status errors from errors without a response, check `error.response`. `error.request` is set for network, timeout and cancellation errors too (built from the hop that was actually dispatched: `path`, `method`, `host`, `protocol`, `res.responseUrl`) - it just isn't set for the couple of cases where axios itself never builds a request object either (a signal already aborted before the request was ever dispatched, an unsupported URL protocol).
 
