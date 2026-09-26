@@ -127,6 +127,28 @@ export type AxiosHeaderValue = AxiosHeaders | string | string[] | number | boole
 export type AxiosInstance = AxiosRef;
 
 // @public
+export interface AxiosInstanceContext {
+    // (undocumented)
+    defaults: AxiosRefDefaults;
+    // (undocumented)
+    requestInterceptors: AxiosInterceptorStore<InternalAxiosLikeRequestConfig>;
+    // (undocumented)
+    responseInterceptors: AxiosInterceptorStore<AxiosLikeResponse>;
+}
+
+// @public
+export interface AxiosInterceptorEntry<T> {
+    // (undocumented)
+    fulfilled?: (value: T) => T | Promise<T>;
+    // (undocumented)
+    rejected?: (error: any) => any;
+    // (undocumented)
+    runWhen?: ((config: any) => boolean) | null;
+    // (undocumented)
+    synchronous?: boolean;
+}
+
+// @public
 export interface AxiosInterceptorManager<T> {
     clear(): void;
     eject(id: number): void;
@@ -139,6 +161,12 @@ export interface AxiosInterceptorOptions {
     runWhen?: ((config: InternalAxiosLikeRequestConfig) => boolean) | null;
     // (undocumented)
     synchronous?: boolean;
+}
+
+// @public
+export interface AxiosInterceptorStore<T> extends AxiosInterceptorManager<T> {
+    // (undocumented)
+    readonly entries: ReadonlyArray<AxiosInterceptorEntry<T> | null>;
 }
 
 // @public
@@ -505,20 +533,16 @@ export interface HttpModuleOptionsFactory {
 
 // @public (undocumented)
 export class HttpService implements OnModuleDestroy {
-    // Warning: (ae-forgotten-export) The symbol "ResolvedHttpModuleOptions" needs to be exported by the entry point index.d.ts
-    constructor(instanceOptions: ResolvedUndiciRequestOptions, moduleOptions?: ResolvedHttpModuleOptions | undefined, resolvedInterceptors?: Array<HttpInterceptor | HttpInterceptorFunction>);
+    constructor(instanceOptions: UndiciRequestOptionsType, moduleOptions?: HttpModuleOptions | undefined, resolvedInterceptors?: Array<HttpInterceptor | HttpInterceptorFunction>);
     // (undocumented)
     addInterceptor(interceptor: HttpInterceptor | HttpInterceptorFunction): void;
     get axiosRef(): AxiosRef;
     delete<T = any, D = any>(url: string | URL | UrlObject, config?: AxiosLikeRequestConfig<D>): Observable<AxiosLikeResponse<T, D>>;
-    // Warning: (ae-forgotten-export) The symbol "AxiosInstanceContext" needs to be exported by the entry point index.d.ts
     dispatchAxiosConfig<T = any, D = any>(config: AxiosLikeRequestConfig<D>, context: AxiosInstanceContext): Observable<AxiosLikeResponse<T, D>>;
     get<T = any, D = any>(url: string | URL | UrlObject, config?: AxiosLikeRequestConfig<D>): Observable<AxiosLikeResponse<T, D>>;
     head<T = any, D = any>(url: string | URL | UrlObject, config?: AxiosLikeRequestConfig<D>): Observable<AxiosLikeResponse<T, D>>;
-    // Warning: (ae-forgotten-export) The symbol "ResolvedUndiciRequestOptions" needs to be exported by the entry point index.d.ts
-    //
     // (undocumented)
-    protected readonly instanceOptions: ResolvedUndiciRequestOptions;
+    protected readonly instanceOptions: UndiciRequestOptionsType;
     get interceptorCount(): number;
     onModuleDestroy(): Promise<void>;
     options<T = any, D = any>(url: string | URL | UrlObject, config?: AxiosLikeRequestConfig<D>): Observable<AxiosLikeResponse<T, D>>;

@@ -11,3 +11,14 @@ export * from './modules/http/constants';
 export * from './modules/http/services';
 export * from './modules/http/errors';
 export * from './modules/http/types';
+// `HttpService.dispatchAxiosConfig` (the bridge every axios-like instance
+// `axiosRef`/`axiosRef.create()` builds dispatches a request through) is a
+// public method, so its `context: AxiosInstanceContext` parameter's shape is
+// already part of the public API surface, whether or not it's re-exported by
+// name; exported explicitly here rather than left as an api-extractor
+// "forgotten export".
+export type { AxiosInstanceContext } from './modules/http/adapters/axios-ref.factory';
+export type {
+  AxiosInterceptorStore,
+  AxiosInterceptorEntry,
+} from './modules/http/adapters/axios-interceptor.adapter';

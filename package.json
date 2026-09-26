@@ -24,6 +24,8 @@
     "pretypecheck": "npm run generate:version",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:compat": "npm run build && tsc -p tests/types/tsconfig.json",
+    "api:check": "npm run build && api-extractor run --verbose",
+    "api:update": "npm run build && api-extractor run --local --verbose",
     "lint": "eslint src tests",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

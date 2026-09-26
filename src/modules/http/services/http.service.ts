@@ -22,7 +22,7 @@ import {
 
 import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
-import type { UndiciRequestOptionsType } from '../types';
+import type { HttpModuleOptions, UndiciRequestOptionsType } from '../types';
 import type {
   ResolvedHttpModuleOptions,
   ResolvedUndiciRequestOptions,
@@ -483,11 +483,20 @@ export class HttpService implements OnModuleDestroy {
   private readonly axiosContext: AxiosInstanceContext;
 
   public constructor(
+    // Typed with the plain, public `UndiciRequestOptionsType`/`HttpModuleOptions`
+    // (not the internal `Resolved*` variants that also carry `__resolvedConfig`
+    // - see `internal/resolved-config.ts`): both are constructor parameter
+    // properties, so their declared type is part of this public class'
+    // emitted `.d.ts` regardless of `protected`/`private` (api-extractor's
+    // `ae-forgotten-export` catches exactly this - an internal-only type
+    // reachable from a public signature). `setupDispatcher`/
+    // `shouldUseEnvProxyAgent`/`undiciRef` each cast to the internal type
+    // locally, at the one point they actually read `__resolvedConfig`.
     @Inject(UNDICI_INSTANCE_TOKEN)
-    protected readonly instanceOptions: ResolvedUndiciRequestOptions,
+    protected readonly instanceOptions: UndiciRequestOptionsType,
     @Optional()
     @Inject(HTTP_MODULE_OPTIONS)
-    private readonly moduleOptions?: ResolvedHttpModuleOptions,
+    private readonly moduleOptions?: HttpModuleOptions,
     // Only `HttpModule.register()`/`.registerAsync()` pass this (as a plain
     // constructor argument, not through Nest DI - `@Optional()` here is only
     // so the bare, non-dynamic `HttpModule` import (no `.register()` call,
@@ -561,7 +570,13 @@ export class HttpService implements OnModuleDestroy {
    * wins and is left untouched - none of the branches below run.
    */
   private setupDispatcher(): void {
-    const options = this.moduleOptions;
+    // `mapAxiosConfigToUndici` (axios-config.adapter.ts) stashes the
+    // resolved agent/proxy pieces under `__resolvedConfig` on the same
+    // object `HTTP_MODULE_OPTIONS` provides - a typed cast, not `as any`,
+    // right where this internal field is actually read (see the
+    // constructor's doc comment on why the field itself stays typed with
+    // the plain, public `HttpModuleOptions`).
+    const options = this.moduleOptions as ResolvedHttpModuleOptions | undefined;
     if (!options) return;
     if (this.instanceOptions.dispatcher) return;
 
@@ -1509,7 +1524,9 @@ export class HttpService implements OnModuleDestroy {
    * it - see `docs/http/http.service.md`.
    */
   public get undiciRef(): Readonly<UndiciRequestOptionsType> {
-    const snapshot: ResolvedUndiciRequestOptions = { ...this.instanceOptions };
+    const snapshot: ResolvedUndiciRequestOptions = {
+      ...(this.instanceOptions as ResolvedUndiciRequestOptions),
+    };
     delete snapshot.__resolvedConfig;
     return Object.freeze(snapshot) as Readonly<UndiciRequestOptionsType>;
   }

@@ -307,6 +307,8 @@ HttpModule.register({ cookieJar: new CookieJar() });
 
 The package now exports an explicit, deliberate list of names from its entry point (`src/index.ts`), rather than re-exporting whatever an internal file happened to declare `export` on. Every removal below is outright - no `@deprecated` step, per the "breaking changes are fine before 1.0.0" decision - since each one loses nothing: either it never did anything, or a supported replacement already exists.
 
+The surface is now frozen and diffable: [API Extractor](https://api-extractor.com/) checks every build's `lib/index.d.ts` against the committed report at `etc/nestjs-axios-undici.api.md` (`npm run api:check`, part of CI). Any future change to an exported name or signature has to update that file (`npm run api:update`) as part of the same PR, so it stays a deliberate, reviewable decision rather than an accident.
+
 **Removed, with what to use instead:**
 
 - **The legacy typed module**: `TypedHttpModule`, `InjectTypedHttpService`, `ExtractHttpServiceType`, `HTTP_SERVICE_TYPE`, `TypedDynamicModule`. Use `HttpModule`/`HttpService` directly - `HttpModuleOptions` is now strictly typed (see [Types](#types) above), so there's nothing `TypedHttpModule` did that plain `HttpModule.register()` doesn't already give you.

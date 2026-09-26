@@ -69,6 +69,10 @@ jobs:
         if: matrix.full
         run: npm run typecheck:compat
 
+      - name: Public API report is up to date (etc/nestjs-axios-undici.api.md)
+        if: matrix.full
+        run: npm run api:check
+
       - name: Unit and e2e tests with coverage
         if: matrix.full
         run: npm run test:cov
