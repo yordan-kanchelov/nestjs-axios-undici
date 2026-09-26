@@ -1,18 +1,18 @@
 <!-- Sidebar for Docsify -->
 
-* Getting Started
+* Getting started
   * [Introduction](/)
-  * [Migration from @nestjs/axios](/docs/migration-guide.md)
+  * [Migrating from @nestjs/axios](/docs/migration-guide.md)
 
 * Guides
   * [Configuration](/docs/guides/configuration.md)
-  * [Making Requests](/docs/guides/making-requests.md)
+  * [Making requests](/docs/guides/making-requests.md)
   * [Interceptors](/docs/guides/interceptors.md)
-  * [Error Handling](/docs/guides/error-handling.md)
+  * [Error handling](/docs/guides/error-handling.md)
   * [Testing](/docs/guides/testing.md)
 
 * Reference
-  * [Axios Compatibility](/docs/axios-supported-options.md)
+  * [Axios compatibility](/docs/axios-supported-options.md)
   * [HttpModule](/docs/http/http.module.md)
   * [HttpService](/docs/http/http.service.md)
 
