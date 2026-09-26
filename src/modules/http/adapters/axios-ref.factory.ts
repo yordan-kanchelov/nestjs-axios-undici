@@ -55,6 +55,7 @@ const DEFAULTS_PASSTHROUGH_KEYS = [
   'formSerializer',
   'parseReviver',
   'sensitiveHeaders',
+  'transitional',
 ] as const;
 
 /**

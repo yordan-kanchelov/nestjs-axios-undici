@@ -1,40 +1,46 @@
 /**
- * Real-server test for zstd decompression (plan.md phase 2 "fix: zstd
- * decompression"): `Content-Encoding: zstd`, buffered and
- * `responseType: 'stream'`, honouring `decompress`/`maxContentLength` -
- * exactly like the existing gzip/br/deflate support. See also the
- * deterministic, in-process unit tests in `axios-response-type.adapter
- * .spec.ts` (including the mocked "unsupported Node build" fallback) and the
- * axios-vs-this-library differential cases in `tests/compat/differential/
- * response.diff.spec.ts`.
+ * Real-server test for plan.md phase 2 "fix: decode Content-Encoding:
+ * compress": axios' Node `http` transport aliases `compress`/`x-compress`
+ * onto its gzip decoder (checked against real axios 1.20, `lib/adapters
+ * /http.js`); this library now does the same, for both `decompress` control
+ * paths (buffered and `responseType: 'stream'`) and the streamed
+ * `maxContentLength` check. Also covers plan.md phase 2 "delete
+ * Content-Encoding from response.headers after a successful decode" for
+ * the same encodings, on a real response (not a hand-built fixture). See
+ * also the deterministic, in-process unit tests in `axios-response-type
+ * .adapter.spec.ts` and `axios-response.adapter.spec.ts`.
  */
 import { Test, TestingModule } from '@nestjs/testing';
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
-import { zstdCompressSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
 import { firstValueFrom } from 'rxjs';
 import { HttpModule, HttpService } from '../src';
 
-describe('zstd decompression (real server)', () => {
+describe('Content-Encoding: compress / x-compress decompression (real server)', () => {
   let server: Server;
   let baseUrl: string;
   let service: HttpService;
-  const PAYLOAD = { hello: 'zstd', n: 12345 };
+  const PAYLOAD = { hello: 'compress', n: 54321 };
 
   beforeAll(async () => {
     server = createServer((req, res) => {
       const p = new URL(req.url!, 'http://x').searchParams;
+      const encoding = p.get('enc') || 'compress';
       const n = Number(p.get('n') || 0);
       const raw = n
-        ? Buffer.alloc(n, 'z')
+        ? Buffer.alloc(n, 'c')
         : Buffer.from(JSON.stringify(PAYLOAD));
-      const compressed = zstdCompressSync(raw);
       res.writeHead(200, {
         'Content-Type': n ? 'text/plain' : 'application/json',
-        'Content-Encoding': 'zstd',
+        // axios' own decoder for `compress`/`x-compress` is really just
+        // gzip under another name (checked against real axios 1.20) - the
+        // server sends genuinely gzip-compressed bytes under that label,
+        // exactly matching axios' own upstream conformance fixture.
+        'Content-Encoding': encoding,
       });
-      res.end(compressed);
+      res.end(gzipSync(raw));
     });
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -49,19 +55,22 @@ describe('zstd decompression (real server)', () => {
     await new Promise<void>(resolve => server.close(() => resolve()));
   });
 
-  it('decompresses a zstd JSON response transparently (buffered, default responseType)', async () => {
-    const response = await firstValueFrom(service.request(baseUrl));
+  it.each(['compress', 'x-compress', 'COMPRESS'])(
+    'decompresses a %s JSON response transparently (buffered, default responseType)',
+    async encoding => {
+      const response = await firstValueFrom(
+        service.request(`${baseUrl}?enc=${encoding}`),
+      );
+      expect(response.data).toEqual(PAYLOAD);
+      // plan.md phase 2 "delete Content-Encoding ...": actually decoded, so
+      // the header is removed, matching axios.
+      expect(response.headers['content-encoding']).toBeUndefined();
+    },
+  );
 
-    expect(response.data).toEqual(PAYLOAD);
-    // plan.md phase 2 "delete Content-Encoding from response.headers after
-    // a successful decode": zstd is actually decoded here, so the header is
-    // removed, matching axios exactly (see `axios-response.adapter.ts`).
-    expect(response.headers['content-encoding']).toBeUndefined();
-  });
-
-  it('decompresses a zstd response for responseType: "stream"', async () => {
+  it('decompresses for responseType: "stream" too', async () => {
     const response = await firstValueFrom(
-      service.request(baseUrl, { responseType: 'stream' }),
+      service.request(`${baseUrl}?enc=x-compress`, { responseType: 'stream' }),
     );
 
     const chunks: Buffer[] = [];
@@ -71,9 +80,9 @@ describe('zstd decompression (real server)', () => {
     expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual(PAYLOAD);
   });
 
-  it('decompress: false returns the raw (still zstd-encoded) bytes', async () => {
+  it('decompress: false returns the raw (still-encoded) bytes, and leaves the header alone', async () => {
     const response = await firstValueFrom(
-      service.request(baseUrl, {
+      service.request(`${baseUrl}?enc=compress`, {
         decompress: false,
         responseType: 'arraybuffer',
       }),
@@ -81,26 +90,12 @@ describe('zstd decompression (real server)', () => {
 
     const raw = Buffer.from(JSON.stringify(PAYLOAD));
     expect(Buffer.compare(Buffer.from(response.data), raw)).not.toBe(0);
-    // Round-tripping it back through zstd decompression recovers the
-    // original - proving these are genuinely still-compressed bytes, not
-    // just "different for some other reason".
-    const { zstdDecompressSync } = await import('node:zlib');
-    expect(
-      zstdDecompressSync(Buffer.from(response.data)).toString('utf8'),
-    ).toBe(JSON.stringify(PAYLOAD));
+    expect(response.headers['content-encoding']).toBe('compress');
   });
 
-  it('enforces maxContentLength against the DECOMPRESSED size (buffered)', async () => {
-    await expect(
-      firstValueFrom(
-        service.request(`${baseUrl}?n=100000`, { maxContentLength: 1000 }),
-      ),
-    ).rejects.toMatchObject({ code: 'ERR_BAD_RESPONSE' });
-  });
-
-  it('enforces maxContentLength against the DECOMPRESSED size for responseType: "stream" too', async () => {
+  it('enforces maxContentLength against the DECOMPRESSED size for responseType: "stream"', async () => {
     const response = await firstValueFrom(
-      service.request(`${baseUrl}?n=100000`, {
+      service.request(`${baseUrl}?enc=compress&n=100000`, {
         maxContentLength: 1000,
         responseType: 'stream',
       }),
@@ -112,10 +107,10 @@ describe('zstd decompression (real server)', () => {
           // drain
         }
       })(),
-    ).rejects.toMatchObject({ code: 'ERR_BAD_RESPONSE' });
+    ).rejects.toMatchObject({ code: 'ERR_BAD_RESPONSE', isAxiosError: true });
   });
 
-  it("doesn't advertise zstd in the default Accept-Encoding request header", async () => {
+  it('the default Accept-Encoding request header advertises compress, matching axios’ own default', async () => {
     let seenAcceptEncoding: string | undefined;
     const echoServer = createServer((req, res) => {
       seenAcceptEncoding = req.headers['accept-encoding'] as string;

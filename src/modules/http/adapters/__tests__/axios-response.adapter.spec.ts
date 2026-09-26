@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { gzipSync } from 'node:zlib';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import {
   joinDuplicateHeaders,
   RequestInfo,
@@ -7,6 +7,21 @@ import {
   toAxiosLikeResponse,
 } from '../axios-response.adapter';
 import type { HttpInterceptorRequest } from '../../interfaces/http-interceptor.interface';
+
+/**
+ * A fake `Dispatcher.ResponseData['body']` backed by a real, pipeable
+ * `Readable` - enough for both the fast (`.arrayBuffer()`/`.text()`) and
+ * streaming (`.pipe()`) decode paths, matching the equivalent helper in
+ * `axios-response-type.adapter.spec.ts`.
+ */
+function bodyFromBuffer(buf: Buffer): any {
+  const stream = Readable.from([buf]) as any;
+  stream.arrayBuffer = async () =>
+    buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  stream.text = async () => buf.toString('utf8');
+  stream.bodyUsed = false;
+  return stream;
+}
 
 async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -557,5 +572,686 @@ describe('toAxiosLikeResponse: duplicate response headers (plan.md phase 2: join
     };
     const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
     expect(response.data).toEqual({ ok: true });
+  });
+});
+
+/**
+ * plan.md phase 2 "delete Content-Encoding from response.headers after a
+ * successful decode". Matches axios exactly (`lib/adapters/http.js`, checked
+ * against real axios 1.20): deleted only when `decompress !== false` and the
+ * header is present, then either unconditionally (`HEAD`/`204`, regardless
+ * of the encoding) or when the encoding is one this library actually
+ * decodes (`isDecodableEncoding`) - never for `decompress: false`, and never
+ * for an encoding it doesn't recognize at all. `content-length` is left
+ * untouched either way (axios doesn't touch it on decode).
+ */
+describe('toAxiosLikeResponse: delete Content-Encoding after a successful decode', () => {
+  const fakeRequest = (
+    options: Record<string, any> = {},
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', ...options },
+  });
+
+  it('deletes content-encoding after decoding gzip', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {
+        'content-encoding': 'gzip',
+        'content-length': '13',
+        'content-type': 'application/json',
+      },
+      body: bodyFromBuffer(gzipSync(Buffer.from('{"a":1}'))),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.data).toEqual({ a: 1 });
+    expect(response.headers['content-encoding']).toBeUndefined();
+    // axios never touches content-length on decode - the (now-inaccurate,
+    // compressed-size) value is left exactly as the server sent it.
+    expect(response.headers['content-length']).toBe('13');
+  });
+
+  it.each([
+    ['gzip', gzipSync],
+    ['x-gzip', gzipSync],
+    ['compress', gzipSync],
+    ['x-compress', gzipSync],
+    ['deflate', deflateSync],
+    ['br', brotliCompressSync],
+  ] as const)(
+    'deletes content-encoding after decoding %s',
+    async (encoding, compress) => {
+      const undiciResponse: any = {
+        statusCode: 200,
+        statusText: 'OK',
+        headers: { 'content-encoding': encoding },
+        body: bodyFromBuffer(compress(Buffer.from('ok'))),
+      };
+      const response = await toAxiosLikeResponse(
+        fakeRequest({ responseType: 'arraybuffer' }),
+        undiciResponse,
+      );
+      expect(response.headers['content-encoding']).toBeUndefined();
+    },
+  );
+
+  it('does NOT delete content-encoding when decompress: false, since nothing was actually decoded', async () => {
+    const compressed = gzipSync(Buffer.from('ok'));
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body: bodyFromBuffer(compressed),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ decompress: false, responseType: 'arraybuffer' }),
+      undiciResponse,
+    );
+    expect(response.headers['content-encoding']).toBe('gzip');
+  });
+
+  it('does NOT delete content-encoding for an encoding it doesn’t recognize', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'identity' },
+      body: bodyFromBuffer(Buffer.from('ok')),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.headers['content-encoding']).toBe('identity');
+  });
+
+  it('deletes a stale content-encoding on a HEAD response, regardless of the encoding named', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'identity' },
+      body: undefined,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ method: 'HEAD' }),
+      undiciResponse,
+    );
+    expect(response.headers['content-encoding']).toBeUndefined();
+  });
+
+  it('deletes a stale content-encoding on a 204, regardless of the encoding named', async () => {
+    const undiciResponse: any = {
+      statusCode: 204,
+      statusText: 'No Content',
+      headers: { 'content-encoding': 'identity' },
+      body: undefined,
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.headers['content-encoding']).toBeUndefined();
+  });
+
+  it('leaves content-encoding untouched when the header was never present at all', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('ok')]),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.headers['content-encoding']).toBeUndefined();
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        response.headers,
+        'content-encoding',
+      ),
+    ).toBe(false);
+  });
+});
+
+/**
+ * plan.md phase 2 "corrupt/truncated compressed body": matches axios exactly
+ * (`AxiosError.from(err, null, config, lastRequest, response)`, checked
+ * against real axios 1.20's `lib/adapters/http.js`'s buffered
+ * `handleStreamError`, extended here to the stream path too - see
+ * `wrapStreamCancellation`'s doc comment in `axios-response.adapter.ts`):
+ * `isAxiosError`/`config`/`request` are all populated, and `code` falls
+ * back to the raw zlib error code (e.g. `'Z_BUF_ERROR'`) since axios itself
+ * never overrides it for this case.
+ */
+describe('toAxiosLikeResponse: corrupt/truncated compressed body wraps as an AxiosError', () => {
+  const fakeRequest = (
+    options: Record<string, any> = {},
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', ...options },
+  });
+
+  it('buffered: a corrupt gzip body rejects with a real AxiosError, not the raw zlib error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {
+        'content-encoding': 'gzip',
+        'content-type': 'application/json',
+      },
+      body: bodyFromBuffer(Buffer.from('this is not gzip at all')),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    // Matches axios exactly: `AxiosError.from` unconditionally overwrites
+    // `.name` with the wrapped error's own `.name` (a zlib error is a plain
+    // `Error`, so this stays `'Error'`, not `'AxiosError'` - checked against
+    // real axios 1.20's `lib/core/AxiosError.js`).
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.name).toBe('Error');
+    expect(typeof caught.code).toBe('string');
+    expect(caught.code).not.toBe('ERR_BAD_RESPONSE');
+    expect(caught.config).toBeTruthy();
+    // Matches axios: `response` (status/statusText/headers/config/request)
+    // is attached even though `.data` never got assigned before the
+    // buffered read's own 'error' fired.
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.status).toBe(200);
+    expect(caught.response.data).toBeUndefined();
+  });
+
+  // A body truncated mid-stream does NOT reject: matches axios' own
+  // flush-tolerant zlib options (`finishFlush: Z_SYNC_FLUSH` etc. -
+  // `GZIP_FLUSH_OPTIONS` in `axios-response-type.adapter.ts`, checked
+  // against real axios 1.20's own `zlibOptions`). It resolves with whatever
+  // could be decoded from the partial bytes instead, never throwing for a
+  // merely-incomplete (as opposed to structurally invalid) stream -
+  // confirmed directly: `gunzipSync` with axios' own flush options never
+  // throws for a truncated-but-header-valid gzip buffer, only for one that
+  // fails the format check entirely (the "garbage" tests above).
+  it('buffered: a body truncated mid-stream does not reject, unlike genuinely corrupt data', async () => {
+    const full = gzipSync(Buffer.alloc(10_000, 'z'));
+    const truncated = full.subarray(0, full.length - 20);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body: bodyFromBuffer(truncated),
+    };
+    // Doesn't throw - resolves normally (with less data than the full
+    // 10,000 bytes would have decoded to).
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.status).toBe(200);
+    expect(typeof response.data).toBe('string');
+  });
+
+  it('stream: a corrupt gzip body destroys the returned stream with a real AxiosError, not the raw zlib error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body: Readable.from([Buffer.from('this is not gzip at all')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.name).toBe('Error');
+    expect(caught.config).toBeTruthy();
+  });
+
+  /**
+   * PR #38 review (HIGH): brotli and zstd decode failures weren't wrapped
+   * at all - the old gate sniffed `error.code` for a `Z_`-prefix, which
+   * only zlib (gzip/deflate) raises; brotli's own decode error code is
+   * `ERR__ERROR_FORMAT_PADDING_1`, zstd's is `ZSTD_error_prefix_unknown`
+   * (confirmed directly, `brotliDecompressSync`/`zstdDecompressSync`
+   * against the same garbage bytes as the gzip case above) - neither
+   * matched. Fixed by tagging the error at its actual origin
+   * (`DECODE_ERROR`, `decompressBuffer`/`decompressStream`) instead of
+   * sniffing its shape - these tests cover every codec uniformly.
+   */
+  it('buffered: a corrupt brotli body rejects with a real AxiosError, not the raw brotli error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'br' },
+      body: bodyFromBuffer(Buffer.from('this is not brotli at all')),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(typeof caught.code).toBe('string');
+    expect(caught.config).toBeTruthy();
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.status).toBe(200);
+  });
+
+  it('stream: a corrupt brotli body destroys the returned stream with a real AxiosError, not the raw brotli error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'br' },
+      body: Readable.from([Buffer.from('this is not brotli at all')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.config).toBeTruthy();
+  });
+
+  // Every Node version this package supports already has zstd (added in
+  // 22.15.0/23.8.0, `engines.node` is >=22.17.0 - `isZstdSupported` is
+  // always `true` here), so these run unconditionally, matching the rest
+  // of this describe block's other codec cases.
+  it('buffered: a corrupt zstd body rejects with a real AxiosError, not the raw zstd error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'zstd' },
+      body: bodyFromBuffer(Buffer.from('this is not zstd at all')),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(typeof caught.code).toBe('string');
+    expect(caught.config).toBeTruthy();
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.status).toBe(200);
+  });
+
+  it('stream: a corrupt zstd body destroys the returned stream with a real AxiosError, not the raw zstd error', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'zstd' },
+      body: Readable.from([Buffer.from('this is not zstd at all')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.config).toBeTruthy();
+  });
+
+  it('a genuine network error (UND_ERR_SOCKET) while decompression is configured is NOT wrapped as a decode error - it still reaches the caller raw', async () => {
+    // `decompressStream`'s decompressor 'error' fires for two different
+    // reasons - see its own doc comment (`bodyErroredFirst`) - this pins
+    // the case that must NOT be tagged `DECODE_ERROR`: `body` (the raw
+    // undici stream) erroring first, forwarded to the decompressor purely
+    // so it gets cleaned up too, is a network failure, not a decode one.
+    const body = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream' }),
+      undiciResponse,
+    );
+    const socketError = Object.assign(new Error('other side closed'), {
+      code: 'UND_ERR_SOCKET',
+    });
+    let caught: any;
+    const drained = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    // `.destroy(err)`, not a bare `.emit('error', ...)`: a real undici body
+    // errors via destroy, which also marks it `destroyed`.
+    body.destroy(socketError);
+    await drained;
+    // Passed straight through: no `isAxiosError`/`.config` attached by the
+    // corrupt-body path (this library's own `fail()`/`toAxiosError`, for a
+    // real request that never got this far, is what remaps
+    // UND_ERR_SOCKET -> ECONNRESET before the response is ever handed
+    // back - out of scope for this direct `toAxiosLikeResponse` unit test,
+    // which only pins that the *stream*-side wrap doesn't misfire here).
+    expect(caught).toBe(socketError);
+    expect(caught.isAxiosError).toBeUndefined();
+  });
+
+  it('an already-AxiosError (e.g. a maxContentLength guard failure) is never double-wrapped', async () => {
+    const raw = Buffer.alloc(1_000, 'z');
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body: Readable.from([gzipSync(raw)]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ responseType: 'stream', maxContentLength: 10 }),
+      undiciResponse,
+    );
+    let caught: any;
+    try {
+      for await (const _chunk of response.data as Readable) {
+        // drain
+      }
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught?.code).toBe('ERR_BAD_RESPONSE');
+    expect(caught?.message).toBe('maxContentLength size of 10 exceeded');
+  });
+});
+
+/**
+ * plan.md phase 2 "transitional.silentJSONParsing": matches axios' exact
+ * condition (`strictJSONParsing = !silentJSONParsing && JSONRequested`,
+ * `JSONRequested` requires `responseType: 'json'`) end to end through
+ * `toAxiosLikeResponse`. The default (silent) behaviour must be completely
+ * unaffected.
+ */
+describe('toAxiosLikeResponse: transitional.silentJSONParsing', () => {
+  const fakeRequest = (
+    options: Record<string, any> = {},
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', responseType: 'json', ...options },
+  });
+
+  it('silentJSONParsing: false + responseType: json rejects invalid JSON with a real AxiosError, response.data the raw text', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('not json{')]),
+    };
+    let caught: any;
+    try {
+      await toAxiosLikeResponse(
+        fakeRequest({ transitional: { silentJSONParsing: false } }),
+        undiciResponse,
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.code).toBe('ERR_BAD_RESPONSE');
+    expect(caught.config).toBeTruthy();
+    expect(caught.response).toBeTruthy();
+    expect(caught.response.data).toBe('not json{');
+    expect(caught.response.status).toBe(200);
+  });
+
+  it('silentJSONParsing left at its default (true) stays silent - returns the raw text instead of throwing', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('not json{')]),
+    };
+    const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
+    expect(response.data).toBe('not json{');
+  });
+
+  it('silentJSONParsing: false has no effect without responseType: "json" (matches axios: JSONRequested requires it)', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('not json{')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({
+        responseType: 'text',
+        transitional: { silentJSONParsing: false },
+      }),
+      undiciResponse,
+    );
+    expect(response.data).toBe('not json{');
+  });
+
+  it('valid JSON is unaffected by silentJSONParsing: false', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('{"a":1}')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ transitional: { silentJSONParsing: false } }),
+      undiciResponse,
+    );
+    expect(response.data).toEqual({ a: 1 });
+  });
+});
+
+/**
+ * plan.md phase 2 "cancel a responseType: 'stream' response when its
+ * request stream is destroyed" / "abort a responseType: 'stream' response
+ * when the caller's AbortSignal fires after emission". See
+ * `wrapStreamCancellation`'s doc comment (`axios-response.adapter.ts`):
+ * both triggers ultimately deliver undici's own abort-shaped error
+ * (`code: 'UND_ERR_ABORTED'`/`name: 'AbortError'`) to the already-returned
+ * stream, which must surface as a real `CanceledError`/`ERR_CANCELED`.
+ */
+describe('toAxiosLikeResponse: responseType stream cancellation (request-stream-destroy / AbortSignal-after-emission)', () => {
+  const abortedError = (): any =>
+    Object.assign(new Error('Request aborted'), {
+      name: 'AbortError',
+      code: 'UND_ERR_ABORTED',
+    });
+
+  it('a streamed upload body (options.body) triggers the wrap: an abort-shaped error becomes a CanceledError', async () => {
+    const uploadBody = new Readable({ read() {} });
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: source,
+    };
+    const request: HttpInterceptorRequest = {
+      url: 'http://localhost/test',
+      options: { method: 'POST', responseType: 'stream', body: uploadBody },
+    };
+    const response = await toAxiosLikeResponse(request, undiciResponse);
+
+    let caught: any;
+    const drain = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    source.emit('error', abortedError());
+    await drain;
+
+    expect(caught).toBeTruthy();
+    expect(caught.isAxiosError).toBe(true);
+    expect(caught.name).toBe('CanceledError');
+    expect(caught.code).toBe('ERR_CANCELED');
+    expect(caught.__CANCEL__).toBe(true);
+  });
+
+  it('a config.signal triggers the wrap too, even with no streamed upload body', async () => {
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: source,
+    };
+    const controller = new AbortController();
+    const request: HttpInterceptorRequest = {
+      url: 'http://localhost/test',
+      options: {
+        method: 'GET',
+        responseType: 'stream',
+        signal: controller.signal,
+      },
+    };
+    const response = await toAxiosLikeResponse(request, undiciResponse);
+
+    let caught: any;
+    const drain = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    source.emit('error', abortedError());
+    await drain;
+
+    expect(caught?.name).toBe('CanceledError');
+    expect(caught?.code).toBe('ERR_CANCELED');
+  });
+
+  it('zero-cost: with neither a signal nor a streamed body, the stream is untouched (no wrapper) and a raw error passes through unwrapped', async () => {
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: source,
+    };
+    const request: HttpInterceptorRequest = {
+      url: 'http://localhost/test',
+      options: { method: 'GET', responseType: 'stream' },
+    };
+    const response = await toAxiosLikeResponse(request, undiciResponse);
+
+    // No wrap applied at all: the caller gets back the exact same stream
+    // object undici handed this library, not a `PassThrough` copy.
+    expect(response.data).toBe(source);
+
+    let caught: any;
+    const drain = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    source.emit('error', abortedError());
+    await drain;
+
+    // Unwrapped: still the raw undici shape, not translated.
+    expect(caught?.isAxiosError).toBeUndefined();
+    expect(caught?.code).toBe('UND_ERR_ABORTED');
+  });
+
+  it('a non-abort-shaped error on a streamed upload scenario is not miscategorized as canceled', async () => {
+    const uploadBody = new Readable({ read() {} });
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: source,
+    };
+    const request: HttpInterceptorRequest = {
+      url: 'http://localhost/test',
+      options: { method: 'POST', responseType: 'stream', body: uploadBody },
+    };
+    const response = await toAxiosLikeResponse(request, undiciResponse);
+
+    let caught: any;
+    const drain = (async () => {
+      try {
+        for await (const _chunk of response.data as Readable) {
+          // drain
+        }
+      } catch (error) {
+        caught = error;
+      }
+    })();
+    source.emit(
+      'error',
+      Object.assign(new Error('other side closed'), {
+        code: 'UND_ERR_SOCKET',
+      }),
+    );
+    await drain;
+
+    expect(caught?.name).not.toBe('CanceledError');
+    expect(caught?.message).toBe('other side closed');
+  });
+
+  it('bidirectional destroy: a consumer destroying the wrapped stream early also destroys the raw source', async () => {
+    const source = new Readable({ read() {} });
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: source,
+    };
+    const controller = new AbortController();
+    const request: HttpInterceptorRequest = {
+      url: 'http://localhost/test',
+      options: {
+        method: 'GET',
+        responseType: 'stream',
+        signal: controller.signal,
+      },
+    };
+    const response = await toAxiosLikeResponse(request, undiciResponse);
+    expect(response.data).not.toBe(source);
+
+    (response.data as any).destroy();
+    await new Promise<void>(resolve => {
+      if (source.destroyed) {
+        resolve();
+        return;
+      }
+      source.once('close', () => resolve());
+    });
+    expect(source.destroyed).toBe(true);
   });
 });

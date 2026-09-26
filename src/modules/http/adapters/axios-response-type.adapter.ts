@@ -1,5 +1,6 @@
 import {
   brotliDecompressSync,
+  constants as zlibConstants,
   createBrotliDecompress,
   createGunzip,
   createInflate,
@@ -117,6 +118,42 @@ export function parseJsonOrText(text: string, reviver?: JsonReviver): any {
 }
 
 /**
+ * Tags a `JSON.parse` failure (a native `SyntaxError`) with the raw,
+ * unparsed text, so `toAxiosLikeResponse`'s catch block
+ * (`axios-response.adapter.ts`) - which never sees `text`, local to
+ * `readBodyAsResponseType` below - can attach it as `response.data` on the
+ * `AxiosError` it throws, matching axios' own JSON-parse-failure response
+ * exactly (`response.data` stays the raw string, never the [would-be]
+ * parsed value - checked against real axios 1.20). A plain own property on
+ * the *original* error object (never a new wrapper), so `AxiosError.from`
+ * still reads its real `message`/`name`/`code`, exactly as it would for any
+ * other wrapped error.
+ */
+export const STRICT_JSON_RAW_TEXT = Symbol('strictJsonRawText');
+
+/**
+ * axios' `transitional.silentJSONParsing: false` (`strictJSONParsing =
+ * !silentJSONParsing && JSONRequested` in `lib/defaults/index.js`;
+ * `JSONRequested` requires `responseType === 'json'`, so this is only ever
+ * reached from `readBodyAsResponseType`'s `'json'` branch below -
+ * `silentJSONParsing` never affects the *default*, no-`responseType`
+ * parsing path (`parseJsonOrText`/`parseTextMaybeJson` above stay
+ * unconditionally silent and zero-cost regardless of `silentJSONParsing`,
+ * matching axios' own `JSONRequested` gate exactly): a `JSON.parse` failure
+ * throws its native `SyntaxError` straight through (tagged via
+ * `STRICT_JSON_RAW_TEXT`) instead of falling back to the raw string.
+ */
+export function parseJsonStrict(text: string, reviver?: JsonReviver): any {
+  if (!text) return text;
+  try {
+    return JSON.parse(text, reviver);
+  } catch (error) {
+    (error as any)[STRICT_JSON_RAW_TEXT] = text;
+    throw error;
+  }
+}
+
+/**
  * True when the first non-whitespace character of `text` starts a JSON
  * value (`{`, `[`, a string, a number, or `true`/`false`/`null`). Used to
  * gate the JSON-parse attempt on non-JSON content types, the same
@@ -189,7 +226,19 @@ export function classifyContentType(contentType: string): BodyContentKind {
 // Decompression (gzip / br / deflate), honouring `decompress: false`
 // ---------------------------------------------------------------------------
 
-const GZIP_ENCODINGS = new Set(['gzip', 'x-gzip']);
+/**
+ * axios' Node `http` transport aliases `compress`/`x-compress` onto the same
+ * `zlib.createUnzip()`/`gunzipSync` decoder it uses for `gzip`/`x-gzip`
+ * (`lib/adapters/http.js`: `case 'gzip': case 'x-gzip': case 'compress':
+ * case 'x-compress': streams.push(zlib.createUnzip(zlibOptions));` - checked
+ * against real axios 1.20) - it doesn't actually implement the old
+ * Lempel-Ziv-Welch "compress" scheme, it just treats the name as another
+ * spelling of gzip. This library does the same: `compress`/`x-compress`
+ * decode via the exact same `createGunzip`/`gunzipSync` calls as `gzip`
+ * below, so a server that sends genuinely LZW-compressed `compress` data
+ * fails to decompress here exactly as it would against axios.
+ */
+const GZIP_ENCODINGS = new Set(['gzip', 'x-gzip', 'compress', 'x-compress']);
 
 /**
  * True when this Node build's `zlib` supports Zstandard (`zstd`) - added in
@@ -208,9 +257,10 @@ export const isZstdSupported = typeof createZstdDecompress === 'function';
 /**
  * `Content-Encoding` values `decompressBuffer`/`decompressStream` can
  * actually decode. Used to build the default `Accept-Encoding` request
- * header: unlike axios (which also advertises `compress`, an old LZW scheme
- * neither axios nor this library decodes), this only lists what can be
- * decompressed.
+ * header - matches axios' own `ACCEPT_ENCODING` (`lib/adapters/http.js`)
+ * exactly, `compress` included: axios advertises it (and, per
+ * `GZIP_ENCODINGS`'s doc comment above, so does this library now that it
+ * decodes `compress`/`x-compress` the same way as `gzip`).
  *
  * `zstd` is deliberately left out here even though it's decoded (see
  * `decompressBuffer`/`decompressStream` below): axios 1.20 only advertises
@@ -222,31 +272,117 @@ export const isZstdSupported = typeof createZstdDecompress === 'function';
  * decoded either way - decoding never depends on what was advertised. A
  * caller who wants to advertise it can already do so like any other default
  * header override: `axiosRef.defaults.headers.common['Accept-Encoding'] =
- * 'gzip, deflate, br, zstd'` (or a per-request header), so this library adds
- * no separate `advertiseZstdAcceptEncoding`-equivalent option for it.
+ * 'gzip, compress, deflate, br, zstd'` (or a per-request header), so this
+ * library adds no separate `advertiseZstdAcceptEncoding`-equivalent option
+ * for it.
  */
-export const SUPPORTED_CONTENT_ENCODINGS = 'gzip, deflate, br';
+export const SUPPORTED_CONTENT_ENCODINGS = 'gzip, compress, deflate, br';
 
 function normalizeEncoding(encoding: string): string {
   return encoding.trim().toLowerCase();
 }
 
+/**
+ * axios' own `zlibOptions`/`brotliOptions`/`zstdOptions` (`lib/adapters
+ * /http.js`, checked against real axios 1.20): `flush`/`finishFlush: <the
+ * codec's own SYNC/FLUSH constant>`, passed to every decompressor
+ * (`zlib.createUnzip(zlibOptions)`, `createBrotliDecompress
+ * (brotliOptions)`, `createZstdDecompress(zstdOptions)`) - never the plain,
+ * `finishFlush`-less default. Without this, a decompressor that reaches the
+ * end of its INPUT without a complete internal decode state (an empty body,
+ * or one truncated mid-stream) throws `Z_BUF_ERROR`/"unexpected end of
+ * file" instead of resolving with whatever could actually be decoded (`''`
+ * for a genuinely empty body, or the partial bytes for a truncated one) -
+ * confirmed directly (`gunzipSync(Buffer.alloc(0))` throws without this,
+ * succeeds with `''` with it; a truncated-but-structurally-valid gzip
+ * stream decodes its partial bytes either way, never throwing, once this is
+ * set) - matching real axios 1.20's own upstream conformance tests ("should
+ * not fail with an empty response (with|without) content-length header
+ * (Z_BUF_ERROR)"). A stream that's corrupt in a way no flush setting can
+ * paper over (the wrong format entirely, e.g. plain text sent as
+ * `Content-Encoding: gzip`) still throws either way (`Z_DATA_ERROR` -
+ * "incorrect header check") - that's what `toAxiosLikeResponse`'s
+ * corrupt-body wrapping (`axios-response.adapter.ts`) is actually for.
+ */
+const GZIP_FLUSH_OPTIONS = {
+  flush: zlibConstants.Z_SYNC_FLUSH,
+  finishFlush: zlibConstants.Z_SYNC_FLUSH,
+} as const;
+const BROTLI_FLUSH_OPTIONS = {
+  flush: zlibConstants.BROTLI_OPERATION_FLUSH,
+  finishFlush: zlibConstants.BROTLI_OPERATION_FLUSH,
+} as const;
+/**
+ * Only referenced when `isZstdSupported` (Node 22.15.0/23.8.0+, where
+ * `zlib.constants.ZSTD_e_flush` also exists) - `as any` sidesteps a
+ * `@types/node` version lag on the exact constant name/shape without
+ * affecting anything at runtime on a Node that actually has it.
+ */
+const ZSTD_FLUSH_OPTIONS = {
+  flush: (zlibConstants as any).ZSTD_e_flush,
+  finishFlush: (zlibConstants as any).ZSTD_e_flush,
+} as const;
+
+/**
+ * Tags an error as an actual decode failure - thrown by zlib/brotli/zstd
+ * itself, decoding already-fully-read bytes - as opposed to a network-level
+ * error (a dropped socket, an abort, ...) that happens to reach the same
+ * catch block while decompression was configured. `toAxiosLikeResponse`'s
+ * catch block and `wrapStreamCancellation` (`axios-response.adapter.ts`)
+ * check for this tag, rather than the error's `code`/`name` shape: brotli
+ * and zstd don't raise `Z_*`-prefixed codes the way zlib (gzip/deflate)
+ * does, so a shape check alone under-wraps them (found in PR #38 review) -
+ * this instead marks the error at its actual origin, uniformly across every
+ * codec and both the buffered (`decompressBuffer`, below) and streamed
+ * (`decompressStream`) decode paths.
+ */
+export const DECODE_ERROR = Symbol('decodeError');
+
 /** Synchronously decompresses a full body buffer per `Content-Encoding`. */
 export function decompressBuffer(buffer: Buffer, encoding: string): Buffer {
   const e = normalizeEncoding(encoding);
-  if (GZIP_ENCODINGS.has(e)) return gunzipSync(buffer);
-  if (e === 'br') return brotliDecompressSync(buffer);
-  if (e === 'deflate') {
-    try {
-      return inflateSync(buffer);
-    } catch {
-      // Some servers send raw (headerless) deflate under the same
-      // Content-Encoding; axios falls back to it the same way.
-      return inflateRawSync(buffer);
+  try {
+    if (GZIP_ENCODINGS.has(e)) return gunzipSync(buffer, GZIP_FLUSH_OPTIONS);
+    if (e === 'br') return brotliDecompressSync(buffer, BROTLI_FLUSH_OPTIONS);
+    if (e === 'deflate') {
+      try {
+        return inflateSync(buffer, GZIP_FLUSH_OPTIONS);
+      } catch {
+        // Some servers send raw (headerless) deflate under the same
+        // Content-Encoding; axios falls back to it the same way.
+        return inflateRawSync(buffer, GZIP_FLUSH_OPTIONS);
+      }
     }
+    if (e === 'zstd' && isZstdSupported) {
+      return zstdDecompressSync(buffer, ZSTD_FLUSH_OPTIONS);
+    }
+    return buffer;
+  } catch (error) {
+    if (error && typeof error === 'object') (error as any)[DECODE_ERROR] = true;
+    throw error;
   }
-  if (e === 'zstd' && isZstdSupported) return zstdDecompressSync(buffer);
-  return buffer;
+}
+
+/**
+ * True when `decompressBuffer`/`decompressStream` above actually decode
+ * `encoding` (case-insensitive/whitespace-trimmed, matching axios' own
+ * `.toLowerCase()` header read) - used by `toAxiosLikeResponse`
+ * (`axios-response.adapter.ts`) to decide whether to delete a decoded
+ * `Content-Encoding` response header, matching axios exactly (`lib/adapters
+ * /http.js`'s per-case `delete res.headers['content-encoding']`: unconditional
+ * for `gzip`/`x-gzip`/`compress`/`x-compress`/`deflate`, gated on
+ * `isBrotliSupported`/`isZstdSupported` for `br`/`zstd` - never for an
+ * encoding it doesn't recognize at all, and never with `decompress: false`,
+ * which the caller checks separately).
+ */
+export function isDecodableEncoding(encoding: string): boolean {
+  const e = normalizeEncoding(encoding);
+  return (
+    GZIP_ENCODINGS.has(e) ||
+    e === 'deflate' ||
+    e === 'br' ||
+    (e === 'zstd' && isZstdSupported)
+  );
 }
 
 /**
@@ -274,6 +410,17 @@ export function decompressBuffer(buffer: Buffer, encoding: string): Buffer {
  * explicit `destroy()` calls on both streams (below) still fire too; they're
  * synchronous and race harmlessly against this function's listeners (both
  * check `!stream.destroyed` first), so nothing double-destroys.
+ *
+ * Also tags a genuine decode failure with `DECODE_ERROR` (see its own doc
+ * comment): the decompressor's `'error'` event fires for two different
+ * reasons - its own internal decode failure (corrupt/wrong-format input),
+ * or `body` erroring first (a network-level failure, forwarded here purely
+ * so the decompressor itself gets cleaned up too) - and only the first one
+ * is an actual decode error. `bodyErroredFirst` distinguishes them: it's set
+ * (synchronously, before the forwarding `.destroy()` call below ever runs)
+ * the moment `body` itself errors, so by the time the decompressor's own
+ * `'error'` listener runs, it can tell whether this is that same,
+ * already-network-attributed failure arriving secondhand.
  */
 export function decompressStream(body: Readable, encoding: string): Readable {
   const e = normalizeEncoding(encoding);
@@ -281,22 +428,30 @@ export function decompressStream(body: Readable, encoding: string): Readable {
     destroyed?: boolean;
     destroy(error?: Error): void;
   };
-  if (GZIP_ENCODINGS.has(e)) decompressor = createGunzip();
-  else if (e === 'br') decompressor = createBrotliDecompress();
-  else if (e === 'deflate') decompressor = createInflate();
+  if (GZIP_ENCODINGS.has(e)) decompressor = createGunzip(GZIP_FLUSH_OPTIONS);
+  else if (e === 'br')
+    decompressor = createBrotliDecompress(BROTLI_FLUSH_OPTIONS);
+  else if (e === 'deflate') decompressor = createInflate(GZIP_FLUSH_OPTIONS);
   else if (e === 'zstd' && isZstdSupported)
-    decompressor = createZstdDecompress();
+    decompressor = createZstdDecompress(ZSTD_FLUSH_OPTIONS);
   else return body;
 
   body.pipe(decompressor);
+  let bodyErroredFirst = false;
   const destroyBody = (err?: Error): void => {
     if (!body.destroyed) body.destroy(err);
   };
   const destroyDecompressor = (err?: Error): void => {
+    bodyErroredFirst = true;
     if (!decompressor.destroyed) decompressor.destroy(err);
   };
   body.once('error', destroyDecompressor);
-  decompressor.once('error', destroyBody);
+  decompressor.once('error', (err?: any) => {
+    if (!bodyErroredFirst && err && typeof err === 'object') {
+      err[DECODE_ERROR] = true;
+    }
+    destroyBody(err);
+  });
   decompressor.once('close', destroyBody);
   return decompressor as unknown as Readable;
 }
@@ -366,6 +521,13 @@ export interface BodyDecodeOptions {
   decompress?: boolean;
   /** axios' `parseReviver`, forwarded to every default `JSON.parse` call. */
   parseReviver?: JsonReviver;
+  /**
+   * axios' `transitional.silentJSONParsing === false` (see
+   * `parseJsonStrict`'s doc comment): only ever read by
+   * `readBodyAsResponseType`'s `responseType === 'json'` branch - `undefined`/
+   * `false` (the default) costs nothing beyond this one property read.
+   */
+  strictJsonParsing?: boolean;
 }
 
 function shouldDecompress(options: BodyDecodeOptions): boolean {
@@ -504,7 +666,8 @@ export async function readBodyAsResponseType(
   if (maxContentLength) {
     assertMaxContentLength(Buffer.byteLength(text), maxContentLength);
   }
-  return responseType === 'json'
-    ? parseJsonOrText(text, options.parseReviver)
-    : text;
+  if (responseType !== 'json') return text;
+  return options.strictJsonParsing
+    ? parseJsonStrict(text, options.parseReviver)
+    : parseJsonOrText(text, options.parseReviver);
 }
