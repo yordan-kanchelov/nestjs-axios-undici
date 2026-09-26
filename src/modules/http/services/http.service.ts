@@ -24,6 +24,10 @@ import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
 import type { HttpModuleOptions, UndiciRequestOptionsType } from '../types';
 import type {
+  ResolvedHttpModuleOptions,
+  ResolvedUndiciRequestOptions,
+} from '../internal/resolved-config';
+import type {
   HttpInterceptor,
   HttpInterceptorFunction,
   HttpInterceptorHandler,
@@ -279,8 +283,7 @@ const AXIOS_ONLY_DISPATCH_KEYS = [
   'withCredentials',
   'xsrfCookieName',
   'xsrfHeaderName',
-  '__agentOptions',
-  '__proxyAgent',
+  '__resolvedConfig',
 ] as const;
 
 /** Protocols this library (like axios) can actually dispatch. */
@@ -475,11 +478,20 @@ export class HttpService implements OnModuleDestroy {
   // The context `request()` dispatches with by default: this service's own
   // `defaults`/interceptors (the same objects `this._axiosRef` exposes).
   // `axiosRef.create()`-derived instances dispatch through
-  // `dispatchAxiosConfig` with their own context instead - see
+  // `dispatch()` with their own context instead - see
   // `axios-ref.factory.ts`.
   private readonly axiosContext: AxiosInstanceContext;
 
   public constructor(
+    // Typed with the plain, public `UndiciRequestOptionsType`/`HttpModuleOptions`
+    // (not the internal `Resolved*` variants that also carry `__resolvedConfig`
+    // - see `internal/resolved-config.ts`): both are constructor parameter
+    // properties, so their declared type is part of this public class'
+    // emitted `.d.ts` regardless of `protected`/`private` (api-extractor's
+    // `ae-forgotten-export` catches exactly this - an internal-only type
+    // reachable from a public signature). `setupDispatcher`/
+    // `shouldUseEnvProxyAgent`/`undiciRef` each cast to the internal type
+    // locally, at the one point they actually read `__resolvedConfig`.
     @Inject(UNDICI_INSTANCE_TOKEN)
     protected readonly instanceOptions: UndiciRequestOptionsType,
     @Optional()
@@ -516,8 +528,13 @@ export class HttpService implements OnModuleDestroy {
     // from then on `defaults` is the single source of truth (see
     // `createAxiosRefDefaults`'s doc comment).
     const defaults = createAxiosRefDefaults(this.moduleOptions);
+    // The host is a closure over the private `dispatch()`, not `this`, so
+    // the bridge (and its internal context types) stays off the public API.
     this._axiosRef = createAxiosRef(
-      this,
+      {
+        dispatchAxiosConfig: (config, context) =>
+          this.dispatch(config, undefined, context),
+      },
       defaults,
       this.axiosRequestInterceptors,
       this.axiosResponseInterceptors,
@@ -558,7 +575,13 @@ export class HttpService implements OnModuleDestroy {
    * wins and is left untouched - none of the branches below run.
    */
   private setupDispatcher(): void {
-    const options = this.moduleOptions as any;
+    // `mapAxiosConfigToUndici` (axios-config.adapter.ts) stashes the
+    // resolved agent/proxy pieces under `__resolvedConfig` on the same
+    // object `HTTP_MODULE_OPTIONS` provides - a typed cast, not `as any`,
+    // right where this internal field is actually read (see the
+    // constructor's doc comment on why the field itself stays typed with
+    // the plain, public `HttpModuleOptions`).
+    const options = this.moduleOptions as ResolvedHttpModuleOptions | undefined;
     if (!options) return;
     if (this.instanceOptions.dispatcher) return;
 
@@ -568,8 +591,9 @@ export class HttpService implements OnModuleDestroy {
     // apply whichever dispatcher is built below: through a proxy, the TLS
     // options go to the target (`requestTls`), as axios forwards an
     // `httpsAgent`'s TLS options through its proxy tunnel.
-    const agentOptions = options.__agentOptions || {};
-    const tls = agentOptions.tls as Record<string, unknown> | undefined;
+    const resolvedConfig = options.__resolvedConfig;
+    const agentOptions = resolvedConfig?.agentOptions ?? {};
+    const tls = agentOptions.tls;
     const hasTls = !!tls && Object.keys(tls).length > 0;
     const poolOptions: Record<string, unknown> = {
       pipelining: agentOptions.pipelining ?? options.pipelining ?? 1,
@@ -581,7 +605,8 @@ export class HttpService implements OnModuleDestroy {
     // doesn't. axios only uses HTTP/2 with `httpVersion: 2`.
     poolOptions.allowH2 = !!agentOptions.allowH2;
 
-    if (options.__proxyAgent) {
+    const proxyAgent = resolvedConfig?.proxyAgent;
+    if (proxyAgent) {
       // Explicit `proxy: {...}` - highest priority among the auto-built
       // dispatchers. `proxyTunnel: false` matches axios: a plain HTTP
       // target is forwarded to the proxy in absolute form (`GET
@@ -590,7 +615,7 @@ export class HttpService implements OnModuleDestroy {
       // CONNECT tunnel either way (this flag only affects http-to-http).
       baseDispatcher = new ProxyAgent({
         ...poolOptions,
-        ...options.__proxyAgent,
+        ...proxyAgent,
         proxyTunnel: false,
         ...(hasTls ? { requestTls: tls } : {}),
       });
@@ -607,7 +632,7 @@ export class HttpService implements OnModuleDestroy {
         proxyTunnel: false,
         ...(hasTls ? { connect: tls, requestTls: tls } : {}),
       } as any);
-    } else if (options.socketPath || options.__agentOptions) {
+    } else if (options.socketPath || resolvedConfig?.agentOptions) {
       const connect: Record<string, unknown> = { ...tls };
       if (options.socketPath) connect.socketPath = options.socketPath;
 
@@ -631,7 +656,7 @@ export class HttpService implements OnModuleDestroy {
     // a `CookieAgent` (wrapping `baseDispatcher`) for it, which only happens
     // once here, in the constructor - never on the request path.
     if (options.cookieJar) {
-      const jar = options.cookieJar;
+      const jar: any = options.cookieJar;
       if (
         typeof jar.setCookie !== 'function' ||
         typeof jar.getCookieString !== 'function'
@@ -673,9 +698,9 @@ export class HttpService implements OnModuleDestroy {
    * `proxy: false` is passed, or a `dispatcher`/`proxy`/`socketPath` is
    * configured - see docs/axios-supported-options.md.
    */
-  private shouldUseEnvProxyAgent(options: any): boolean {
+  private shouldUseEnvProxyAgent(options: ResolvedHttpModuleOptions): boolean {
     if (options.proxy === false) return false;
-    if (options.proxy || options.__proxyAgent) return false;
+    if (options.proxy || options.__resolvedConfig?.proxyAgent) return false;
     if (options.socketPath) return false;
     const env = process.env;
     return !!(
@@ -697,7 +722,7 @@ export class HttpService implements OnModuleDestroy {
    */
   private getSocketPathDispatcher(socketPath: string): Dispatcher {
     if (
-      socketPath === (this.moduleOptions as any)?.socketPath &&
+      socketPath === this.moduleOptions?.socketPath &&
       this.customDispatcher
     ) {
       return this.customDispatcher;
@@ -822,23 +847,9 @@ export class HttpService implements OnModuleDestroy {
   }
 
   /**
-   * `AxiosRefHost.dispatchAxiosConfig`: the single entry point every
-   * axios-like instance `createAxiosRef` builds (the top-level `axiosRef`,
-   * and every `axiosRef.create()`-derived instance) dispatches a request
-   * through, using *its own* `context` (`defaults`/interceptors) rather than
-   * this service's. Shares everything else - the transport/dispatcher,
-   * module-registered generic interceptors, redirect handling - with the
-   * rest of this `HttpService`.
-   */
-  public dispatchAxiosConfig<T = any, D = any>(
-    config: AxiosLikeRequestConfig<D>,
-    context: AxiosInstanceContext,
-  ): Observable<AxiosLikeResponse<T, D>> {
-    return this.dispatch<T, D>(config, undefined, context);
-  }
-
-  /**
-   * Shared implementation behind `request()` and `dispatchAxiosConfig()`.
+   * Shared implementation behind `request()` and every axios-like instance
+   * built by `createAxiosRef` (the top-level `axiosRef` and each
+   * `axiosRef.create()` child), which pass their own `context`.
    * `defer()` makes the Observable cold and re-runs everything below (config
    * normalization, the axiosRef request interceptors, the actual request)
    * on every subscription, as `@nestjs/axios`' `makeObservable` does. This
@@ -1492,21 +1503,22 @@ export class HttpService implements OnModuleDestroy {
   /**
    * A read-only snapshot of this service's resolved undici/module options
    * (**breaking**: previously the live, mutable `instanceOptions` object
-   * itself - plan.md phase 3 "HttpService members"). Internal `__`-prefixed
-   * keys (`__agentOptions`/`__proxyAgent`, where `axios-config.adapter.ts`
-   * stashes resolved transport pieces for `setupDispatcher`) are stripped;
-   * everything else - `dispatcher`, `headers`, `baseURL`, ... - is a shallow
-   * copy, frozen with `Object.freeze` so reassigning a top-level key throws
-   * in strict mode (module code, and this library's own source, is always
-   * strict). A nested object (`headers`, for instance) isn't itself frozen
-   * and can still be mutated, but doing so was already documented as having
-   * no effect once `axiosRef.defaults` has seeded from it - see
-   * `docs/http/http.service.md`.
+   * itself - plan.md phase 3 "HttpService members"). The internal
+   * `__resolvedConfig` key (where `axios-config.adapter.ts` stashes resolved
+   * transport pieces for `setupDispatcher` - see `ResolvedModuleConfig`) is
+   * stripped; everything else - `dispatcher`, `headers`, `baseURL`, ... - is
+   * a shallow copy, frozen with `Object.freeze` so reassigning a top-level
+   * key throws in strict mode (module code, and this library's own source,
+   * is always strict). A nested object (`headers`, for instance) isn't
+   * itself frozen and can still be mutated, but doing so was already
+   * documented as having no effect once `axiosRef.defaults` has seeded from
+   * it - see `docs/http/http.service.md`.
    */
   public get undiciRef(): Readonly<UndiciRequestOptionsType> {
-    const snapshot: Record<string, unknown> = { ...this.instanceOptions };
-    delete snapshot.__agentOptions;
-    delete snapshot.__proxyAgent;
+    const snapshot: ResolvedUndiciRequestOptions = {
+      ...(this.instanceOptions as ResolvedUndiciRequestOptions),
+    };
+    delete snapshot.__resolvedConfig;
     return Object.freeze(snapshot) as Readonly<UndiciRequestOptionsType>;
   }
 

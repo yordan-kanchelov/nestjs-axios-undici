@@ -85,13 +85,15 @@ describe('resolveAgentOptions', () => {
 });
 
 describe('mapAxiosConfigToUndici: transport options', () => {
-  it('stores resolved agent options under __agentOptions', () => {
+  it('stores resolved agent options under __resolvedConfig.agentOptions', () => {
     const httpsAgent = new HttpsAgent({ rejectUnauthorized: false });
     const result = mapAxiosConfigToUndici({ httpsAgent }) as any;
-    expect(result.__agentOptions.tls).toEqual({ rejectUnauthorized: false });
+    expect(result.__resolvedConfig.agentOptions.tls).toEqual({
+      rejectUnauthorized: false,
+    });
   });
 
-  it('maps an explicit proxy object to __proxyAgent', () => {
+  it('maps an explicit proxy object to __resolvedConfig.proxyAgent', () => {
     const result = mapAxiosConfigToUndici({
       proxy: {
         host: 'proxy.example.com',
@@ -99,20 +101,22 @@ describe('mapAxiosConfigToUndici: transport options', () => {
         auth: { username: 'u', password: 'p' },
       },
     }) as any;
-    expect(result.__proxyAgent.uri).toBe('http://proxy.example.com:8080');
-    expect(result.__proxyAgent.token).toBe(
+    expect(result.__resolvedConfig.proxyAgent.uri).toBe(
+      'http://proxy.example.com:8080',
+    );
+    expect(result.__resolvedConfig.proxyAgent.token).toBe(
       `Basic ${Buffer.from('u:p').toString('base64')}`,
     );
   });
 
-  it('proxy: false does not create __proxyAgent', () => {
+  it('proxy: false does not create a resolved proxyAgent', () => {
     const result = mapAxiosConfigToUndici({ proxy: false }) as any;
-    expect(result.__proxyAgent).toBeUndefined();
+    expect(result.__resolvedConfig?.proxyAgent).toBeUndefined();
   });
 
-  it('httpVersion: 2 alone (no agent) still produces __agentOptions.allowH2', () => {
+  it('httpVersion: 2 alone (no agent) still produces __resolvedConfig.agentOptions.allowH2', () => {
     const result = mapAxiosConfigToUndici({ httpVersion: 2 }) as any;
-    expect(result.__agentOptions.allowH2).toBe(true);
+    expect(result.__resolvedConfig.agentOptions.allowH2).toBe(true);
   });
 
   it('no longer produces __socketPath or __axiosCompat', () => {

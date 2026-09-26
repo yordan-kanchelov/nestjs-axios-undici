@@ -162,12 +162,9 @@ describe('dispatcher lifecycle (e2e)', () => {
     try {
       const ref = service.undiciRef;
       expect(Object.isFrozen(ref)).toBe(true);
-      expect(Object.prototype.hasOwnProperty.call(ref, '__proxyAgent')).toBe(
-        false,
-      );
-      expect(Object.prototype.hasOwnProperty.call(ref, '__agentOptions')).toBe(
-        false,
-      );
+      expect(
+        Object.prototype.hasOwnProperty.call(ref, '__resolvedConfig'),
+      ).toBe(false);
       expect(() => {
         'use strict';
         (ref as unknown as Record<string, unknown>).dispatcher = undefined;
@@ -208,8 +205,7 @@ describe('dispatcher lifecycle (e2e)', () => {
         'withCredentials',
         'xsrfCookieName',
         'xsrfHeaderName',
-        '__agentOptions',
-        '__proxyAgent',
+        '__resolvedConfig',
       ]) {
         expect(opts).not.toHaveProperty(key);
       }

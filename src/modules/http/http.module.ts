@@ -1,6 +1,5 @@
 import { DynamicModule, Logger, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { randomUUID } from 'node:crypto';
 
 import { HttpService } from './services/http.service';
 import {
@@ -10,7 +9,6 @@ import {
 
 import {
   UNDICI_INSTANCE_TOKEN,
-  HTTP_MODULE_ID,
   HTTP_MODULE_OPTIONS,
 } from './constants/http.constants';
 
@@ -20,7 +18,11 @@ import type {
   HttpInterceptor,
   HttpInterceptorFunction,
 } from './interfaces';
-import type { HttpModuleOptions, UndiciRequestOptionsType } from './types';
+import type { HttpModuleOptions } from './types';
+import type {
+  ResolvedHttpModuleOptions,
+  ResolvedUndiciRequestOptions,
+} from './internal/resolved-config';
 
 const INTERCEPTOR_METADATA = 'HTTP_INTERCEPTORS_METADATA';
 const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
@@ -83,7 +85,8 @@ function isInterceptorInstance(
 export class HttpModule {
   private static readonly logger = new Logger(HttpModule.name);
   static register(config: HttpModuleOptions = {}): DynamicModule {
-    const processedConfig = HttpModule.processAxiosConfig(config);
+    const processedConfig: ResolvedHttpModuleOptions =
+      HttpModule.processAxiosConfig(config);
 
     // Extract interceptors - axios response adapter will be added in the service
     const interceptors = processedConfig.interceptors || [];
@@ -127,10 +130,6 @@ export class HttpModule {
           provide: HTTP_MODULE_OPTIONS,
           useValue: { ...processedConfig, interceptors: functionInterceptors },
         },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
-        },
         ...interceptorProviders,
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
@@ -148,8 +147,8 @@ export class HttpModule {
         {
           provide: HttpService,
           useFactory: (
-            options: UndiciRequestOptionsType,
-            moduleOptions: HttpModuleOptions,
+            options: ResolvedUndiciRequestOptions,
+            moduleOptions: ResolvedHttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
           ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
@@ -169,7 +168,7 @@ export class HttpModule {
    */
   private static processAxiosConfig(
     config: HttpModuleOptions = {},
-  ): HttpModuleOptions {
+  ): ResolvedHttpModuleOptions {
     // Check if this looks like axios configuration
     const hasAxiosOptions = !!(
       config.httpAgent ||
@@ -233,15 +232,11 @@ export class HttpModule {
         ...this.createAsyncProviders(options),
         {
           provide: UNDICI_INSTANCE_TOKEN,
-          useFactory: (config: HttpModuleOptions) => {
+          useFactory: (config: ResolvedHttpModuleOptions) => {
             const { interceptors, global: _global, ...undiciOptions } = config;
             return undiciOptions;
           },
           inject: [HTTP_MODULE_OPTIONS],
-        },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
         },
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
@@ -266,8 +261,8 @@ export class HttpModule {
         {
           provide: HttpService,
           useFactory: (
-            options: UndiciRequestOptionsType,
-            moduleOptions: HttpModuleOptions,
+            options: ResolvedUndiciRequestOptions,
+            moduleOptions: ResolvedHttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
           ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
