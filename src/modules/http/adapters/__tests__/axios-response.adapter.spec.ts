@@ -429,6 +429,108 @@ describe('toAxiosLikeResponse: maxContentLength for responseType: stream', () =>
   });
 });
 
+/**
+ * CodeRabbit review finding (security, size-limit bypass): a custom
+ * `transformResponse` (module- or request-level) with a text/json/default
+ * `responseType` read the raw decoded body via `readText(body, {
+ * contentEncoding, decompress })`, never passing `maxContentLength` through
+ * - so the transform path buffered the *entire* body (compressed or not,
+ * decompressed in full for a compressed one) before any size limit could
+ * ever apply, unlike every other `readText`/`readBuffer`/
+ * `readBodyAsResponseType` call site in this file, which does pass it
+ * through. Fixed by threading `maxContentLength` into that one `readText`
+ * call, matching every other call site.
+ */
+describe('toAxiosLikeResponse: maxContentLength with a custom transformResponse (CodeRabbit review)', () => {
+  const fakeRequest = (
+    options: Record<string, any>,
+    transformResponse?: (data: unknown) => unknown,
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', ...options },
+    axiosConfig: transformResponse ? ({ transformResponse } as any) : undefined,
+  });
+
+  it('an oversized plain (uncompressed) body rejects with ERR_BAD_RESPONSE instead of being handed whole to transformResponse', async () => {
+    const seen: unknown[] = [];
+    const body = Readable.from([Buffer.alloc(2000, 'x')]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/plain' },
+      body,
+    };
+    const promise = toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 1000 }, data => {
+        seen.push(data);
+        return data;
+      }),
+      undiciResponse,
+    );
+    await expect(promise).rejects.toMatchObject({
+      isAxiosError: true,
+      code: 'ERR_BAD_RESPONSE',
+      message: 'maxContentLength size of 1000 exceeded',
+    });
+    // The transform never even ran: the limit was enforced while reading,
+    // before the (would-be oversized) raw value was ever handed to it.
+    expect(seen).toHaveLength(0);
+  });
+
+  it('an oversized gzip body rejects with ERR_BAD_RESPONSE, and does not fully decompress/buffer the decoded body first', async () => {
+    // Highly compressible ("gzip bomb"-shaped): 50MB of zeros compresses to a
+    // tiny buffer almost instantly, so a full decompress-then-check would
+    // still be fast enough to slip past a timing assertion - what actually
+    // proves the streamed/early-abort path ran is `body.destroyed` below,
+    // the same signal the existing gzip+maxContentLength tests use.
+    const raw = Buffer.alloc(50 * 1024 * 1024);
+    const compressed = gzipSync(raw);
+    const body = Readable.from([compressed]) as any;
+    body.bodyUsed = false;
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/plain', 'content-encoding': 'gzip' },
+      body,
+    };
+    const seen: unknown[] = [];
+    const promise = toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 1000 }, data => {
+        seen.push(data);
+        return data;
+      }),
+      undiciResponse,
+    );
+    await expect(promise).rejects.toMatchObject({
+      isAxiosError: true,
+      code: 'ERR_BAD_RESPONSE',
+      message: 'maxContentLength size of 1000 exceeded',
+    });
+    expect(seen).toHaveLength(0);
+    // The decompression stream (and, via readDecompressedBufferWithLimit,
+    // the raw body it wraps) is destroyed the moment the decoded byte count
+    // crosses the limit, proving the whole 50MB decoded body was never
+    // buffered in memory first.
+    await onceClosed(body);
+    expect(body.destroyed).toBe(true);
+  });
+
+  it('a body within the limit still reaches transformResponse normally (no regression)', async () => {
+    const body = Readable.from([Buffer.from('hello world')]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/plain' },
+      body,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 1000 }, data => `[${data}]`),
+      undiciResponse,
+    );
+    expect(response.data).toBe('[hello world]');
+  });
+});
+
 describe('resolveIsValidStatus', () => {
   it('defaults to the 2xx range with no validateStatus at all', () => {
     expect(resolveIsValidStatus(undefined, 200)).toBe(true);

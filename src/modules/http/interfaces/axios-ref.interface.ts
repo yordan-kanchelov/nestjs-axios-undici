@@ -66,6 +66,34 @@ export interface AxiosRefDefaults<D = any> {
   timeout?: number;
   maxRedirects?: number;
   /**
+   * axios >=1.8: `false` makes an absolute request `url` be treated as
+   * relative to `baseURL` anyway. See `AxiosLikeRequestConfig
+   * .allowAbsoluteUrls`.
+   */
+  allowAbsoluteUrls?: boolean;
+  /** See `AxiosLikeRequestConfig.auth`. */
+  auth?: { username: string; password: string };
+  /** See `AxiosLikeRequestConfig.maxContentLength`. */
+  maxContentLength?: number;
+  /** See `AxiosLikeRequestConfig.maxBodyLength`. */
+  maxBodyLength?: number;
+  /** See `AxiosLikeRequestConfig.timeoutErrorMessage`. */
+  timeoutErrorMessage?: string;
+  /** See `AxiosLikeRequestConfig.decompress`. */
+  decompress?: boolean;
+  /** See `AxiosLikeRequestConfig.socketPath`. */
+  socketPath?: string | null;
+  /** See `AxiosLikeRequestConfig.beforeRedirect`. */
+  beforeRedirect?: (
+    options: Record<string, any>,
+    responseDetails: { headers: Record<string, any>; statusCode: number },
+    requestDetails: {
+      url: string;
+      method: string;
+      headers: Record<string, any>;
+    },
+  ) => void;
+  /**
    * Typed as `AxiosHeaders` per bucket, matching axios' own
    * `AxiosInstance.defaults.headers` (`HeadersDefaults & { [key: string]:
    * AxiosHeaderValue }` - an index signature that only a header-value-shaped

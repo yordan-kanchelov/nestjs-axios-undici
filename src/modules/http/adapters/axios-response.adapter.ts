@@ -693,6 +693,7 @@ export async function toAxiosLikeResponse(
               { contentEncoding, decompress },
             )
           : await readText(body as Dispatcher.ResponseData['body'], {
+              maxContentLength,
               contentEncoding,
               decompress,
             });

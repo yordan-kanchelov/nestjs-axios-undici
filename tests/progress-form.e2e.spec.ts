@@ -9,6 +9,7 @@
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
+import { gzipSync } from 'node:zlib';
 import { Test, TestingModule } from '@nestjs/testing';
 import { firstValueFrom } from 'rxjs';
 import { HttpModule, HttpService } from '../src';
@@ -48,6 +49,19 @@ describe('progress callbacks / maxRate / formSerializer', () => {
         if (req.url === '/redirect') {
           res.writeHead(307, { Location: '/echo' });
           res.end();
+          return;
+        }
+        if (req.url === '/download-gzip-json') {
+          const payload = JSON.stringify({
+            items: Array.from({ length: 500 }, (_, i) => ({ i, value: 'x' })),
+          });
+          const compressed = gzipSync(Buffer.from(payload));
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Content-Encoding': 'gzip',
+            'Content-Length': String(compressed.length),
+          });
+          res.end(compressed);
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -138,6 +152,29 @@ describe('progress callbacks / maxRate / formSerializer', () => {
       const service = await makeService({});
       const response = await firstValueFrom(service.get(`${base}/download`));
       expect((response.data as string).length).toBe(DOWNLOAD_SIZE);
+    });
+
+    // CodeRabbit review finding (metered compressed body): with
+    // onDownloadProgress/maxRate set and no maxContentLength, `readText`'s
+    // unlimited-decompression branch called `body.arrayBuffer()` directly on
+    // the metered `ByteMeterStream` (a plain Node `Transform`, which has no
+    // `.arrayBuffer()`), so a gzip/br/deflate/zstd response rejected with a
+    // TypeError instead of resolving. Fixed via `bodyArrayBuffer(body)`
+    // (falls back to async iteration when `.arrayBuffer` is missing).
+    it('a gzip JSON response with onDownloadProgress resolves correctly and progress fires (no maxContentLength)', async () => {
+      const events: any[] = [];
+      const service = await makeService({
+        onDownloadProgress: (e: any) => events.push(e),
+      });
+      const response = await firstValueFrom(
+        service.get(`${base}/download-gzip-json`),
+      );
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({
+        items: Array.from({ length: 500 }, (_, i) => ({ i, value: 'x' })),
+      });
+      expect(events.length).toBeGreaterThan(0);
+      expect(events[events.length - 1].download).toBe(true);
     });
 
     // Review fix (PR #30): a metered download used to silently resolve HTTP

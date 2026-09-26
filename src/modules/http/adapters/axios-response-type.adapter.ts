@@ -583,7 +583,7 @@ export async function readText(
       return stripBOM(buffer.toString('utf8'));
     }
     const buffer = decompressBuffer(
-      Buffer.from(await body.arrayBuffer()),
+      Buffer.from(await bodyArrayBuffer(body)),
       options.contentEncoding!,
     );
     return stripBOM(buffer.toString('utf8'));
