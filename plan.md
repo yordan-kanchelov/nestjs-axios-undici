@@ -305,4 +305,4 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - `test:debug` generates the version file first.
   - The migration guide covers the alias/axios name clash.
   - Known follow-up: api-extractor bundles TS 5.9 while the repo uses TS 6.0. It currently only warns; upgrade api-extractor when a TS 6 build ships.
-- 2026-09-26: PR #27 merged: public API trimmed from 57 to 38 exports (the axiosRef dispatch bridge and its context types are now internal), api-extractor report plus `api:check` in CI, build-time version constant, typed internal `ResolvedModuleConfig`, `reflect-metadata` peer dropped. CI all green.
+- 2026-09-26: PR #27 merged: public API trimmed from 57 to 39 exports (the axiosRef dispatch bridge and its context types are now internal), api-extractor report plus `api:check` in CI, build-time version constant, typed internal `ResolvedModuleConfig`, `reflect-metadata` peer dropped. CI all green.
