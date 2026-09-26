@@ -140,8 +140,8 @@ describe('HttpService', () => {
       expect(service.undiciRef).toEqual({});
     });
 
-    it('should set a global dispatcher option', () => {
-      service.setGlobalDispatcher(dispatcherMock);
+    it('should set the dispatcher via setDispatcher', () => {
+      service.setDispatcher(dispatcherMock);
 
       expect(service.undiciRef.dispatcher).toBe(dispatcherMock);
     });

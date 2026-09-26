@@ -1,4 +1,4 @@
-import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
+import { DynamicModule, Logger, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 
@@ -57,16 +57,31 @@ function isInterceptorInstance(
     HttpService,
     {
       provide: UNDICI_INSTANCE_TOKEN,
-      useValue: {}, // Default empty options
+      // A factory, not `useValue: {}` (**breaking**: fixes a real bug, not
+      // just a style choice - plan.md phase 3 "Resource cleanup": "The
+      // static module's default options become a factory"). `@Module()`'s
+      // provider metadata is evaluated once, when this class is declared,
+      // so a literal `{}` here would be the exact same object reference
+      // handed to every app that imports the static `HttpModule` (as
+      // opposed to `HttpModule.register({})`, which builds a fresh object
+      // per call): `HttpService#setDispatcher()` mutating `instanceOptions`
+      // in one app would then leak into every other app's `HttpService`
+      // that also imported the bare `HttpModule` -
+      // `plan/reports/package-quality.md`'s "A static `HttpModule` import
+      // shares one `{}` options object across apps". A factory runs once
+      // per module instantiation instead, so each app's `HttpService` gets
+      // its own options object.
+      useFactory: () => ({}),
     },
     {
       provide: HTTP_MODULE_OPTIONS,
-      useValue: {}, // Default empty module options
+      useFactory: () => ({}), // Default empty module options, per-instantiation (see above)
     },
   ],
   exports: [HttpService],
 })
 export class HttpModule {
+  private static readonly logger = new Logger(HttpModule.name);
   static register(config: HttpModuleOptions = {}): DynamicModule {
     const processedConfig = HttpModule.processAxiosConfig(config);
 
@@ -136,11 +151,7 @@ export class HttpModule {
             options: UndiciRequestOptionsType,
             moduleOptions: HttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
-          ) => {
-            const service = new HttpService(options, moduleOptions);
-            service.setInterceptors(interceptors);
-            return service;
-          },
+          ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
             UNDICI_INSTANCE_TOKEN,
             HTTP_MODULE_OPTIONS,
@@ -186,8 +197,8 @@ export class HttpModule {
     if (hasAxiosOptions) {
       const warnings = getAxiosCompatibilityWarnings(config);
       if (warnings.length > 0) {
-        console.warn('[nestjs-axios-undici] Axios compatibility warnings:');
-        warnings.forEach(warning => console.warn(`  - ${warning}`));
+        HttpModule.logger.warn('Axios compatibility warnings:');
+        warnings.forEach(warning => HttpModule.logger.warn(`  - ${warning}`));
       }
 
       // Map axios config to undici config
@@ -258,11 +269,7 @@ export class HttpModule {
             options: UndiciRequestOptionsType,
             moduleOptions: HttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
-          ) => {
-            const service = new HttpService(options, moduleOptions);
-            service.setInterceptors(interceptors);
-            return service;
-          },
+          ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
             UNDICI_INSTANCE_TOKEN,
             HTTP_MODULE_OPTIONS,

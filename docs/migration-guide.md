@@ -314,6 +314,32 @@ HttpModule.register({ cookieJar: new CookieJar() });
 - **`error.request`/`response.request` are now populated** (`path`, `method`, `host`, `protocol`, `res.responseUrl`) instead of an always-truthy empty placeholder object. Code that only checked `!!error.request` is unaffected; code that read fields off the old placeholder (there weren't any) has nothing to update.
 - An unsupported URL protocol (`tel:`, `ftp:`, ...) and undici's own request-argument-validation failures now reject with a proper `AxiosError` (`config`/`request` set) instead of a raw undici error class - update an `instanceof undici.errors.*`/`error.code` check for these specific cases if you had one (a genuinely malformed URL still propagates unwrapped, unchanged).
 
+### Dispatcher lifecycle and `HttpService` members
+
+**Breaking changes**:
+
+- **Per-service default dispatcher.** Every `HttpService` now owns its own undici `Agent`, built from this package's own undici copy, and uses it whenever no per-request `dispatcher`/`socketPath` and no module `dispatcher`/module-built dispatcher applies. It used to fall back to undici's *global* dispatcher (`undici.getGlobalDispatcher()`) instead: `undici.setGlobalDispatcher()` elsewhere in the process **no longer affects requests made through `HttpService`** at all. If you were relying on `setGlobalDispatcher()` (from `undici`) to redirect this library's traffic, configure the dispatcher through module options, a per-request `dispatcher`, or `HttpService#setDispatcher()` instead.
+
+  **Tests using undici's `MockAgent`:** the common pattern `setGlobalDispatcher(mockAgent)` no longer intercepts requests made through `HttpService`. The requests go to the real network instead, silently, and not even `mockAgent.disableNetConnect()` fires. Pass the mock to the module instead:
+
+  ```ts
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  // either
+  HttpModule.register({ dispatcher: mockAgent });
+  // or, on an existing service
+  httpService.setDispatcher(mockAgent);
+  ```
+
+  A `dispatcher` you pass in is never closed by the module, so the test still owns `mockAgent.close()`. See also [Testing](/docs/guides/testing.md). This also fixes the "two copies of undici" case: on a Node.js version that bundles its own undici, a plain request used to quietly run on Node's bundled `Agent` instead of this package's own.
+- **`OnModuleDestroy`.** `HttpService` now implements it: `app.close()` gracefully closes every dispatcher this library created for that service (the per-service default `Agent`, the module-built dispatcher, and any cached `socketPath` `Agent`s). A `dispatcher` you supplied yourself is never closed. If your tests create a module and never call `module.close()`, they still won't hang (nothing changed there), but a real app that used to see a lingering open connection or socket handle after shutdown no longer will - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle).
+- **The static `HttpModule` import (no `register()` call) no longer shares one options object across every app that imports it.** Each app's `HttpService` now gets its own; previously, `setGlobalDispatcher()`/`setDispatcher()` (or anything else mutating the shared options object) in one app leaked into every other app that imported the bare `HttpModule`.
+- **`setGlobalDispatcher(dispatcher)` is renamed to `setDispatcher(dispatcher)`, with no alias.** It never touched undici's own global dispatcher, only this service, so the new name is accurate; the old name is gone, not deprecated. If the dispatcher it replaces is one this service created itself, that dispatcher is now closed (see above); a dispatcher you supplied is never closed.
+- **`setInterceptors()` is no longer public.** It was only ever meant for `HttpModule.register()`/`.registerAsync()` to hand the fully-resolved interceptor list to a freshly-constructed `HttpService`; that now happens through the constructor instead. Use `addInterceptor()` to add interceptors at runtime, or the module's `interceptors` option at setup - nothing else needed to call `setInterceptors()` directly.
+- **`interceptorCount` is now the real count.** It used to add 1 for a phantom "axios response adapter" interceptor that hasn't existed since the axiosRef pipeline refactor, and separately counted `axiosRef`'s own request/response interceptors. It's now the plain length of the module-registered (`addInterceptor()`/module `interceptors`) chain only.
+- **`undiciRef` is now a read-only, frozen snapshot**, not the live options object - see [Types](#types) above and [`undiciRef`](/docs/http/http.service.md#undiciref). Each read returns a fresh copy with the internal `__`-prefixed keys stripped.
+- **Axios-only keys no longer leak into undici's dispatch options.** `auth`, `httpAgent`, `httpsAgent`, `proxy`, `httpVersion`, `cookieJar`, `withCredentials`, `xsrfCookieName`/`xsrfHeaderName` and the internal `__`-prefixed keys used to be spread wholesale onto every request's undici options (harmlessly ignored by undici, but visible to anything inspecting them, e.g. a custom `Dispatcher`). They're stripped once, at setup, now.
+
 ### Request/Response Transforms
 
 Use interceptors for transforms:
