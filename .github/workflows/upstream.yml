@@ -1,0 +1,55 @@
+name: Upstream conformance
+
+# Runs @nestjs/axios' and axios' own (unmodified) test files against this
+# package - see tests/upstream/README.md. Weekly, to catch a new upstream
+# release inside the pinned tag range; on PRs that touch src/ or the suites
+# themselves; and on demand.
+on:
+  pull_request:
+    branches: [main, claude/v1.0.0]
+    paths:
+      - 'src/**'
+      - 'tests/upstream/**'
+      - '.github/workflows/upstream.yml'
+  workflow_dispatch:
+  schedule:
+    # Weekly, to catch new @nestjs/axios/axios releases within the pinned tags.
+    - cron: '41 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: Upstream conformance suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Keyed on the two run.mjs files: bumping a pinned tag changes their
+      # content, which busts the cache automatically.
+      - name: Cache upstream clones
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/conformance-clones
+          key: upstream-clones-${{ hashFiles('tests/upstream/nestjs-axios/run.mjs', 'tests/upstream/axios/run.mjs') }}
+
+      - name: Run upstream conformance suites
+        run: npm run test:upstream
+        env:
+          CONFORMANCE_CLONE_ROOT: ${{ runner.temp }}/conformance-clones

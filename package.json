@@ -34,6 +34,9 @@
     "test:cov": "npm run test:jest -- --coverage",
     "test:debug": "node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
     "test:examples": "npm run build && node scripts/run-examples.js",
+    "test:upstream": "node tests/upstream/run-all.mjs",
+    "test:upstream:nestjs": "node tests/upstream/nestjs-axios/run.mjs",
+    "test:upstream:axios": "node tests/upstream/axios/run.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "npm run build && changeset publish"
