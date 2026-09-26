@@ -37,7 +37,10 @@ import type {
   AxiosLikeResponse,
   AxiosRef,
 } from '../interfaces';
-import { AxiosHeaders } from '../interfaces/axios-headers';
+import {
+  AxiosHeaders,
+  sanitizeHeadersToByteString,
+} from '../interfaces/axios-headers';
 import {
   createAxiosRef,
   createAxiosRefDefaults,
@@ -62,10 +65,16 @@ import {
   toAxiosLikeResponse,
 } from '../adapters/axios-response.adapter';
 import {
+  dataUrlString,
+  resolveDataUrlRequest,
+} from '../adapters/axios-data-url.adapter';
+import {
   createStatusError,
   createTimeoutError,
+  createUnparsableTimeoutError,
   createUnsupportedProtocolError,
   isDeadlineTimeoutReason,
+  isUnparsableTimeout,
   toAxiosError,
   type DeadlineTimeoutReason,
 } from '../errors/axios-error';
@@ -861,6 +870,42 @@ export class HttpService implements OnModuleDestroy {
    * on every subscription, as `@nestjs/axios`' `makeObservable` does. This
    * matters for `get().pipe(retry())`: each attempt must build its own
    * headers/config rather than reusing the first attempt's.
+   *
+   * plan.md phase 2 "fix: remaining error-shape gaps", item 3 ("HTTP and
+   * interceptor errors should keep the call-site stack, as axios does"):
+   * tried and reverted a literal port of axios' own mechanism (`Axios
+   * .prototype.request`'s `catch` block re-captures a fresh stack and
+   * appends it - `lib/core/Axios.js`). Two things make it a bad fit here:
+   * (1) axios' *entire* request path, start to finish, is a real, native
+   * `await`/`.then()` chain, so a stack captured inside that `catch` already
+   * reaches the original application call site for free, via V8's async
+   * stack traces; this library's request path is an RxJS `Observable`
+   * instead, whose `next`/`error`/`complete` notifications are delivered
+   * through plain synchronous callbacks - confirmed with a minimal repro
+   * (an `Observable` wrapping a promise, subscribed via `firstValueFrom`)
+   * that V8 does *not* bridge an error notification back to wherever
+   * `.subscribe()`/`firstValueFrom()` was itself called the way it does for
+   * a plain `await` chain, so the same technique here would reach only this
+   * library's own internals, never the caller - much less benefit than in
+   * axios. (2) `Error.captureStackTrace`'s cost is real and dominated by
+   * *walking* the actual (deep, RxJS + undici promise-chain) execution
+   * stack, not by how many frames are ultimately formatted - measured
+   * (`benchmarks/micro/compare.js --scenarios error`, a 100%-failure
+   * workload, so every request pays this cost): even capped at
+   * `Error.stackTraceLimit = 1`, it still added 40%+ CPU/req, far past the
+   * 10% budget, for the much smaller benefit above. Given that, this
+   * library's *existing* behaviour already covers the item's intent at zero
+   * extra cost: an interceptor's own thrown error is never wrapped at all
+   * (`toAxiosError`'s final, unconditional "anything else passes through"
+   * branch), so it keeps the stack from wherever the *caller's own code*
+   * threw it; every HTTP-originated error is built via `new AxiosError(...)`/
+   * `AxiosError.from(...)` (`createStatusError`, `createTimeoutError`,
+   * `toAxiosError`, ...), and a freshly-constructed `Error` already carries
+   * a stack from its own construction site for free (an unavoidable,
+   * pre-existing cost of building any error at all, not one this fix would
+   * add) - showing where in this library's own error handling it was built,
+   * which is the same depth of information the reverted mechanism would
+   * have added, without an extra `Error.captureStackTrace` call.
    */
   private dispatch<T = any, D = any>(
     urlOrConfig: string | URL | UrlObject | AxiosLikeRequestConfig<D>,
@@ -1161,6 +1206,23 @@ export class HttpService implements OnModuleDestroy {
     interceptorRequest: HttpInterceptorRequest,
   ): Observable<AxiosLikeResponse> {
     return new Observable<AxiosLikeResponse>(subscriber => {
+      // `data:` URLs (plan.md phase 2 "fix: support data: URLs"): resolved
+      // entirely locally, exactly like axios - no dispatcher resolution, no
+      // abort signal, no undici `request()` call at all. Checked first, so
+      // every other (http/https) request - the overwhelming majority - pays
+      // only this one string check.
+      const dataUrl = dataUrlString(interceptorRequest.url);
+      if (dataUrl !== undefined) {
+        resolveDataUrlRequest(interceptorRequest, dataUrl).then(
+          response => {
+            subscriber.next(response);
+            subscriber.complete();
+          },
+          error => subscriber.error(error),
+        );
+        return;
+      }
+
       // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
       const rawOptions = interceptorRequest.options as Record<string, any> & {
         maxRedirections?: number;
@@ -1199,6 +1261,18 @@ export class HttpService implements OnModuleDestroy {
       // reads below (`headersTimeout`, `dispatcher`, `signal`, ...) still
       // type-check; the runtime object is untouched either way.
       const requestOptions: Record<string, any> = restOptions;
+
+      // An unparsable `timeout` (plan.md phase 2 "fix: remaining error-shape
+      // gaps", item 1): axios gives `ERR_BAD_OPTION_VALUE`, not the generic
+      // `ERR_BAD_REQUEST` `toAxiosError` would otherwise map undici's own
+      // `InvalidArgumentError` ("invalid headersTimeout") to further down -
+      // checked up front, before ever resolving a dispatcher or dispatching,
+      // so an invalid config never reaches undici at all.
+      if (isUnparsableTimeout(deadlineMs)) {
+        subscriber.error(createUnparsableTimeoutError(interceptorRequest));
+        return;
+      }
+
       // Precedence: an explicit per-request `dispatcher` always wins; then a
       // request-level `socketPath` (module-level `socketPath` is already
       // baked into `this.customDispatcher` by `setupDispatcher`); then the
@@ -1288,6 +1362,19 @@ export class HttpService implements OnModuleDestroy {
         dispatcher,
         signal: abortSignal as any,
       };
+      // The second (byte-string) header sanitization pass, applied exactly
+      // once, right before this hop's actual dispatch - after axiosRef
+      // request interceptors (if any) have already run, matching axios'
+      // own `toByteStringHeaderObject` call site - see
+      // `sanitizeHeadersToByteString`'s doc comment (`axios-headers.ts`) for
+      // why this can't be folded into the earlier, set-time pass
+      // (`mergeHeaders`/`AxiosHeaders#set`). A later redirect hop reuses
+      // `currentOptions.headers`, derived from this same, already-sanitized
+      // object (via `buildRedirectHop`'s copy/drop, never introducing a new
+      // raw value), so this never needs to run again per hop.
+      if (options.headers) {
+        options.headers = sanitizeHeadersToByteString(options.headers);
+      }
 
       // `maxBodyLength`, as in axios: a string/Buffer body is checked
       // synchronously before ever dispatching; a stream body is checked as

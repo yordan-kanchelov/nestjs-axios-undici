@@ -1,4 +1,8 @@
-import { AxiosHeaders } from '../axios-headers';
+import {
+  AxiosHeaders,
+  sanitizeByteStringHeaderValue,
+  sanitizeHeadersToByteString,
+} from '../axios-headers';
 
 describe('AxiosHeaders', () => {
   describe('bracket notation support', () => {
@@ -563,6 +567,121 @@ describe('AxiosHeaders', () => {
       expect(headers.get('content-type', true)).toEqual({
         'multipart/form-data': undefined,
         boundary: 'abc123',
+      });
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values like
+   * axios" (found by upstream conformance): axios strips these before ever
+   * handing a header to Node's `http.request`; undici instead throws
+   * `InvalidArgumentError` for the same input. Checked against real axios
+   * 1.20 (`lib/helpers/sanitizeHeaderValue.js`).
+   */
+  describe('header value sanitization (CRLF / non-Latin1, matching axios)', () => {
+    it('strips a bare embedded newline/CR, matching what Node http silently does', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Bad', 'a\nb');
+      expect(headers.get('x-bad')).toBe('ab');
+
+      headers.set('X-Bad2', 'a\r\nb');
+      expect(headers.get('x-bad2')).toBe('ab');
+    });
+
+    it('strips other C0/DEL control characters', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Bad', 'a\u0001\u0007b\u007f');
+      expect(headers.get('x-bad')).toBe('ab');
+    });
+
+    it('a non-ASCII/non-Latin-1 code point (an emoji) is left untouched by set() - that only happens once, at dispatch time (sanitizeHeadersToByteString)', () => {
+      // axios sanitizes a value twice, at two different points in time -
+      // set() only strips control characters (see the doc comment on
+      // `sanitizeHeaderValue` in axios-headers.ts for exactly why: an
+      // axiosRef request interceptor must still be able to read/transform
+      // the original Unicode text between the two passes).
+      const headers = new AxiosHeaders();
+      headers.set('X-Emoji', 'a\u{1F600}b');
+      expect(headers.get('x-emoji')).toBe('a\u{1F600}b');
+    });
+
+    it('keeps a Latin-1 (0x80-0xff) character - only strips the truly invalid range', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Latin1', 'café');
+      expect(headers.get('x-latin1')).toBe('café');
+    });
+
+    it('trims a leading/trailing space or tab, even with no other invalid character', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Trim', '\t value \t');
+      expect(headers.get('x-trim')).toBe('value');
+    });
+
+    it('sanitizes every element of an array value', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Multi', ['a\nb', 'c\rd']);
+      expect(headers.get('x-multi')).toEqual(['ab', 'cd']);
+    });
+
+    it('leaves false/null/number/boolean values untouched (not stringified - a pre-existing, deliberate difference from axios; only string content is sanitized)', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Num', 123);
+      headers.set('X-Bool', true);
+      headers.set('X-Null', null);
+      expect(headers.get('x-num')).toBe(123);
+      expect(headers.get('x-bool')).toBe(true);
+      expect(headers.get('x-null')).toBe(null);
+    });
+
+    it('also sanitizes when merging headers from another AxiosHeaders instance', () => {
+      const source = new AxiosHeaders();
+      source.set('X-Bad', 'a\nb');
+      const target = new AxiosHeaders();
+      target.set(source);
+      expect(target.get('x-bad')).toBe('ab');
+    });
+  });
+
+  /**
+   * The second sanitization pass (`sanitizeByteStringHeaderValue`/
+   * `sanitizeHeadersToByteString`), applied once at dispatch time by
+   * `HttpService.executeRequest` - after axiosRef request interceptors (if
+   * any) have already run. See the doc comment on `sanitizeHeaderValue`
+   * above for why this can't be folded into the set()-time pass.
+   */
+  describe('sanitizeByteStringHeaderValue / sanitizeHeadersToByteString (the dispatch-time pass)', () => {
+    it('strips a non-Latin1 character, unlike set()', () => {
+      expect(sanitizeByteStringHeaderValue('a\u{1F600}b')).toBe('ab');
+    });
+
+    it('keeps a Latin-1 (0x80-0xff) character', () => {
+      expect(sanitizeByteStringHeaderValue('café')).toBe('café');
+    });
+
+    it('also re-strips a control character (a superset of the set()-time pass)', () => {
+      expect(sanitizeByteStringHeaderValue('a\nb')).toBe('ab');
+    });
+
+    it('sanitizeHeadersToByteString returns the same object reference when nothing needs stripping (no allocation)', () => {
+      const headers = { 'Content-Type': 'application/json', 'X-A': 'plain' };
+      expect(sanitizeHeadersToByteString(headers)).toBe(headers);
+    });
+
+    it('sanitizeHeadersToByteString returns a new object, without mutating the original, when something needs stripping', () => {
+      const headers = { 'X-Emoji': 'a\u{1F600}b', 'X-Plain': 'ok' };
+      const result = sanitizeHeadersToByteString(headers);
+      expect(result).not.toBe(headers);
+      expect(result).toEqual({ 'X-Emoji': 'ab', 'X-Plain': 'ok' });
+      // The original, e.g. still read by response.config.headers /
+      // error.config.headers, is untouched - matches axios (whose
+      // `config.headers` reflects the pre-dispatch-pass AxiosHeaders value).
+      expect(headers['X-Emoji']).toBe('a\u{1F600}b');
+    });
+
+    it('sanitizes array header values too', () => {
+      const headers = { 'X-Multi': ['a\u{1F600}b', 'plain'] };
+      expect(sanitizeHeadersToByteString(headers)).toEqual({
+        'X-Multi': ['ab', 'plain'],
       });
     });
   });

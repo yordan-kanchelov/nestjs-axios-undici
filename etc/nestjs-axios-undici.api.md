@@ -62,7 +62,7 @@ export class AxiosError<T = any> extends Error {
     static readonly ERR_NOT_SUPPORT = "ERR_NOT_SUPPORT";
     // (undocumented)
     static readonly ETIMEDOUT = "ETIMEDOUT";
-    static from<T = any>(error: any, code?: string, config?: InternalAxiosLikeRequestConfig, request?: any, response?: AxiosLikeResponse<T>): AxiosError<T>;
+    static from<T = any>(error: any, code?: string, config?: InternalAxiosLikeRequestConfig, request?: any, response?: AxiosLikeResponse<T>, customProps?: Record<string, unknown>): AxiosError<T>;
     // (undocumented)
     readonly isAxiosError = true;
     // (undocumented)

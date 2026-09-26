@@ -90,3 +90,55 @@ describe('HttpService: unsupported protocol fast path', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * plan.md phase 2 "fix: support data: URLs" (found by upstream conformance):
+ * `axiosRef.get('data:...')` used to reject with `Unsupported protocol
+ * data:` (the same `unsupportedProtocol` check above only allows
+ * `http:`/`https:`); real axios decodes a `data:` URL entirely locally, no
+ * network request at all - checked against real axios 1.20's own test
+ * suite (`tests/unit/adapters/http.test.js`'s "Data URL" block).
+ */
+describe('HttpService: data: URLs (resolved locally, never dispatched)', () => {
+  let service: HttpService;
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [HttpModule.register({})],
+    }).compile();
+    service = module.get<HttpService>(HttpService);
+  });
+
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it('resolves a data: URL as a Buffer, without ever calling undici', async () => {
+    const buffer = Buffer.from('123');
+    const dataURI = `data:application/octet-stream;base64,${buffer.toString('base64')}`;
+    const response = await firstValueFrom(service.get(dataURI));
+    expect(response.status).toBe(200);
+    expect(Buffer.isBuffer(response.data)).toBe(true);
+    expect((response.data as Buffer).equals(buffer)).toBe(true);
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves a data: URL given as a URL instance', async () => {
+    const url = new URL('data:text/plain,hello');
+    const response = await firstValueFrom(service.get(url));
+    expect(response.data).toEqual(Buffer.from('hello'));
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects when maxContentLength is exceeded, without ever calling undici', async () => {
+    const body = 'QQ' + '%41'.repeat(4000);
+    await expect(
+      firstValueFrom(
+        service.get(`data:application/octet-stream;base64,${body}`, {
+          maxContentLength: 3000,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'ERR_BAD_RESPONSE' });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+});

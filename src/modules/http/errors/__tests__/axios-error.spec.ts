@@ -3,10 +3,12 @@ import {
   CanceledError,
   createStatusError,
   createTimeoutError,
+  createUnparsableTimeoutError,
   createUnsupportedProtocolError,
   isAxiosError,
   isCancel,
   isDeadlineTimeoutReason,
+  isUnparsableTimeout,
   toAxiosError,
   type DeadlineTimeoutReason,
 } from '../axios-error';
@@ -264,5 +266,115 @@ describe('optional axios peer', () => {
       // `isolateModules` doesn't undo on its own.
       jest.dontMock('axios');
     }
+  });
+});
+
+/**
+ * plan.md phase 2 "fix: remaining error-shape gaps" (found by upstream
+ * conformance), item 1: "an unparsable timeout should give
+ * ERR_BAD_OPTION_VALUE, not ERR_BAD_REQUEST" - checked against real axios
+ * 1.20 (`lib/adapters/http.js`: `parseInt(own('timeout'), 10)`,
+ * `Number.isNaN(timeout)`).
+ */
+describe('isUnparsableTimeout', () => {
+  it("is false for anything falsy (axios: `if (own('timeout'))` skips validation entirely)", () => {
+    expect(isUnparsableTimeout(0)).toBe(false);
+    expect(isUnparsableTimeout('')).toBe(false);
+    expect(isUnparsableTimeout(null)).toBe(false);
+    expect(isUnparsableTimeout(undefined)).toBe(false);
+    expect(isUnparsableTimeout(NaN)).toBe(false);
+    expect(isUnparsableTimeout(false)).toBe(false);
+  });
+
+  it('is false for a value parseInt can turn into a number, including a numeric string', () => {
+    expect(isUnparsableTimeout(5000)).toBe(false);
+    expect(isUnparsableTimeout('5000')).toBe(false);
+  });
+
+  it('is true for a truthy value parseInt cannot parse', () => {
+    expect(isUnparsableTimeout('abc')).toBe(true);
+    expect(isUnparsableTimeout({})).toBe(true);
+    expect(isUnparsableTimeout([])).toBe(true);
+    expect(isUnparsableTimeout(true)).toBe(true);
+    expect(isUnparsableTimeout(Infinity)).toBe(true);
+  });
+});
+
+describe('createUnparsableTimeoutError', () => {
+  it("gives ERR_BAD_OPTION_VALUE with axios' exact message", () => {
+    const error = createUnparsableTimeoutError(request);
+    expect(error.isAxiosError).toBe(true);
+    expect(error.code).toBe(AxiosError.ERR_BAD_OPTION_VALUE);
+    expect(error.message).toBe('error trying to parse `config.timeout` to int');
+  });
+});
+
+/**
+ * plan.md phase 2 "fix: remaining error-shape gaps", item 3: "HTTP and
+ * interceptor errors should keep the call-site stack, as axios does".
+ *
+ * A literal port of axios' own mechanism (`Axios.prototype.request`'s
+ * `catch` block re-capturing and appending a fresh stack -
+ * `lib/core/Axios.js`) was tried and reverted: measured against
+ * `benchmarks/micro/compare.js --scenarios error` (a 100%-failure
+ * workload), even `Error.captureStackTrace` capped at `stackTraceLimit: 1`
+ * added 40%+ CPU/req, far past this project's 10% budget - walking the
+ * actual (RxJS + undici promise-chain) execution stack dominates the cost,
+ * not how many frames are formatted. It also brings much less benefit here
+ * than in axios: axios' entire request path is a real, native
+ * `await`/`.then()` chain, so V8's async stack traces alone already let a
+ * stack captured in that `catch` reach the original caller; this library's
+ * request path is an `Observable`, whose notifications are delivered
+ * through plain synchronous callbacks that V8 does not bridge the same way
+ * (confirmed with a minimal repro), so the same technique here would only
+ * ever reach this library's own internals, never the application's call
+ * site.
+ *
+ * What already covers the item's intent, at zero extra cost: an
+ * interceptor's own thrown error is never wrapped at all (`toAxiosError`'s
+ * final, unconditional "anything else passes through" branch below), so it
+ * keeps the stack from wherever the *caller's own code* threw it; every
+ * HTTP-originated error is built via `new AxiosError(...)`/`AxiosError
+ * .from(...)`, and a freshly-constructed `Error` already carries a stack
+ * from its own construction site for free - an unavoidable, pre-existing
+ * cost of building any error at all, not one this fix would add - showing
+ * where in this library's own error handling it was built.
+ */
+describe('HTTP and interceptor errors already keep a meaningful stack, with no extra capture needed', () => {
+  it("createStatusError's stack shows it was built by this library's own error handling", () => {
+    const response = {
+      data: '',
+      status: 404,
+      statusText: 'Not Found',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    };
+    const error = createStatusError(response as any);
+    expect(error.stack).toEqual(expect.stringContaining('createStatusError'));
+  });
+
+  it("toAxiosError's wrapped result shows it was built by this library's own error handling", () => {
+    const error = toAxiosError(undiciError('ECONNRESET'), request);
+    expect(error.stack).toEqual(expect.stringContaining('toAxiosError'));
+  });
+
+  it("an interceptor's own thrown error passes through toAxiosError unwrapped, keeping the caller's own stack untouched", () => {
+    function myOwnInterceptorCode() {
+      throw new Error('interceptor boom');
+    }
+    let thrown: Error;
+    try {
+      myOwnInterceptorCode();
+      throw new Error('unreachable');
+    } catch (e) {
+      thrown = e as Error;
+    }
+    const originalStack = thrown.stack;
+    const result = toAxiosError(thrown, request);
+    expect(result).toBe(thrown);
+    expect(result.stack).toBe(originalStack);
+    expect(result.stack).toEqual(
+      expect.stringContaining('myOwnInterceptorCode'),
+    );
   });
 });

@@ -221,4 +221,96 @@ describe('HttpService', () => {
       });
     });
   });
+
+  /**
+   * plan.md phase 2 "fix: remaining error-shape gaps" (found by upstream
+   * conformance), item 3: "HTTP and interceptor errors should keep the
+   * call-site stack, as axios does" - see `appendCallSiteStack`'s doc
+   * comment (`axios-error.ts`) for how this differs from axios in practice,
+   * since this library's request path is an `Observable`, not a plain
+   * awaited promise chain: it can't reliably reach all the way back to the
+   * *application's* call site the way axios' own fix does, but it does
+   * augment the raw undici/network error - whose stack otherwise gives no
+   * hint it passed through this library's request pipeline at all - with
+   * this library's own frames.
+   */
+  /**
+   * plan.md phase 2 "fix: remaining error-shape gaps", item 3: "HTTP and
+   * interceptor errors should keep the call-site stack, as axios does". A
+   * literal port of axios' own mechanism (a fresh `Error.captureStackTrace`
+   * on every error, appended to `error.stack`) was tried and reverted -
+   * see the doc comment on `HttpService.dispatch` and on
+   * `axios-error.spec.ts`'s equivalent describe block for the measured perf
+   * cost and why this library's *existing* behaviour already covers the
+   * item's intent for free.
+   */
+  describe('HTTP errors already carry a meaningful stack, at no extra cost', () => {
+    it("a wrapped HTTP/network failure shows it was built by this library's own error handling", async () => {
+      const original = new Error('socket hang up');
+      Object.assign(original, { code: 'ECONNRESET' });
+      requestMock.mockRejectedValueOnce(original);
+
+      const error: any = await lastValueFrom(service.request(baseURL)).catch(
+        e => e,
+      );
+      expect(error.isAxiosError).toBe(true);
+      expect(error.stack).toEqual(expect.stringContaining('toAxiosError'));
+    });
+
+    it('never touches Error.captureStackTrace (no per-error capture cost)', async () => {
+      const spy = jest.spyOn(Error, 'captureStackTrace');
+      requestMock.mockRejectedValueOnce(new Error('boom'));
+      await lastValueFrom(service.request(baseURL)).catch(() => undefined);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: remaining error-shape gaps" (found by upstream
+   * conformance), item 1: an unparsable `timeout` gives `ERR_BAD_OPTION_
+   * VALUE`, not the generic `ERR_BAD_REQUEST` a raw undici
+   * `InvalidArgumentError` used to map to - checked up front, before ever
+   * calling undici's `request()`.
+   */
+  describe('an unparsable timeout', () => {
+    it('rejects with ERR_BAD_OPTION_VALUE, never dispatching', async () => {
+      await expect(
+        lastValueFrom(
+          service.request(baseURL, { timeout: 'not-a-number' as any }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'ERR_BAD_OPTION_VALUE',
+        message: 'error trying to parse `config.timeout` to int',
+      });
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('a valid numeric timeout is unaffected', async () => {
+      await expect(
+        lastValueFrom(service.request(baseURL, { timeout: 5000 })),
+      ).resolves.toBeDefined();
+      expect(requestMock).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values like
+   * axios" (found by upstream conformance): undici would otherwise throw
+   * `InvalidArgumentError` for a header value axios' Node `http` transport
+   * silently rewrites.
+   */
+  describe('header value sanitization', () => {
+    it('sanitizes a CRLF out of a header value before ever calling undici, matching axios', async () => {
+      await lastValueFrom(
+        service.request(baseURL, { headers: { 'X-Bad': 'a\nb' } }),
+      );
+      expect(requestMock).toHaveBeenCalledWith(
+        baseURL,
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'X-Bad': 'ab' }),
+        }),
+      );
+    });
+  });
 });

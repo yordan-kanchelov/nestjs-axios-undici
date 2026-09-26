@@ -1,6 +1,19 @@
 import { Readable } from 'node:stream';
-import { RequestInfo, toAxiosLikeResponse } from '../axios-response.adapter';
+import { gzipSync } from 'node:zlib';
+import {
+  RequestInfo,
+  resolveIsValidStatus,
+  toAxiosLikeResponse,
+} from '../axios-response.adapter';
 import type { HttpInterceptorRequest } from '../../interfaces/http-interceptor.interface';
+
+async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 describe('RequestInfo (perf: response.request / error.request built lazily)', () => {
   it('parses nothing in the constructor; a field is parsed only on first read, and cached after', () => {
@@ -180,5 +193,115 @@ describe('toAxiosLikeResponse: metered body error propagation', () => {
     } finally {
       process.nextTick = realNextTick;
     }
+  });
+});
+
+/**
+ * plan.md phase 2 "fix: enforce maxContentLength for responseType: 'stream'"
+ * (found by upstream conformance): the stream branch used to return the
+ * body untouched, so a streamed download had no cap at all despite
+ * `maxContentLength` - checked against real axios 1.20 (`lib/adapters/
+ * http.js`'s own streamed enforcement, `Readable.from(enforceMaxContent
+ * Length(), ...)`).
+ */
+describe('toAxiosLikeResponse: maxContentLength for responseType: stream', () => {
+  const fakeRequest = (
+    options: Record<string, any>,
+  ): HttpInterceptorRequest => ({
+    url: 'http://localhost/test',
+    options: { method: 'GET', responseType: 'stream', ...options },
+  });
+
+  it('a stream under the limit reads through untouched', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.from('hello')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 1000 }),
+      undiciResponse,
+    );
+    await expect(readAll(response.data)).resolves.toEqual(Buffer.from('hello'));
+  });
+
+  it('a stream over the limit destroys with a real AxiosError (ERR_BAD_RESPONSE), matching axios exactly', async () => {
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body: Readable.from([Buffer.alloc(10, 'x'), Buffer.alloc(10, 'y')]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 15 }),
+      undiciResponse,
+    );
+    const error: any = await readAll(response.data).catch(e => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.isAxiosError).toBe(true);
+    expect(error.code).toBe('ERR_BAD_RESPONSE');
+    expect(error.message).toBe('maxContentLength size of 15 exceeded');
+    // `config`/`request` are set eagerly on this error (unlike the buffered
+    // case's `AxiosError`, which builds `config` lazily on read) - matches
+    // axios' own streamed enforcement, which already has both in scope.
+    expect(error.config).toBeDefined();
+  });
+
+  it('enforces the limit against the DECODED (decompressed) byte count, not the compressed one on the wire', async () => {
+    const decoded = Buffer.alloc(1000, 'z');
+    const compressed = gzipSync(decoded);
+    // The compressed payload is well under the limit; only the decoded
+    // (much larger) payload should trip it.
+    expect(compressed.length).toBeLessThan(200);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: { 'content-encoding': 'gzip' },
+      body: Readable.from([compressed]),
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: 200 }),
+      undiciResponse,
+    );
+    const error: any = await readAll(response.data).catch(e => e);
+    expect(error?.code).toBe('ERR_BAD_RESPONSE');
+    expect(error?.message).toBe('maxContentLength size of 200 exceeded');
+  });
+
+  it('unset/-1 maxContentLength never wraps the stream at all (same object identity as the raw body)', async () => {
+    const body = Readable.from([Buffer.from('x')]);
+    const undiciResponse: any = {
+      statusCode: 200,
+      statusText: 'OK',
+      headers: {},
+      body,
+    };
+    const response = await toAxiosLikeResponse(
+      fakeRequest({ maxContentLength: -1 }),
+      undiciResponse,
+    );
+    expect(response.data).toBe(body);
+  });
+});
+
+describe('resolveIsValidStatus', () => {
+  it('defaults to the 2xx range with no validateStatus at all', () => {
+    expect(resolveIsValidStatus(undefined, 200)).toBe(true);
+    expect(resolveIsValidStatus({}, 404)).toBe(false);
+  });
+
+  it('a function validateStatus decides outright', () => {
+    expect(resolveIsValidStatus({ validateStatus: () => true }, 500)).toBe(
+      true,
+    );
+    expect(resolveIsValidStatus({ validateStatus: () => false }, 200)).toBe(
+      false,
+    );
+  });
+
+  it('validateStatus present as an own key (even null/undefined) always resolves, matching axios settle()', () => {
+    expect(resolveIsValidStatus({ validateStatus: null }, 500)).toBe(true);
+    expect(resolveIsValidStatus({ validateStatus: undefined }, 500)).toBe(true);
   });
 });

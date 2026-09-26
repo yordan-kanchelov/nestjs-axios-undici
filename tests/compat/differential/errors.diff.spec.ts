@@ -341,25 +341,145 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     normalize: (o: any) => ({ code: o.error?.code, sent: o.requests.length }),
   },
   {
-    // Undici validates a header value (rejecting a bare `\n`) more strictly
-    // than Node's own `http` module (which axios uses, and which silently
-    // strips it) - checked against real axios 1.20: it resolves 200 with
-    // the newline removed, where this library rejects. Full parity would
-    // need this library to sanitize header values the same way Node's own
-    // `http` does before ever handing them to undici; not attempted. What
-    // *is* fixed: the rejection is a well-formed `AxiosError`
-    // (`ERR_BAD_REQUEST`, `config`/`request` set), not a raw undici
-    // `InvalidArgumentError` - plan.md phase 2 "fix(errors): match axios
-    // errors", item 2 ("synchronous undici errors... become AxiosErrors").
+    // Fixed (plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values
+    // like axios", found by upstream conformance): this library now
+    // sanitizes a header value the same way axios does before it ever
+    // reaches Node's `http.request` (`mergeHeaders`/`AxiosHeaders#set`,
+    // `sanitizeHeaderValue`), instead of letting undici's own, stricter
+    // validation reject it - checked against real axios 1.20, which resolves
+    // 200 with the embedded newline silently stripped.
     name: 'header value with an embedded newline',
     run: (s, ctx) =>
       s.get(`${ctx.base}/echo`, { headers: { 'X-Bad': 'a\nb' } }),
     normalize: (o: any) => ({
       resolved: !!o.result,
+      status: o.result?.status,
+      sentHeader: o.requests[0]?.headers['x-bad'],
+    }),
+  },
+  {
+    // Same fix, a non-Latin1 (multi-byte) character instead of a control
+    // character - axios strips it the same way (`sanitizeByteStringHeader
+    // Value`, checked against real axios 1.20).
+    name: 'header value with a non-Latin1 character',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/echo`, { headers: { 'X-Emoji': 'a\u{1F600}b' } }),
+    normalize: (o: any) => ({
+      resolved: !!o.result,
+      sentHeader: o.requests[0]?.headers['x-emoji'],
+    }),
+  },
+  {
+    // plan.md phase 2 "fix: remaining error-shape gaps" (found by upstream
+    // conformance), item 1: an unparsable `timeout` gives `ERR_BAD_OPTION_
+    // VALUE`, not the generic `ERR_BAD_REQUEST` a raw undici
+    // `InvalidArgumentError` used to map to - checked against real axios
+    // 1.20 (`lib/adapters/http.js`: `parseInt(own('timeout'), 10)`).
+    // `hasRequest`/`hasConfig` are deliberately not compared: real axios only
+    // reaches its own equivalent check once the request's socket already
+    // exists (so its error carries `request`); this library checks it up
+    // front, before ever dispatching (cheaper, and consistent with the
+    // existing "unsupported protocol" case above) - the same, documented
+    // trade-off `createUnsupportedProtocolError` already makes.
+    name: 'unparsable timeout gives ERR_BAD_OPTION_VALUE',
+    run: (s, ctx) => s.get(`${ctx.base}/echo`, { timeout: 'not-a-number' }),
+    normalize: (o: any) => ({
+      code: o.error?.code,
+      message: o.error?.message,
+      isAxiosError: axios.isAxiosError(o.error),
+    }),
+  },
+  {
+    // plan.md phase 2 "fix: remaining error-shape gaps", item 2: a
+    // synchronous config-normalization error (a throwing `paramsSerializer`)
+    // rejects as a proper `AxiosError`, matching axios' own `buildURL(...)`
+    // try/catch in `lib/adapters/http.js`.
+    name: 'a throwing paramsSerializer rejects as an AxiosError',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/echo`, {
+        params: { a: 1 },
+        paramsSerializer: () => {
+          throw new Error('serializer boom');
+        },
+      }),
+    normalize: errShape,
+  },
+  {
+    // Same fix, ported straight from real axios 1.20's own "should display
+    // error while parsing params" test: an invalid `Date` in `params`
+    // throws inside the default (no `paramsSerializer`) URL-building step
+    // itself (`Invalid Date`'s own `toISOString()` throws), not just a
+    // custom `paramsSerializer` - same code path, same fix.
+    name: 'an invalid Date in params rejects as an AxiosError with url/exists set',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/echo`, { params: { errorParam: new Date(NaN) } }),
+    normalize: (o: any) => ({
       code: o.error?.code,
       isAxiosError: axios.isAxiosError(o.error),
-      hasConfig: !!o.error?.config,
+      url: o.error?.url,
+      exists: o.error?.exists,
     }),
-    knownDifference: ERRORS,
+  },
+  {
+    // plan.md phase 2 "fix: support data: URLs" (found by upstream
+    // conformance): resolved entirely locally, no network request at all -
+    // checked against real axios 1.20's own "Data URL" test block.
+    name: 'data: URL resolves as a Buffer, no network request',
+    run: s =>
+      s.get(
+        `data:application/octet-stream;base64,${Buffer.from('123').toString('base64')}`,
+      ),
+    normalize: (o: any) => ({
+      requests: o.requests.length,
+      status: o.result?.status,
+      data: Buffer.isBuffer(o.result?.data)
+        ? `<Buffer ${o.result.data.toString()}>`
+        : o.result?.data,
+    }),
+  },
+  {
+    name: 'data: URL over maxContentLength rejects (ERR_BAD_RESPONSE), no network request',
+    run: s =>
+      s.get(
+        `data:application/octet-stream;base64,${'QQ' + '%41'.repeat(4000)}`,
+        { maxContentLength: 3000 },
+      ),
+    normalize: (o: any) => ({
+      requests: o.requests.length,
+      code: o.error?.code,
+      isAxiosError: axios.isAxiosError(o.error),
+    }),
+  },
+  {
+    // plan.md phase 2 "fix: enforce maxContentLength for responseType:
+    // 'stream'" (found by upstream conformance): the stream branch used to
+    // return the body untouched - checked against real axios 1.20's own
+    // streamed enforcement.
+    name: 'maxContentLength for responseType: stream',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/big?n=2000`, {
+        responseType: 'stream',
+        maxContentLength: 500,
+      }),
+    normalize: async (o: any) => {
+      if (!o.result) {
+        return {
+          resolved: false,
+          code: o.error?.code,
+          isAxiosError: axios.isAxiosError(o.error),
+        };
+      }
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of o.result.data) chunks.push(chunk);
+        return { resolved: true, byteLength: Buffer.concat(chunks).length };
+      } catch (error: any) {
+        return {
+          resolved: true,
+          streamErrorCode: error.code,
+          streamErrorIsAxiosError: axios.isAxiosError(error),
+        };
+      }
+    },
   },
 ]);

@@ -11,7 +11,8 @@ import type {
 } from '../interfaces/axios-compatible.interface';
 import type { AxiosRefDefaults } from '../interfaces/axios-ref.interface';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
-import { AxiosHeaders } from '../interfaces/axios-headers';
+import { AxiosHeaders, sanitizeHeaderValue } from '../interfaces/axios-headers';
+import { AxiosError } from '../errors/axios-error';
 
 /**
  * Per-service context used when normalising a request.
@@ -642,7 +643,9 @@ export function mergeHeaders(...sources: any[]): HeaderRecord {
       } else {
         merged.set(lower, [
           key,
-          Array.isArray(value) ? value.map(String) : String(value),
+          Array.isArray(value)
+            ? value.map(v => sanitizeHeaderValue(String(v)))
+            : sanitizeHeaderValue(String(value)),
         ]);
       }
     });
@@ -1264,13 +1267,44 @@ export function normalizeAxiosRequest(
       ? { ...baseParams, ...params }
       : (params ?? baseParams);
   if (mergedParams) {
-    url = buildURL(
-      url.toString(),
-      mergedParams,
-      paramsSerializer ??
-        defaults?.paramsSerializer ??
-        instance.paramsSerializer,
-    );
+    // A synchronous throw here (a throwing `paramsSerializer`, `params`
+    // shaped in a way `buildURL` can't stringify - e.g. an invalid `Date` -
+    // or any other synchronous error while building the URL) must reject as
+    // a proper `AxiosError`, not propagate a raw error - matching axios
+    // exactly (`lib/adapters/http.js`: `buildURL(...)` inside its own
+    // `try`/`catch`, `AxiosError.from(err, AxiosError.ERR_BAD_REQUEST,
+    // config, null, null, { url: own('url'), exists: true })`, checked
+    // against real axios 1.20's own "should display error while parsing
+    // params" test) - plan.md phase 2 "fix: remaining error-shape gaps",
+    // item 2 ("a synchronous config-normalization error ... should be
+    // wrapped as an AxiosError"). `config` is built from what's already
+    // resolved at this point (this function runs before
+    // `HttpInterceptorRequest` exists yet, so there's no lazy-config request
+    // object to hand `AxiosError` here).
+    const rawUrlString = typeof rawUrl === 'string' ? rawUrl : String(rawUrl);
+    try {
+      url = buildURL(
+        url.toString(),
+        mergedParams,
+        paramsSerializer ??
+          defaults?.paramsSerializer ??
+          instance.paramsSerializer,
+      );
+    } catch (err) {
+      throw AxiosError.from(
+        err,
+        AxiosError.ERR_BAD_REQUEST,
+        {
+          url: rawUrlString,
+          baseURL,
+          params: mergedParams,
+          method: lowerMethod,
+        } as any,
+        undefined,
+        undefined,
+        { url: rawUrlString, exists: true },
+      );
+    }
   }
 
   // Headers, lowest to highest priority: module (`register()`) headers ->
@@ -1640,11 +1674,29 @@ export function serializeAxiosConfig(
     }
   }
   if (config.params) {
-    dispatchUrl = buildURL(
-      dispatchUrl.toString(),
-      config.params,
-      config.paramsSerializer,
-    );
+    // Same fix as `normalizeAxiosRequest`'s own `buildURL` call above - see
+    // its doc comment. `config` is already the full, resolved axios config
+    // here, so it's handed to `AxiosError.from` directly, exactly as axios'
+    // own `AxiosError.from(err, AxiosError.ERR_BAD_REQUEST, config, null,
+    // null, { url: own('url'), exists: true })`.
+    try {
+      dispatchUrl = buildURL(
+        dispatchUrl.toString(),
+        config.params,
+        config.paramsSerializer,
+      );
+    } catch (err) {
+      const rawUrlString =
+        typeof config.url === 'string' ? config.url : String(config.url);
+      throw AxiosError.from(
+        err,
+        AxiosError.ERR_BAD_REQUEST,
+        config,
+        undefined,
+        undefined,
+        { url: rawUrlString, exists: true },
+      );
+    }
   }
 
   if (auth) {

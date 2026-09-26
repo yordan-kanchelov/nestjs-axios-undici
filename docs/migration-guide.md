@@ -341,6 +341,11 @@ import type { AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'nestjs-ax
 - **`allowAbsoluteUrls: false`** (axios ≥1.8) is now honoured: with a `baseURL`, an absolute request `url` combines with it instead of replacing it outright.
 - **`error.request`/`response.request` are now populated** (`path`, `method`, `host`, `protocol`, `res.responseUrl`) instead of an always-truthy empty placeholder object. Code that only checked `!!error.request` is unaffected; code that read fields off the old placeholder (there weren't any) has nothing to update.
 - An unsupported URL protocol (`tel:`, `ftp:`, ...) and undici's own request-argument-validation failures now reject with a proper `AxiosError` (`config`/`request` set) instead of a raw undici error class - update an `instanceof undici.errors.*`/`error.code` check for these specific cases if you had one (a genuinely malformed URL still propagates unwrapped, unchanged).
+- **`data:` URLs are now supported** (`axiosRef.get('data:text/plain;base64,...')`), resolved entirely locally like axios - they used to reject with `Unsupported protocol data:`. See [`data:` URLs](/docs/axios-supported-options.md#request-config).
+- **`maxContentLength` is now also enforced for `responseType: 'stream'`** - it used to only apply to a buffered response, so a streamed download had no cap at all regardless of the option. If you relied on an uncapped stream despite setting `maxContentLength`, raise or remove the limit.
+- **Header values are now sanitized like axios**, not rejected: a value with an embedded CRLF (or another control character, or a character outside the Latin-1 byte range) used to reject with a raw undici `InvalidArgumentError`; it's now stripped the same way axios' own Node `http` transport does, and the request goes through with the sanitized value.
+- **An unparsable `timeout` now gives `ERR_BAD_OPTION_VALUE`** ("error trying to parse `config.timeout` to int"), matching axios, instead of the generic `ERR_BAD_REQUEST` a raw undici argument-validation error used to map to.
+- **A throwing `paramsSerializer` (or other synchronous config-normalization error) now rejects as a proper `AxiosError`** (`ERR_BAD_REQUEST`, `isAxiosError: true`) instead of propagating the raw thrown error unwrapped.
 
 ### Dispatcher lifecycle and `HttpService` members
 

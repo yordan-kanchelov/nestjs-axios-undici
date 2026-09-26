@@ -224,7 +224,7 @@ export function decompressStream(body: Readable, encoding: string): Readable {
 }
 
 /** True when a `maxContentLength` is actually set (matches `assertMaxContentLength`/`readBufferWithLimit`'s own guard: 0/`undefined`/`-1` all mean "no limit"). */
-function hasContentLengthLimit(maxContentLength?: number): boolean {
+export function hasContentLengthLimit(maxContentLength?: number): boolean {
   return !!maxContentLength && maxContentLength > -1;
 }
 
