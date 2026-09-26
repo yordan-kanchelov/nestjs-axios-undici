@@ -149,7 +149,7 @@ describe('responseType: "stream" cancellation (real server)', () => {
     expect(isCancel(streamError)).toBe(true);
   });
 
-  it('aborting the caller\'s AbortSignal after the stream was already emitted destroys it with a real CanceledError', async () => {
+  it("aborting the caller's AbortSignal after the stream was already emitted destroys it with a real CanceledError", async () => {
     const controller = new AbortController();
     const response = await firstValueFrom(
       service.get(`${baseUrl}/drip`, {
@@ -182,10 +182,16 @@ describe('responseType: "stream" cancellation (real server)', () => {
     expect(isCancel(streamError)).toBe(true);
   });
 
-  it('a plain streamed GET with no signal and no streamed body is unaffected: aborting later has no wrapper to speak of and the stream just ends normally when the server does', async () => {
+  it('a plain streamed GET with no signal and no streamed body is unaffected: no wrapper at all, and the stream just ends normally when destroyed', async () => {
     const response = await firstValueFrom(
       service.get(`${baseUrl}/echo-slow?id=plain`, { responseType: 'stream' }),
     );
+    // Zero-cost check: `wrapStreamCancellation` is never applied here (no
+    // signal, no streamed upload body), so the caller gets back undici's
+    // own body object directly - it still has `.text()`/`.arrayBuffer()`,
+    // which a `PassThrough` wrapper never would.
+    expect(typeof (response.data as any).text).toBe('function');
+
     // No request body at all here, so the server never writes anything
     // back either - close the connection from the client side to let the
     // handler (and this test) finish promptly.

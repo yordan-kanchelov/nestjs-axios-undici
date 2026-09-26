@@ -405,7 +405,12 @@ function wrapStreamCancellation(
       return;
     }
     if (wrapDecodeErrors && isZlibErrorCode(err?.code) && !err.isAxiosError) {
-      const axiosError = AxiosError.from(err, undefined, undefined, requestInfo);
+      const axiosError = AxiosError.from(
+        err,
+        undefined,
+        undefined,
+        requestInfo,
+      );
       axiosError._setLazyConfig(request);
       wrapper.destroy(axiosError);
       return;

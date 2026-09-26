@@ -77,9 +77,7 @@ describe('Content-Encoding: compress / x-compress decompression (real server)', 
     for await (const chunk of response.data as Readable) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual(
-      PAYLOAD,
-    );
+    expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual(PAYLOAD);
   });
 
   it('decompress: false returns the raw (still-encoded) bytes, and leaves the header alone', async () => {

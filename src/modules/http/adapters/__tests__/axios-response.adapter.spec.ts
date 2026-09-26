@@ -696,7 +696,12 @@ describe('toAxiosLikeResponse: delete Content-Encoding after a successful decode
     };
     const response = await toAxiosLikeResponse(fakeRequest(), undiciResponse);
     expect(response.headers['content-encoding']).toBeUndefined();
-    expect(Object.prototype.hasOwnProperty.call(response.headers, 'content-encoding')).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        response.headers,
+        'content-encoding',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -722,7 +727,10 @@ describe('toAxiosLikeResponse: corrupt/truncated compressed body wraps as an Axi
     const undiciResponse: any = {
       statusCode: 200,
       statusText: 'OK',
-      headers: { 'content-encoding': 'gzip', 'content-type': 'application/json' },
+      headers: {
+        'content-encoding': 'gzip',
+        'content-type': 'application/json',
+      },
       body: bodyFromBuffer(Buffer.from('this is not gzip at all')),
     };
     let caught: any;
@@ -1055,9 +1063,12 @@ describe('toAxiosLikeResponse: responseType stream cancellation (request-stream-
         caught = error;
       }
     })();
-    source.emit('error', Object.assign(new Error('other side closed'), {
-      code: 'UND_ERR_SOCKET',
-    }));
+    source.emit(
+      'error',
+      Object.assign(new Error('other side closed'), {
+        code: 'UND_ERR_SOCKET',
+      }),
+    );
     await drain;
 
     expect(caught?.name).not.toBe('CanceledError');

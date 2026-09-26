@@ -88,9 +88,7 @@ describe('transitional.silentJSONParsing (real server)', () => {
     const moduleService = module.get<HttpService>(HttpService);
 
     await expect(
-      firstValueFrom(
-        moduleService.request(baseUrl, { responseType: 'json' }),
-      ),
+      firstValueFrom(moduleService.request(baseUrl, { responseType: 'json' })),
     ).rejects.toMatchObject({ isAxiosError: true, code: 'ERR_BAD_RESPONSE' });
 
     await module.close();

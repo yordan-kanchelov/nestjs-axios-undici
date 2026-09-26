@@ -398,7 +398,8 @@ export function decompressStream(body: Readable, encoding: string): Readable {
     destroy(error?: Error): void;
   };
   if (GZIP_ENCODINGS.has(e)) decompressor = createGunzip(GZIP_FLUSH_OPTIONS);
-  else if (e === 'br') decompressor = createBrotliDecompress(BROTLI_FLUSH_OPTIONS);
+  else if (e === 'br')
+    decompressor = createBrotliDecompress(BROTLI_FLUSH_OPTIONS);
   else if (e === 'deflate') decompressor = createInflate(GZIP_FLUSH_OPTIONS);
   else if (e === 'zstd' && isZstdSupported)
     decompressor = createZstdDecompress(ZSTD_FLUSH_OPTIONS);

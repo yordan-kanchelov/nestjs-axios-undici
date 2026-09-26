@@ -350,6 +350,11 @@ export interface AxiosRefDefaults<D = any> {
     transformRequest?: ((data: any, headers?: any) => any) | Array<(data: any, headers?: any) => any>;
     // (undocumented)
     transformResponse?: ((data: any, headers?: any, status?: number) => any) | Array<(data: any, headers?: any, status?: number) => any>;
+    transitional?: {
+        clarifyTimeoutError?: boolean;
+        silentJSONParsing?: boolean;
+        forcedJSONParsing?: boolean;
+    };
     // (undocumented)
     validateStatus?: ((status: number) => boolean) | null;
     withCredentials?: boolean;
