@@ -38,44 +38,10 @@ export interface CommonRequestHeaders {
 }
 
 /**
- * Common HTTP response headers
- */
-export interface CommonResponseHeaders {
-  'Cache-Control'?: AxiosHeaderValue;
-  'Content-Encoding'?: AxiosHeaderValue;
-  'Content-Length'?: AxiosHeaderValue;
-  'Content-Type'?: AxiosHeaderValue;
-  Date?: AxiosHeaderValue;
-  Etag?: AxiosHeaderValue;
-  Expires?: AxiosHeaderValue;
-  'Last-Modified'?: AxiosHeaderValue;
-  Location?: AxiosHeaderValue;
-  Server?: AxiosHeaderValue;
-  'Set-Cookie'?: AxiosHeaderValue;
-  Vary?: AxiosHeaderValue;
-}
-
-/**
  * Raw axios headers interface - allows any string key with AxiosHeaderValue
  */
 export interface RawAxiosHeaders {
   [key: string]: AxiosHeaderValue;
-}
-
-/**
- * Method-specific headers
- */
-export interface MethodHeaders {
-  common?: RawAxiosHeaders;
-  delete?: RawAxiosHeaders;
-  get?: RawAxiosHeaders;
-  head?: RawAxiosHeaders;
-  post?: RawAxiosHeaders;
-  put?: RawAxiosHeaders;
-  patch?: RawAxiosHeaders;
-  options?: RawAxiosHeaders;
-  trace?: RawAxiosHeaders;
-  connect?: RawAxiosHeaders;
 }
 
 /**

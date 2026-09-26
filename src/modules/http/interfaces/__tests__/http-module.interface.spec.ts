@@ -1,7 +1,6 @@
 import type { Provider, Type } from '@nestjs/common';
 
 import {
-  BodyMixin,
   HttpModuleAsyncOptions,
   HttpModuleOptionsFactory,
 } from '../http-module.interface';
@@ -36,29 +35,6 @@ describe('http-module.interface', () => {
     });
     it('should be headers defined', () => {
       expect(createHttpOptions.headers).toBeDefined();
-    });
-  });
-  describe('BodyMixin', () => {
-    class BodyMixinImpl implements BodyMixin {
-      readonly bodyUsed: boolean;
-      arrayBuffer(): Promise<ArrayBuffer> {
-        throw new Error('Method not implemented.');
-      }
-      blob(): Promise<Blob> {
-        throw new Error('Method not implemented.');
-      }
-      formData(): Promise<never> {
-        throw new Error('Method not implemented.');
-      }
-      json(): Promise<any> {
-        throw new Error('Method not implemented.');
-      }
-      text(): Promise<string> {
-        throw new Error('Method not implemented.');
-      }
-    }
-    it('should be defined', () => {
-      expect(BodyMixinImpl).toBeDefined();
     });
   });
   describe('HttpModuleAsyncOptions', () => {

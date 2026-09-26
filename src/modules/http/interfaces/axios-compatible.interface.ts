@@ -231,3 +231,15 @@ export interface AxiosCancelTokenLike {
 /** `'document'`/`'formdata'` are accepted for axios type compatibility (browser-only; not implemented on Node.js). */
 export type AxiosResponseType =
   'json' | 'text' | 'stream' | 'arraybuffer' | 'blob' | 'document' | 'formdata';
+
+/**
+ * Alias for `AxiosLikeRequestConfig`, named to match axios' own
+ * `AxiosRequestConfig` - so migrating code can use this instead of importing
+ * `axios` just for the type (plan.md phase 3 "Trim the public API": "consider
+ * exporting AxiosResponse / AxiosRequestConfig ... aliases, so migrating
+ * users can drop the axios import").
+ */
+export type AxiosRequestConfig<D = any> = AxiosLikeRequestConfig<D>;
+
+/** Alias for `AxiosLikeResponse`, named to match axios' own `AxiosResponse` - see `AxiosRequestConfig`'s doc comment above. */
+export type AxiosResponse<T = any, D = any> = AxiosLikeResponse<T, D>;

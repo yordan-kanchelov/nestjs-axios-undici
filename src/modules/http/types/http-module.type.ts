@@ -2,7 +2,7 @@ import type { Dispatcher } from 'undici';
 import type { UrlObject } from 'node:url';
 import type { Agent } from 'node:http';
 import type { Agent as HttpsAgent } from 'node:https';
-import type { Type, DynamicModule } from '@nestjs/common';
+import type { Type } from '@nestjs/common';
 import type {
   HttpInterceptor,
   HttpInterceptorFunction,
@@ -171,9 +171,3 @@ export type UndiciRequestOptionsType = Omit<
   HttpModuleOptions,
   'interceptors' | 'global'
 >;
-
-export interface TypedDynamicModule<T> extends DynamicModule {
-  module: Type<any>;
-  providers: any[];
-  exports: any[];
-}

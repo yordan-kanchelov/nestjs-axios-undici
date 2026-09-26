@@ -95,7 +95,3 @@ HttpModule.register({
 - Interceptor instances (objects with an `intercept()` method) are used as they are.
 
 See [Interceptors](/docs/guides/interceptors.md) for writing interceptors and for interceptors that inject other providers.
-
-## `TypedHttpModule`
-
-`TypedHttpModule.register(options)` behaves like `HttpModule.register(options)`. The returned module also carries a type-only marker, which `ExtractHttpServiceType<typeof module>` resolves to `HttpService`.

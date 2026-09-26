@@ -1,6 +1,5 @@
 import { DynamicModule, Logger, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { randomUUID } from 'node:crypto';
 
 import { HttpService } from './services/http.service';
 import {
@@ -10,7 +9,6 @@ import {
 
 import {
   UNDICI_INSTANCE_TOKEN,
-  HTTP_MODULE_ID,
   HTTP_MODULE_OPTIONS,
 } from './constants/http.constants';
 
@@ -132,10 +130,6 @@ export class HttpModule {
           provide: HTTP_MODULE_OPTIONS,
           useValue: { ...processedConfig, interceptors: functionInterceptors },
         },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
-        },
         ...interceptorProviders,
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
@@ -243,10 +237,6 @@ export class HttpModule {
             return undiciOptions;
           },
           inject: [HTTP_MODULE_OPTIONS],
-        },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
         },
         {
           provide: HTTP_SERVICE_INTERCEPTORS,

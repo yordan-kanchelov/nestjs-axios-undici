@@ -128,3 +128,33 @@ describe('LoggingInterceptor', () => {
 ```
 
 To test an interceptor together with the real `HttpService`, register it on `HttpModule` with a `MockAgent` dispatcher, as shown above.
+
+## Overriding the module's own providers
+
+`HttpModule.register()`/`.registerAsync()` register `HttpService` from two injection tokens, both exported so a test module can override either directly with Nest's `overrideProvider()` instead of building a whole `HttpModule.register({...})`:
+
+- `UNDICI_INSTANCE_TOKEN`: the resolved undici/request options `HttpService`'s constructor receives (what `HttpService#undiciRef` reads back).
+- `HTTP_MODULE_OPTIONS`: the original, axios-shaped module options (what seeds `axiosRef.defaults`).
+
+```typescript
+import { Test } from '@nestjs/testing';
+import {
+  HttpModule,
+  HttpService,
+  UNDICI_INSTANCE_TOKEN,
+  HTTP_MODULE_OPTIONS,
+} from 'nestjs-axios-undici';
+
+const module = await Test.createTestingModule({
+  imports: [HttpModule],
+})
+  .overrideProvider(UNDICI_INSTANCE_TOKEN)
+  .useValue({ baseURL: 'https://api.example.com' })
+  .overrideProvider(HTTP_MODULE_OPTIONS)
+  .useValue({ baseURL: 'https://api.example.com' })
+  .compile();
+
+const httpService = module.get(HttpService);
+```
+
+Most tests are simpler with `HttpModule.register({...})` directly (as shown throughout this guide); reach for these tokens only when a testing helper needs to override an already-built module's providers without reconstructing it.
