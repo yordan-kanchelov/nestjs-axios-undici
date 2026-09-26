@@ -17,6 +17,9 @@ npm-debug.log
 *.tsbuildinfo
 examples/dist
 
+# generated at build/test time by scripts/generate-version.js
+/src/version.generated.ts
+
 # environment
 .env
 *.env*
