@@ -150,9 +150,9 @@ describe('AxiosHeaders', () => {
         }
       }
 
-      expect(found).toContain('content-type');
-      expect(found).toContain('authorization');
-      expect(found).toContain('x-custom');
+      expect(found).toContain('Content-Type');
+      expect(found).toContain('Authorization');
+      expect(found).toContain('X-Custom');
     });
   });
 
@@ -294,20 +294,20 @@ describe('AxiosHeaders', () => {
     });
   });
 
-  describe('forEach', () => {
-    it('should iterate over headers', () => {
+  describe('iteration (no forEach() - see axios-headers.ts)', () => {
+    it('should iterate over headers via Array.from()/for...of', () => {
       const headers = new AxiosHeaders({
         'Content-Type': 'application/json',
         Authorization: 'Bearer token',
       });
 
       const collected: Array<[string, any]> = [];
-      headers.forEach((value, key) => {
+      for (const [key, value] of headers) {
         collected.push([key, value]);
-      });
+      }
 
-      expect(collected).toContainEqual(['content-type', 'application/json']);
-      expect(collected).toContainEqual(['authorization', 'Bearer token']);
+      expect(collected).toContainEqual(['Content-Type', 'application/json']);
+      expect(collected).toContainEqual(['Authorization', 'Bearer token']);
     });
   });
 
@@ -321,8 +321,8 @@ describe('AxiosHeaders', () => {
       const json = headers.toJSON();
 
       expect(json).toEqual({
-        'content-type': 'application/json',
-        authorization: 'Bearer token',
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer token',
       });
     });
   });
@@ -426,39 +426,33 @@ describe('AxiosHeaders', () => {
         collected.push([key, value]);
       }
 
-      expect(collected).toContainEqual(['content-type', 'application/json']);
-      expect(collected).toContainEqual(['authorization', 'Bearer token']);
+      expect(collected).toContainEqual(['Content-Type', 'application/json']);
+      expect(collected).toContainEqual(['Authorization', 'Bearer token']);
     });
 
-    it('should support entries()', () => {
-      const headers = new AxiosHeaders({
-        'Content-Type': 'application/json',
-      });
-
-      const entries = Array.from(headers.entries());
-      expect(entries).toContainEqual(['content-type', 'application/json']);
-    });
-
-    it('should support keys()', () => {
-      const headers = new AxiosHeaders({
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer token',
-      });
-
-      const keys = Array.from(headers.keys());
-      expect(keys).toContain('content-type');
-      expect(keys).toContain('authorization');
-    });
-
-    it('should support values()', () => {
+    // No separate entries()/keys()/values(): axios' own `.d.ts` declares
+    // only `[Symbol.iterator]` on `AxiosHeaders` (tested above), and adding
+    // extra public members beyond axios' own would break mutual
+    // assignability (plan.md "feat(axiosRef): make it a real axios
+    // instance") - see the `setAcceptEncoding` removal note in
+    // `axios-headers.ts`. Use `Array.from(headers)`,
+    // `Object.keys(headers.toJSON())` and `Object.values(headers.toJSON())`.
+    it('Array.from/Object.keys/Object.values work through toJSON()/the iterator', () => {
       const headers = new AxiosHeaders({
         'Content-Type': 'application/json',
         Authorization: 'Bearer token',
       });
 
-      const values = Array.from(headers.values());
-      expect(values).toContain('application/json');
-      expect(values).toContain('Bearer token');
+      expect(Array.from(headers)).toContainEqual([
+        'Content-Type',
+        'application/json',
+      ]);
+      expect(Object.keys(headers.toJSON())).toEqual(
+        expect.arrayContaining(['Content-Type', 'Authorization']),
+      );
+      expect(Object.values(headers.toJSON())).toEqual(
+        expect.arrayContaining(['application/json', 'Bearer token']),
+      );
     });
   });
 
@@ -481,6 +475,95 @@ describe('AxiosHeaders', () => {
         '00-123456789abcdef-fedcba987654321-01',
       );
       expect(headers.get('tracestate')).toBe('vendor=value');
+    });
+  });
+
+  describe('casing parity with axios (plan.md "feat(axiosRef): make it a real axios instance")', () => {
+    it('preserves the casing a header was first set with', () => {
+      const headers = new AxiosHeaders();
+      headers.set('Content-Type', 'application/json');
+      expect(Object.keys(headers.toJSON())).toEqual(['Content-Type']);
+    });
+
+    it('a later set() with different casing keeps the original casing', () => {
+      const headers = new AxiosHeaders({ 'Content-Type': 'application/json' });
+      headers.set('CONTENT-TYPE', 'text/plain');
+      expect(headers.toJSON()).toEqual({ 'Content-Type': 'text/plain' });
+    });
+
+    it('delete() then set() re-establishes the casing', () => {
+      const headers = new AxiosHeaders({ 'Content-Type': 'application/json' });
+      headers.delete('content-type');
+      headers.set('CONTENT-TYPE', 'text/plain');
+      expect(headers.toJSON()).toEqual({ 'CONTENT-TYPE': 'text/plain' });
+    });
+
+    it('get/has/delete stay case-insensitive regardless of stored casing', () => {
+      const headers = new AxiosHeaders({ 'X-Custom-Header': 'v' });
+      expect(headers.get('x-custom-header')).toBe('v');
+      expect(headers.has('X-CUSTOM-HEADER')).toBe(true);
+      expect(headers.delete('x-Custom-Header')).toBe(true);
+      expect(headers.has('X-Custom-Header')).toBe(false);
+    });
+
+    it('normalize(true) title-cases every header name', () => {
+      const headers = new AxiosHeaders({
+        'content-type': 'application/json',
+        AUTHORIZATION: 'Bearer t',
+        'x-custom_header': 'v',
+      });
+      headers.normalize(true);
+      // Ported from axios' own `formatHeader` regex, which only title-cases
+      // the letter right after a `-` boundary; `_` doesn't break a `\w*`
+      // run, so 'x-custom_header' -> 'X-Custom_header' (lower-case `h`) -
+      // matches axios' own (occasionally surprising) behaviour exactly.
+      expect(headers.toJSON()).toEqual({
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer t',
+        'X-Custom_header': 'v',
+      });
+    });
+
+    it('normalize() / normalize(false) is a no-op', () => {
+      const headers = new AxiosHeaders({ 'content-type': 'application/json' });
+      headers.normalize();
+      expect(headers.toJSON()).toEqual({ 'content-type': 'application/json' });
+    });
+
+    it('toJSON() reflects the preserved casing, not a lower-cased one', () => {
+      const headers = new AxiosHeaders({
+        'X-Request-Id': 'abc',
+        Authorization: 'Bearer t',
+      });
+      expect(headers.toJSON()).toEqual({
+        'X-Request-Id': 'abc',
+        Authorization: 'Bearer t',
+      });
+    });
+
+    it('bracket notation preserves casing too', () => {
+      const headers = new AxiosHeaders();
+      (headers as any)['X-Foo'] = 'bar';
+      expect(Object.keys(headers.toJSON())).toEqual(['X-Foo']);
+      expect((headers as any)['x-foo']).toBe('bar');
+    });
+
+    it('set(name, value, false) only sets when not already present', () => {
+      const headers = new AxiosHeaders({ 'X-Foo': 'first' });
+      headers.set('x-foo', 'second', false);
+      expect(headers.get('x-foo')).toBe('first');
+      headers.set('X-Bar', 'value', false);
+      expect(headers.get('x-bar')).toBe('value');
+    });
+
+    it('get(name, true) parses key=value tokens like axios', () => {
+      const headers = new AxiosHeaders({
+        'Content-Type': 'multipart/form-data; boundary=abc123',
+      });
+      expect(headers.get('content-type', true)).toEqual({
+        'multipart/form-data': undefined,
+        boundary: 'abc123',
+      });
     });
   });
 });

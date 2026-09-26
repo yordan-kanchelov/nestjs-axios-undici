@@ -75,9 +75,17 @@ describe('axios request adapter', () => {
       });
     });
 
-    it('module headers override the axios-style default headers; request headers override module headers', () => {
+    it('axiosRef.defaults overrides module headers; request headers override both (request > defaults > module)', () => {
+      // Precedence, matching axios' own `mergeConfig(this.defaults, config)`:
+      // module options only ever *seed* `axiosRef.defaults` at setup (see
+      // `createAxiosRefDefaults`); after that, `defaults` is the single
+      // source of truth and always wins over the original module-level
+      // value - a runtime mutation of `defaults.headers` is not shadowed by
+      // the module headers it started out equal to. This replaces the PR
+      // #16 rule ("module headers always win over axiosRef.defaults").
       const defaults = createAxiosRefDefaults();
-      const { options: withModuleOverride } = normalizeAxiosRequest(
+      defaults.headers.common['User-Agent'] = 'from-defaults/1.0';
+      const { options: withDefaultsOverride } = normalizeAxiosRequest(
         'http://api/x',
         { method: 'GET' },
         {
@@ -85,8 +93,8 @@ describe('axios request adapter', () => {
           instanceOptions: { headers: { 'User-Agent': 'my-app/1.0' } },
         },
       );
-      expect(withModuleOverride.headers).toMatchObject({
-        'User-Agent': 'my-app/1.0',
+      expect(withDefaultsOverride.headers).toMatchObject({
+        'User-Agent': 'from-defaults/1.0',
       });
 
       const { options: withRequestOverride } = normalizeAxiosRequest(
@@ -100,6 +108,24 @@ describe('axios request adapter', () => {
       expect(withRequestOverride.headers).toMatchObject({
         'User-Agent': 'per-request/1.0',
       });
+    });
+
+    it('module headers still seed axiosRef.defaults (createAxiosRefDefaults), so they apply when defaults is otherwise untouched', () => {
+      // The real pipeline (`HttpService`'s constructor) always seeds
+      // `defaults` from module options via `createAxiosRefDefaults`, so by
+      // the time a request is normalised, `defaults.headers` already
+      // reflects the module value - the separate `instanceOptions.headers`
+      // read here is only a defence-in-depth fallback for callers that
+      // build `defaults` some other way.
+      const defaults = createAxiosRefDefaults({
+        headers: { 'User-Agent': 'my-app/1.0' },
+      });
+      const { options } = normalizeAxiosRequest(
+        'http://api/x',
+        { method: 'GET' },
+        { defaults },
+      );
+      expect(options.headers).toMatchObject({ 'User-Agent': 'my-app/1.0' });
     });
 
     it('a request header set to null/undefined removes a default, as in axios', () => {
@@ -238,10 +264,14 @@ describe('axios request adapter', () => {
     });
 
     it('mergeHeaders reads AxiosHeaders and raw undici header arrays', () => {
+      // AxiosHeaders now preserves the casing it was set with (plan.md
+      // "feat(axiosRef): make it a real axios instance"), so `toJSON()`
+      // (which `mergeHeaders` reads through `forEachHeader`) reports 'X-A',
+      // not a lower-cased 'x-a'.
       expect(
         mergeHeaders(new AxiosHeaders({ 'X-A': '1' }), ['X-B', '2']),
       ).toEqual({
-        'x-a': '1',
+        'X-A': '1',
         'X-B': '2',
       });
     });

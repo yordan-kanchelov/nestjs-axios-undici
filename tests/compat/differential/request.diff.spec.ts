@@ -6,8 +6,6 @@ import NodeFormData from 'form-data';
 import { Readable } from 'node:stream';
 import { differential, Ctx } from './harness';
 
-const FORM = 'plan.md phase 2: feat(axiosRef): make it a real axios instance';
-
 const routes = {
   '/echo': (req: any, res: any, body: string) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -193,22 +191,29 @@ differential('Differential: request serialization', routes, [
     },
   },
   {
-    name: 'postForm with a plain object (axios: multipart)',
+    // Fixed by plan.md phase 2 "feat(axiosRef): make it a real axios
+    // instance": postForm with a plain object is now multipart, matching
+    // axios (previously sent url-encoded). The exact boundary is random on
+    // both sides, so only the `Content-Type` prefix is compared.
+    name: 'postForm with a plain object is multipart',
     run: (s, ctx) => s.postForm(echo(ctx), { a: '1', b: [1, 2] }),
     normalize: (o: any) =>
       String(lastRequest(o)?.headers['content-type']).split(';')[0],
-    knownDifference: FORM,
   },
   {
-    name: 'postForm with urlencoded header + object',
+    // Also fixed: an explicit Content-Type header does NOT override
+    // postForm's own multipart default - confirmed against real axios
+    // (`generateHTTPMethod(isForm=true)`'s own `headers` always win in its
+    // `mergeConfig` call).
+    name: "postForm's multipart default isn't overridden by an explicit Content-Type header",
     run: (s, ctx) =>
       s.postForm(
         echo(ctx),
         { a: '1', b: { c: 2 } },
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       ),
-    normalize: serverView(['content-type']),
-    knownDifference: FORM,
+    normalize: (o: any) =>
+      String(lastRequest(o)?.headers['content-type']).split(';')[0],
   },
   ...['get', 'delete', 'head', 'options'].map(m => ({
     name: `${m} without body: default headers`,

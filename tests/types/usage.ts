@@ -97,7 +97,6 @@ export class UsersService {
 
   // case5: return type annotated with axios' AxiosResponse
   case5(): Observable<AxiosResponse<User>> {
-    // @ts-expect-error -- response.config.headers (a real AxiosHeaders instance) isn't assignable to axios' own AxiosHeaders class: our class's overloaded axios `set()`/`get()`/`toJSON()` call shapes aren't fully mirrored, only the shapes this library itself needs; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
     return this.http.get<User>('/u');
   }
 
@@ -129,7 +128,6 @@ export class UsersService {
   // case9: interceptor callback annotated with axios' InternalAxiosRequestConfig
   case9() {
     const onFulfilled = (config: InternalAxiosRequestConfig) => config;
-    // @ts-expect-error -- same root cause as case5: our InternalAxiosLikeRequestConfig.headers (a real AxiosHeaders) isn't assignable to axios' own AxiosHeaders class; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
     this.http.axiosRef.interceptors.request.use(onFulfilled);
   }
 

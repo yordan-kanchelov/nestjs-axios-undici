@@ -18,13 +18,27 @@ type PublicOf<T> = { [K in keyof T]: T[K] };
 declare const ours: HttpService;
 
 // Our HttpService should stand in for @nestjs/axios' HttpService wherever
-// it's injected or typed. ('query', new in @nestjs/axios 12, is a separately
-// tracked, allowlisted gap: see tests/compat/api-surface.spec.ts.)
-// @ts-expect-error -- response.config.headers (a real AxiosHeaders instance) isn't assignable to axios' own AxiosHeaders class: our class's overloaded axios `set()`/`get()`/`toJSON()` call shapes aren't fully mirrored, only the shapes this library itself needs; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
-export const asRefHttpService: Omit<PublicOf<RefHttpService>, 'query'> = ours;
+// it's injected or typed. ('query', new in @nestjs/axios 12, is now
+// implemented - see HttpService.query().) AxiosHeaders casing/overload
+// parity (plan.md "feat(axiosRef): make it a real axios instance") is done -
+// response.config.headers, the InternalAxiosRequestConfig callback shape
+// (case9 in usage.ts) and a plain get()/getUri() call's result (below,
+// getWithAxiosConfig) are all fully assignable now. What's left here is
+// unrelated to headers: axios' own `Axios.request`/`get`/... carry a 4th
+// generic (`R`, `AxiosResponseResult<T, R, D, P>`) that lets a caller fully
+// override the *response type itself* - since our methods have no matching
+// generic, TypeScript can't prove our fixed `AxiosLikeResponse<T, D>` return
+// type satisfies that for an arbitrary `R`, only for axios' own default.
+// Not pursued: matching it would mean adding a real, otherwise-unused `R`/`P`
+// generic pair throughout this library's own request/response types for an
+// axios escape hatch this library doesn't use.
+// @ts-expect-error -- see the comment above: axios' `Axios.request`/`get`/... have a 4th generic (R, AxiosResponseResult<T,R,D,P>) this library's methods don't mirror; not an AxiosHeaders gap
+export const asRefHttpService: PublicOf<RefHttpService> = ours;
 
-// axiosRef should be usable as a plain axios AxiosInstance.
-// @ts-expect-error -- axiosRef isn't a real axios instance yet: not callable, and missing create/getUri/*Form/query; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance"
+// axiosRef should be usable as a plain axios AxiosInstance - callable,
+// getUri/create/*Form/query and defaults are all fully assignable now (both
+// directions). Blocked only by the same `R`-generic gap as above.
+// @ts-expect-error -- same root cause as asRefHttpService above (axios' AxiosResponseResult<T,R,D,P> 4th generic on request/get/...), not an AxiosHeaders gap
 export const axiosRefAsAxiosInstance: AxiosInstance = ours.axiosRef;
 
 // A variable typed with axios' own AxiosRequestConfig should be a valid
@@ -34,7 +48,6 @@ declare const axiosStyleConfig: AxiosRequestConfig;
 export function getWithAxiosConfig(): Observable<
   AxiosResponse<{ id: number }>
 > {
-  // @ts-expect-error -- same root cause as asRefHttpService above: response.config.headers isn't assignable to axios' own AxiosHeaders class; tracked in plan.md phase 2 "feat(axiosRef): make it a real axios instance" (full AxiosHeaders)
   return ours.get<{ id: number }>('/x', axiosStyleConfig);
 }
 
