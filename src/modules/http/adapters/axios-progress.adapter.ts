@@ -185,13 +185,18 @@ const METER_TIME_WINDOW = 500;
  */
 class ByteMeterStream extends Transform {
   private readonly maxRate: number;
-  private bytesSeen = 0;
+  private _bytesSeen = 0;
   private windowStart = 0;
   private windowBytes = 0;
 
   constructor(maxRate?: number) {
     super({ readableHighWaterMark: METER_CHUNK_SIZE });
     this.maxRate = maxRate && maxRate > 0 ? maxRate : 0;
+  }
+
+  /** Cumulative byte count forwarded so far - read by `meterDownloadBody`'s undici slow-consumer mitigation below. */
+  get bytesSeen(): number {
+    return this._bytesSeen;
   }
 
   override _transform(
@@ -201,8 +206,8 @@ class ByteMeterStream extends Transform {
   ): void {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     if (!this.maxRate) {
-      this.bytesSeen += buf.length;
-      this.emit('progress', this.bytesSeen);
+      this._bytesSeen += buf.length;
+      this.emit('progress', this._bytesSeen);
       callback(null, buf);
       return;
     }
@@ -250,8 +255,8 @@ class ByteMeterStream extends Transform {
     }
 
     this.windowBytes += toSend.length;
-    this.bytesSeen += toSend.length;
-    this.emit('progress', this.bytesSeen);
+    this._bytesSeen += toSend.length;
+    this.emit('progress', this._bytesSeen);
     this.push(toSend);
 
     if (remainder) {
@@ -267,6 +272,44 @@ export interface MeterOptions {
   maxRate?: number;
   /** Known total size (from `Content-Length`, or the body's own byte length), when available. */
   total?: number;
+  /**
+   * `meterDownloadBody` only: true when the response is going to be fully
+   * buffered in memory regardless of this meter's own behaviour - every
+   * `responseType` except `'stream'`. Only then is it safe to drain the raw
+   * body ahead of a slow `maxRate`/consumer (see that function's doc
+   * comment) - unset/`false` (the default, and always the right value for
+   * `meterUploadBody`, which never reads this field) keeps the body
+   * properly backpressured, as `'stream'` callers rely on.
+   */
+  buffered?: boolean;
+  /**
+   * `meterDownloadBody` only: the request's `maxContentLength`, if set
+   * (`undefined`/`0`/`-1` all mean "no limit", matching
+   * `axios-response-type.adapter.ts`'s own `hasContentLengthLimit`). Read
+   * only to decide whether draining ahead of a slow consumer is still safe
+   * when `buffered` is true - see that function's doc comment; never
+   * enforced here (the buffered read path's own streamed check still owns
+   * that).
+   */
+  maxContentLength?: number;
+  /**
+   * `meterDownloadBody` only: this request's abort signal
+   * (`HttpService.executeRequest`'s `RequestAbortSignal`), so a still-paced
+   * buffered read can be rejected on an abort/deadline-timeout even once
+   * the eager drain above has already finished reading the raw body -
+   * without this, the caller's own abort (or a `timeout`) would have
+   * nothing left to interrupt at the transport layer and the read would
+   * just complete successfully, late. See that function's doc comment.
+   */
+  signal?: AbortableSignal;
+}
+
+/** Just enough of an abort signal for `meterDownloadBody` to react to it: `RequestAbortSignal` (`http.service.ts`) satisfies this directly. */
+export interface AbortableSignal {
+  readonly aborted: boolean;
+  readonly reason?: unknown;
+  addEventListener(type: 'abort', listener: () => void): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
 }
 
 /** axios' own `scheduleProgress`: `process.nextTick` when available, `setImmediate` otherwise. */
@@ -357,6 +400,66 @@ export function meterUploadBody(body: unknown, options: MeterOptions): unknown {
  * `responseType` including `'stream'` (the meter is transparent to
  * `.pipe()`/async iteration, which is all the decode paths and a caller
  * consuming a `stream` response ever need).
+ *
+ * **Undici slow-consumer mitigation** (plan.md phase 2,
+ * `plan/reports/undici-slow-consumer.md`): throttling this stream is exactly
+ * what trips an undici h1-client bug. In `lib/dispatcher/client-h1.js`, a
+ * response body that has already delivered every `Content-Length` byte can
+ * still fail with `UND_ERR_SOCKET: other side closed`: if the server's
+ * `keepAliveTimeout` (5s by default in Node, 1s in axios' own upstream test
+ * fixture) closes the socket while undici's parser is paused on
+ * backpressure - which throttling (or a slow `onDownloadProgress` consumer)
+ * leaves it in for most of the transfer - the socket's `'end'` event can run
+ * before the parser has resumed to process its own `onMessageComplete`, so
+ * it still sees `parser.statusCode` set and `shouldKeepAlive` true and
+ * treats a fully-delivered body as a premature close.
+ *
+ * We don't control undici's parser state, so this takes two steps - the
+ * second alone for every caller, the first only when it's actually safe:
+ *
+ * 1. **Root cause, not just the symptom - `options.buffered` only.** `body`
+ *    (the raw undici stream) is drained as fast as undici delivers it - via
+ *    a `'data'` listener, never `.pipe()`d - so it is never left paused on
+ *    *our own* backpressure long enough to race the server's
+ *    `keepAliveTimeout` in the first place. Only `meter`'s own
+ *    throttled/paced *output* stays backpressured, exactly as before. This
+ *    means a `Content-Length`-known download drained this way can sit fully
+ *    in `meter`'s internal buffer ahead of a slow `maxRate`/consumer, up to
+ *    `total` bytes - **only acceptable when the response is going to be
+ *    fully buffered in memory anyway**, i.e. `options.buffered` (every
+ *    `responseType` except `'stream'` - a `'stream'` caller picked streaming
+ *    specifically to avoid exactly that, so this step is skipped for it: a
+ *    `'stream'` response keeps today's plain, backpressured pipe, and stays
+ *    exposed to the race - documented as a known limitation in
+ *    `docs/axios-supported-options.md`). Even for a buffered response, this
+ *    is skipped whenever `maxContentLength` is set below the response's own
+ *    `Content-Length` (`options.maxContentLength`): draining ahead of the
+ *    buffered read path's own streamed check would read the *whole*,
+ *    over-limit body before that check ever gets to reject it promptly -
+ *    exactly the "download it all first" cost that check exists to avoid.
+ *    Without a known `Content-Length` (`total`) at all (chunked, unknown
+ *    length), there's no bound to drain ahead of, so this is skipped too,
+ *    for every `responseType`.
+ * 2. **Belt-and-suspenders - every caller, `'stream'` included.** Draining
+ *    ahead of time makes the race far less likely for a buffered response,
+ *    but can't make it impossible (e.g. a single, final chunk large enough
+ *    to satisfy `Content-Length` and race the socket's `'end'` before this
+ *    code even gets to call `meter.write()`); for `'stream'`, unable to
+ *    drain ahead of time at all, it's the only defence. So `body`'s
+ *    `'error'` is always checked directly: when it is exactly
+ *    `UND_ERR_SOCKET` *and* every promised byte was already handed to
+ *    `meter` (`meter.bytesSeen >= total`), it's this false positive, not a
+ *    real failure, and is turned into a normal end instead of an error.
+ *    This is safe unconditionally - `meter.bytesSeen` only ever counts real
+ *    bytes actually forwarded from `body`, so reaching `total` is genuine
+ *    proof the full body arrived, regardless of how it was paced getting
+ *    there - and never buffers anything beyond what would already be
+ *    sitting in `meter` at that point.
+ *
+ * `pipeline()` would auto-destroy `meter` with `body`'s error before we get
+ * a chance to inspect it, so this wires both steps manually and mirrors
+ * `pipeline`'s source cleanup (destroying `body` if the caller abandons
+ * `meter` first).
  */
 export function meterDownloadBody(
   body: Readable,
@@ -364,7 +467,94 @@ export function meterDownloadBody(
 ): Readable {
   const meter = new ByteMeterStream(options.maxRate);
   attachReporter(meter, true, options);
-  return pipeline(body, meter, () => undefined);
+
+  const { total, buffered, maxContentLength, signal } = options;
+  const onBodyError = (err: NodeJS.ErrnoException): void => {
+    // Step 2 (belt-and-suspenders): safe for every caller, including
+    // `'stream'` - see the doc comment.
+    if (
+      total !== undefined &&
+      meter.bytesSeen >= total &&
+      err?.code === 'UND_ERR_SOCKET'
+    ) {
+      meter.end();
+      return;
+    }
+    meter.destroy(err);
+  };
+
+  // Review fix (PR #33): the eager drain below (step 1) can mean the raw
+  // undici transfer this request's `abortSignal` would otherwise interrupt
+  // has *already finished* well before a caller's abort (or `timeout`)
+  // fires - undici itself then has nothing left to abort, and without this,
+  // a still-paced buffered read would just complete successfully, late,
+  // instead of rejecting (confirmed directly: axios' own "an abort
+  // mid-download still rejects with ERR_CANCELED" e2e case, run under Node
+  // 24 via jest's `require(esm)`, failed against the eager-drain-only
+  // version of this fix). So this reacts to the *same* signal
+  // `HttpService.executeRequest` already tracks, independent of whichever
+  // step above is (or isn't) draining `body` ahead of time - covers
+  // `'stream'` too, though `settled` there flips almost immediately (right
+  // after headers), before this would ever have a chance to fire for a real
+  // caller abort.
+  let onAbort: (() => void) | undefined;
+  if (signal && !signal.aborted) {
+    onAbort = () => {
+      // `stream.destroy()` with no error (e.g. `signal.reason` itself being
+      // `undefined` - `HttpService.executeRequest`'s own teardown aborts
+      // with no reason at all) just closes cleanly instead of rejecting -
+      // fall back to a proper AbortError-shaped one so a still-pending read
+      // always rejects, never silently "succeeds" short.
+      const reason: any =
+        signal!.reason ??
+        Object.assign(new Error('The operation was aborted'), {
+          name: 'AbortError',
+        });
+      meter.destroy(reason);
+    };
+    signal.addEventListener('abort', onAbort);
+  }
+  meter.on('close', () => {
+    if (!body.destroyed) body.destroy();
+    if (onAbort) signal!.removeEventListener('abort', onAbort);
+  });
+
+  const withinContentLengthLimit =
+    !maxContentLength ||
+    maxContentLength <= -1 ||
+    (total !== undefined && total <= maxContentLength);
+  const canDrainAheadOfTime =
+    buffered === true && total !== undefined && withinContentLengthLimit;
+
+  if (!canDrainAheadOfTime) {
+    // `'stream'`, unknown length, or a response whose own `Content-Length`
+    // already exceeds `maxContentLength` - keep today's plain,
+    // backpressured pipe (still covered by step 2 above).
+    body.on('error', onBodyError);
+    body.pipe(meter);
+    return meter;
+  }
+
+  // Step 1: a buffered response with a known, maxContentLength-safe length -
+  // drain `body` eagerly (never backpressured by our own throttle/a slow
+  // consumer) so undici's parser isn't left paused on it. `meter.write()`'s
+  // own backpressure (its return value) is deliberately ignored here: that
+  // backpressure is exactly what this step avoids propagating back onto
+  // `body`; `meter`'s writable buffer holds the (bounded, `<= total` bytes)
+  // backlog instead. `meter.destroyed` is checked before every write/end
+  // call: an abort (above) destroys `meter` synchronously and `body`
+  // asynchronously (once 'close' fires), so a `'data'`/`'end'` event
+  // already queued on `body` in that gap must not write/end an
+  // already-destroyed `meter` - Node would emit a second, listener-less
+  // 'error' for that, an uncaught exception.
+  body.on('data', (chunk: Buffer) => {
+    if (!meter.destroyed) meter.write(chunk);
+  });
+  body.on('end', () => {
+    if (!meter.destroyed) meter.end();
+  });
+  body.on('error', onBodyError);
+  return meter;
 }
 
 /** Known upload body length: a string/Buffer's own byte length, or an already-set `Content-Length` header. Otherwise `undefined` (unknown length - `lengthComputable: false`, matching axios for a body without one). */

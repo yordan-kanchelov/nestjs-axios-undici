@@ -26,6 +26,8 @@ import { HttpModule, HttpService } from 'nestjs-axios-undici';
 
 Almost everything behaves like `@nestjs/axios`. The known, still-real differences are tracked on one page - read [Axios Compatibility](/docs/axios-supported-options.md) before migrating a service that depends on an edge case. As of this writing that page lists a handful of narrow gaps (a query-string apostrophe encoding, `error.stack` not reaching back to the caller through the RxJS pipeline, a dropped connection's `error.message` text, and a few others) - nothing that affects typical usage.
 
+One transport-level caveat: a `responseType: 'stream'` consumer that reads much slower than the server sends can hit an undici bug (`UND_ERR_SOCKET`, "other side closed") against servers with a short `keepAliveTimeout`. See the `responseType` row on the compatibility page for workarounds.
+
 ## Run side by side
 
 The two packages export different `HttpService` classes, so both modules can be imported side by side while you migrate services one at a time:

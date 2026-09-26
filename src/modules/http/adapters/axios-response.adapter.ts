@@ -9,6 +9,7 @@ import {
   readText,
 } from './axios-response-type.adapter';
 import { buildLazyAxiosConfig } from './axios-request.adapter';
+import type { AbortableSignal } from './axios-progress.adapter';
 import { meterDownloadBody, resolveMaxRates } from './axios-progress.adapter';
 import { urlToString } from './redirect.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
@@ -391,6 +392,14 @@ export async function toAxiosLikeResponse(
   // matching axios. A caller with no such hop tracking of its own can omit
   // it; a reasonable one is then built from `request` itself.
   requestInfo?: RequestInfo | Record<string, any>,
+  // This request's abort signal (`HttpService.executeRequest`'s
+  // `RequestAbortSignal`), passed through to `meterDownloadBody` so a
+  // still-paced buffered read can still be rejected on an abort/timeout even
+  // once the eager-drain mitigation there has already finished reading the
+  // raw body - see that function's doc comment. A caller with no signal of
+  // its own (e.g. the tests below) can omit it: `meterDownloadBody` simply
+  // skips that wiring.
+  signal?: AbortableSignal,
 ): Promise<AxiosLikeResponse> {
   requestInfo ??= new RequestInfo(
     request.url,
@@ -458,6 +467,12 @@ export async function toAxiosLikeResponse(
         onProgress: onDownloadProgress,
         maxRate: maxDownloadRate,
         total,
+        // Only a buffered responseType (everything except 'stream') is safe
+        // to drain ahead of a slow maxRate/consumer - see
+        // meterDownloadBody's doc comment.
+        buffered: responseType !== 'stream',
+        maxContentLength,
+        signal,
       });
       isMetered = true;
     }
