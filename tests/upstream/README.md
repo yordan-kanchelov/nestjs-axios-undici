@@ -136,8 +136,8 @@ fails offline, so it's `environmentDependent` in both axios files too.
 set to 0` is the DNS flavour of the same thing. Its hanging custom
 `httpAgent` is ignored here, so the request really resolves
 `connect-timeout.test`, and whether the 100ms timeout or an `ENOTFOUND` wins
-depends on the runner's resolver. It's `environmentDependent` in strategy
-(a); strategy (b) never gets that far.
+depends on the runner's resolver. It's `environmentDependent` in both
+strategies.
 
 ## Licence
 
