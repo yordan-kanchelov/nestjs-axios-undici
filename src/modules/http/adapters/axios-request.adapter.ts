@@ -62,6 +62,46 @@ export function combineURLs(baseURL: string, relativeURL: string): string {
 }
 
 /**
+ * `decodeURIComponent`, falling back to the raw (still-encoded) value on a
+ * malformed sequence instead of throwing - same as axios' own
+ * `decodeURIComponentSafe`.
+ */
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Credentials embedded in a URL (`http://user:pass@host`), as axios reads
+ * them: percent-decoded, only used as `auth` when the caller didn't set
+ * `config.auth` explicitly (checked by the caller), and stripped from the
+ * URL string returned here - undici's own `new URL()` parsing already keeps
+ * them out of the `Host` header and request line, but the string form still
+ * needs to lose them for anything downstream (baseURL joining, a relative
+ * `Location` rebuild) that works on the string.
+ */
+export function extractUrlCredentials(
+  url: string,
+): { username: string; password: string; url: string } | undefined {
+  if (!url.includes('@')) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (!parsed.username && !parsed.password) return undefined;
+  const username = decodeURIComponentSafe(parsed.username);
+  const password = decodeURIComponentSafe(parsed.password);
+  parsed.username = '';
+  parsed.password = '';
+  return { username, password, url: parsed.toString() };
+}
+
+/**
  * axios' default query value encoder.
  */
 function encodeParam(value: string): string {
@@ -517,6 +557,19 @@ export function serializeRequestData(
 /**
  * Combines an AbortSignal and an axios CancelToken into a single signal.
  */
+/**
+ * Set (non-enumerably) on the `AbortSignal` `resolveSignal` returns, when it
+ * had to add a listener on the caller's own `signal` to combine it with a
+ * `cancelToken`. Calling it removes that listener. Review follow-up (PR #15):
+ * without this, the listener (`{ once: true }`, so it only ever
+ * self-removes *if the signal fires*) stayed on a request that never
+ * aborted for as long as the caller's `signal` object lived - a real leak
+ * for a long-lived signal reused across many requests. `executeRequest`
+ * (`http.service.ts`) calls this from its teardown, which - unlike the
+ * listener's own `once: true` - runs on every request, aborted or not.
+ */
+export const SIGNAL_CLEANUP = Symbol('signalCleanup');
+
 function resolveSignal(
   signal: AbortSignal | undefined,
   cancelToken: AxiosCancelTokenLike | undefined,
@@ -537,11 +590,16 @@ function resolveSignal(
   }
 
   if (signal) {
-    if (signal.aborted) abort(signal.reason);
-    else
-      signal.addEventListener('abort', () => abort(signal.reason), {
-        once: true,
+    if (signal.aborted) {
+      abort(signal.reason);
+    } else {
+      const onAbort = () => abort(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      Object.defineProperty(controller.signal, SIGNAL_CLEANUP, {
+        value: () => signal.removeEventListener('abort', onAbort),
+        configurable: true,
       });
+    }
   }
   return controller.signal;
 }
@@ -812,12 +870,14 @@ export function normalizeAxiosRequest(
   );
 
   const baseURL = input.baseURL ?? defaults?.baseURL ?? instance.baseURL;
-  const auth = input.auth ?? instance.auth;
+  let auth = input.auth ?? instance.auth;
   const defaultTimeout =
     defaults?.timeout ??
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects =
     input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
+  const allowAbsoluteUrls =
+    input.allowAbsoluteUrls ?? instance.allowAbsoluteUrls;
   // Precedence: request > axiosRef.defaults > module - see the header
   // comment below.
   const baseParams = defaults?.params ?? instance.params;
@@ -830,15 +890,22 @@ export function normalizeAxiosRequest(
     AXIOS_ONLY_KEYS.some(key => input[key] !== undefined) ||
     (input.method !== undefined && input.method !== method) ||
     input.headers !== undefined ||
-    (typeof url === 'string' && !!baseURL) ||
+    (typeof url === 'string' && (!!baseURL || url.includes('@'))) ||
     baseParams !== undefined ||
     auth !== undefined ||
     (defaultTimeout !== undefined && input.timeout === undefined) ||
     (maxRedirects !== undefined && input.maxRedirections === undefined) ||
     (defaults?.validateStatus !== undefined &&
-      input.validateStatus === undefined) ||
+      !Object.prototype.hasOwnProperty.call(input, 'validateStatus')) ||
     (defaults?.responseType !== undefined &&
       input.responseType === undefined) ||
+    (instance.maxContentLength !== undefined &&
+      input.maxContentLength === undefined) ||
+    (instance.maxBodyLength !== undefined &&
+      input.maxBodyLength === undefined) ||
+    (instance.timeoutErrorMessage !== undefined &&
+      input.timeoutErrorMessage === undefined) ||
+    (instance.transitional !== undefined && input.transitional === undefined) ||
     (headerBase
       ? headerBase.hasWork
       : headersHaveWork(defaultHeaders, instanceHeaders, lowerMethod));
@@ -860,13 +927,42 @@ export function normalizeAxiosRequest(
     auth: _auth,
     cancelToken,
     maxRedirects: _maxRedirects,
+    validateStatus: inputValidateStatus,
     ...options
   } = input;
   options.method = method;
+  // `validateStatus` present as an own key (even `null`, or explicit
+  // `undefined`) always wins over the default, as in axios' `settle()`
+  // (`!validateStatus || validateStatus(status)` - a non-function
+  // `validateStatus` always resolves). Only a truly *absent* key falls back
+  // to `defaults`/the built-in 2xx range - see `toAxiosLikeResponse`.
+  const validateStatusProvided = Object.prototype.hasOwnProperty.call(
+    input,
+    'validateStatus',
+  );
+  if (validateStatusProvided) {
+    options.validateStatus = inputValidateStatus;
+  }
 
-  // URL: baseURL + params
-  if (typeof url === 'string' && baseURL && !isAbsoluteURL(url)) {
+  // URL: baseURL + params. `allowAbsoluteUrls: false` makes an absolute
+  // `url` combine with `baseURL` anyway (naive concatenation, exactly like a
+  // relative one), instead of replacing it outright - axios'
+  // `buildFullPath`.
+  if (
+    typeof url === 'string' &&
+    baseURL &&
+    (!isAbsoluteURL(url) || allowAbsoluteUrls === false)
+  ) {
     url = combineURLs(baseURL, url);
+  }
+  // Credentials embedded in the URL (`http://user:pass@host`) become Basic
+  // auth, as in axios - but only when `config.auth` didn't already win.
+  if (!auth && typeof url === 'string') {
+    const credentials = extractUrlCredentials(url);
+    if (credentials) {
+      auth = { username: credentials.username, password: credentials.password };
+      url = credentials.url;
+    }
   }
   const mergedParams =
     isPlainObject(baseParams) && isPlainObject(params)
@@ -939,10 +1035,7 @@ export function normalizeAxiosRequest(
   // immediately, even on this fast path (no axiosRef interceptors/adapter/
   // transforms in play) - `toAxiosLikeResponse` reads both straight off
   // `request.options`.
-  if (
-    options.validateStatus === undefined &&
-    defaults?.validateStatus !== undefined
-  ) {
+  if (!validateStatusProvided && defaults?.validateStatus !== undefined) {
     options.validateStatus = defaults.validateStatus;
   }
   if (
@@ -950,6 +1043,33 @@ export function normalizeAxiosRequest(
     defaults?.responseType !== undefined
   ) {
     options.responseType = defaults.responseType;
+  }
+  // Per-request wins over the module-level default, as in axios
+  // (`defaultToConfig2`) - see `plan/reports/axios-compat.md`'s "a
+  // module-level `maxContentLength` overrides the per-request value" bug.
+  if (
+    options.maxContentLength === undefined &&
+    instance.maxContentLength !== undefined
+  ) {
+    options.maxContentLength = instance.maxContentLength;
+  }
+  if (
+    options.maxBodyLength === undefined &&
+    instance.maxBodyLength !== undefined
+  ) {
+    options.maxBodyLength = instance.maxBodyLength;
+  }
+  if (
+    options.timeoutErrorMessage === undefined &&
+    instance.timeoutErrorMessage !== undefined
+  ) {
+    options.timeoutErrorMessage = instance.timeoutErrorMessage;
+  }
+  if (
+    options.transitional === undefined &&
+    instance.transitional !== undefined
+  ) {
+    options.transitional = instance.transitional;
   }
 
   const signal = resolveSignal(options.signal, cancelToken);
@@ -1057,6 +1177,14 @@ export function buildAxiosConfig(
     (instance.headersTimeout === undefined ? instance.timeout : undefined);
   const maxRedirects =
     input.maxRedirects ?? defaults?.maxRedirects ?? instance.maxRedirects;
+  const allowAbsoluteUrls =
+    input.allowAbsoluteUrls ?? instance.allowAbsoluteUrls;
+  // See the matching comment in `normalizeAxiosRequest`: an own key (even
+  // `null`) always wins over `defaults`/`instance`.
+  const validateStatusProvided = Object.prototype.hasOwnProperty.call(
+    input,
+    'validateStatus',
+  );
 
   const {
     url: _url,
@@ -1119,11 +1247,11 @@ export function buildAxiosConfig(
     cancelToken,
     timeout: input.timeout ?? defaultTimeout,
     maxRedirects,
+    allowAbsoluteUrls,
     beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
-    validateStatus:
-      input.validateStatus ??
-      defaults?.validateStatus ??
-      instance.validateStatus,
+    validateStatus: validateStatusProvided
+      ? input.validateStatus
+      : (defaults?.validateStatus ?? instance.validateStatus),
     responseType:
       input.responseType ?? defaults?.responseType ?? instance.responseType,
     decompress: input.decompress ?? instance.decompress,
@@ -1169,9 +1297,19 @@ export function serializeAxiosConfig(
   if (
     typeof dispatchUrl === 'string' &&
     config.baseURL &&
-    !isAbsoluteURL(dispatchUrl)
+    (!isAbsoluteURL(dispatchUrl) || (config as any).allowAbsoluteUrls === false)
   ) {
     dispatchUrl = combineURLs(config.baseURL, dispatchUrl);
+  }
+  // Credentials embedded in the URL become Basic auth, as in axios - but
+  // only when `config.auth` didn't already win.
+  let auth = config.auth;
+  if (!auth && typeof dispatchUrl === 'string') {
+    const credentials = extractUrlCredentials(dispatchUrl);
+    if (credentials) {
+      auth = { username: credentials.username, password: credentials.password };
+      dispatchUrl = credentials.url;
+    }
   }
   if (config.params) {
     dispatchUrl = buildURL(
@@ -1181,9 +1319,9 @@ export function serializeAxiosConfig(
     );
   }
 
-  if (config.auth) {
+  if (auth) {
     const token = Buffer.from(
-      `${config.auth.username || ''}:${config.auth.password || ''}`,
+      `${auth.username || ''}:${auth.password || ''}`,
     ).toString('base64');
     headers.setAuthorization(`Basic ${token}`);
   }
@@ -1209,8 +1347,18 @@ export function serializeAxiosConfig(
   };
 
   if (config.timeout !== undefined) {
+    // The raw axios timeout (ms), read by `executeRequest`'s own deadline
+    // timer; `headersTimeout`/`bodyTimeout` stay a backstop against
+    // undici's idle timers.
+    options.timeout = config.timeout;
     options.headersTimeout = config.timeout;
     options.bodyTimeout = config.timeout;
+  }
+  if (config.timeoutErrorMessage !== undefined) {
+    options.timeoutErrorMessage = config.timeoutErrorMessage;
+  }
+  if (config.transitional !== undefined) {
+    options.transitional = config.transitional;
   }
   if (config.maxRedirects !== undefined) {
     options.maxRedirections = config.maxRedirects;

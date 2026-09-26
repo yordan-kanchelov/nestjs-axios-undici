@@ -1,10 +1,12 @@
 import {
   buildURL,
   combineURLs,
+  extractUrlCredentials,
   isAxiosRequestConfig,
   mergeHeaders,
   normalizeAxiosRequest,
   serializeRequestData,
+  SIGNAL_CLEANUP,
   toUrlEncodedForm,
 } from '../axios-request.adapter';
 import { createAxiosRefDefaults } from '../axios-ref.factory';
@@ -208,6 +210,66 @@ describe('axios request adapter', () => {
       });
       expect(options.signal.aborted).toBe(true);
       expect(options.signal.reason).toBe(reason);
+    });
+
+    it('combining a live signal with a cancelToken exposes a cleanup that removes its listener (PR #15 review: no listener leak)', () => {
+      const controller = new AbortController();
+      let listenerCount = 0;
+      const originalAdd = controller.signal.addEventListener.bind(
+        controller.signal,
+      );
+      const originalRemove = controller.signal.removeEventListener.bind(
+        controller.signal,
+      );
+      controller.signal.addEventListener = ((...args: any[]) => {
+        listenerCount++;
+        return (originalAdd as any)(...args);
+      }) as any;
+      controller.signal.removeEventListener = ((...args: any[]) => {
+        listenerCount--;
+        return (originalRemove as any)(...args);
+      }) as any;
+
+      const { options } = normalizeAxiosRequest('http://api/x', {
+        signal: controller.signal,
+        cancelToken: { subscribe: () => undefined },
+      });
+      expect(listenerCount).toBe(1);
+      const cleanup = (options.signal as any)[SIGNAL_CLEANUP];
+      expect(typeof cleanup).toBe('function');
+      cleanup();
+      expect(listenerCount).toBe(0);
+      // Cleanup is idempotent (no error) even called twice, and the combined
+      // signal is unaffected by removing the underlying listener.
+      cleanup();
+      expect(options.signal.aborted).toBe(false);
+    });
+
+    it('does not expose a cleanup when the caller signal is already aborted (no listener was ever added)', () => {
+      const controller = new AbortController();
+      controller.abort('bye');
+      const { options } = normalizeAxiosRequest('http://api/x', {
+        signal: controller.signal,
+        cancelToken: { subscribe: () => undefined },
+      });
+      expect(options.signal.aborted).toBe(true);
+      expect((options.signal as any)[SIGNAL_CLEANUP]).toBeUndefined();
+    });
+  });
+
+  describe('extractUrlCredentials', () => {
+    it('extracts and percent-decodes credentials, stripping them from the URL', () => {
+      const result = extractUrlCredentials('http://user:pa%20ss@host/path?x=1');
+      expect(result).toEqual({
+        username: 'user',
+        password: 'pa ss',
+        url: 'http://host/path?x=1',
+      });
+    });
+
+    it('returns undefined when there are no credentials', () => {
+      expect(extractUrlCredentials('http://host/path')).toBeUndefined();
+      expect(extractUrlCredentials('not a url')).toBeUndefined();
     });
   });
 

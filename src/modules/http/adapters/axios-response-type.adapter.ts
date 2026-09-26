@@ -11,14 +11,50 @@ import type { Readable } from 'node:stream';
 import type { Dispatcher } from 'undici';
 import type { AxiosResponseType } from '../interfaces/axios-compatible.interface';
 
+/** axios: `ERR_BAD_RESPONSE`, `maxContentLength size of ${limit} exceeded` - checked against real axios 1.20 (`lib/adapters/http.js`). */
 function assertMaxContentLength(size: number, maxContentLength?: number): void {
   if (maxContentLength && maxContentLength > -1 && size > maxContentLength) {
     const error: any = new Error(
       `maxContentLength size of ${maxContentLength} exceeded`,
     );
-    error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+    error.code = 'ERR_BAD_RESPONSE';
     throw error;
   }
+}
+
+/**
+ * Reads a body stream into a `Buffer`, enforcing `maxContentLength` as bytes
+ * arrive (axios does the same - see `lib/adapters/http.js`'s streamed
+ * `maxContentLength` enforcement) rather than after buffering the whole
+ * response: a body that exceeds the limit is rejected, and the underlying
+ * stream released (via the `for await` loop's own `return()` call on an
+ * abrupt completion), as soon as the limit is crossed - not after reading
+ * however much more of a possibly-huge response follows. Only used when a
+ * limit is actually set; an unset/`-1` `maxContentLength` (the common case)
+ * defers to undici's own `.arrayBuffer()`, unchanged.
+ */
+async function readBufferWithLimit(
+  body: Dispatcher.ResponseData['body'],
+  maxContentLength?: number,
+): Promise<Buffer> {
+  if (!maxContentLength || maxContentLength <= -1) {
+    return Buffer.from(await body.arrayBuffer());
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of body as unknown as AsyncIterable<Buffer>) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxContentLength) {
+      const error: any = new Error(
+        `maxContentLength size of ${maxContentLength} exceeded`,
+      );
+      error.code = 'ERR_BAD_RESPONSE';
+      throw error;
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +189,56 @@ export function decompressStream(body: Readable, encoding: string): Readable {
   return body;
 }
 
+/** True when a `maxContentLength` is actually set (matches `assertMaxContentLength`/`readBufferWithLimit`'s own guard: 0/`undefined`/`-1` all mean "no limit"). */
+function hasContentLengthLimit(maxContentLength?: number): boolean {
+  return !!maxContentLength && maxContentLength > -1;
+}
+
+/**
+ * Streams a compressed body through the matching zlib decompressor,
+ * enforcing `maxContentLength` on the DECOMPRESSED bytes as they arrive -
+ * matching axios 1.20 (`lib/adapters/http.js`'s streamed `maxContentLength`
+ * enforcement, applied to the decompression pipeline's own output) - so a
+ * small, highly compressible body (a "gzip bomb") can't blow memory up fully
+ * decompressing before the limit is ever checked. Both the compressed body
+ * stream and the decompression stream are destroyed the moment the limit is
+ * crossed (rather than relying only on `for await`'s own `return()` call on
+ * an abrupt completion, which unpipes/destroys the decompression stream but
+ * never its `.pipe()` source - so the compressed body/socket would otherwise
+ * keep flowing until the producer itself notices nobody's reading), with the
+ * same `ERR_BAD_RESPONSE` error `readBufferWithLimit` throws for the
+ * uncompressed case.
+ *
+ * Only called when a limit is actually set (see `readBuffer`/`readText`):
+ * decompressing a *compressed* body this way measures slower than
+ * `decompressBuffer`'s single sync call for a normal, unlimited body, so the
+ * common case keeps using that instead.
+ */
+async function readDecompressedBufferWithLimit(
+  body: Readable,
+  encoding: string,
+  maxContentLength: number,
+): Promise<Buffer> {
+  const decompressed = decompressStream(body, encoding);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of decompressed) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxContentLength) {
+      const error: any = new Error(
+        `maxContentLength size of ${maxContentLength} exceeded`,
+      );
+      error.code = 'ERR_BAD_RESPONSE';
+      decompressed.destroy(error);
+      body.destroy(error);
+      throw error;
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
 const BOM = 0xfeff;
 
 /** axios' `stripBOM`: drops a leading UTF-8 BOM character. */
@@ -176,26 +262,60 @@ async function readBuffer(
   body: Dispatcher.ResponseData['body'],
   options: BodyDecodeOptions,
 ): Promise<Buffer> {
-  const buffer = Buffer.from(await body.arrayBuffer());
-  return shouldDecompress(options)
-    ? decompressBuffer(buffer, options.contentEncoding!)
-    : buffer;
+  // `maxContentLength` applies to the *decoded* bytes, as in axios. When a
+  // limit is actually set, the decompression itself is streamed and the
+  // limit enforced on the decompressed bytes as they arrive
+  // (`readDecompressedBufferWithLimit`), so a gzip bomb can't fully
+  // decompress in memory before being rejected. The common, unlimited case
+  // keeps buffering the (usually much smaller) compressed body fully first
+  // and decompressing it in one synchronous call - measurably faster than
+  // streaming through zlib for a normal-sized body.
+  if (shouldDecompress(options)) {
+    if (hasContentLengthLimit(options.maxContentLength)) {
+      return readDecompressedBufferWithLimit(
+        body as unknown as Readable,
+        options.contentEncoding!,
+        options.maxContentLength!,
+      );
+    }
+    return decompressBuffer(
+      Buffer.from(await body.arrayBuffer()),
+      options.contentEncoding!,
+    );
+  }
+  return readBufferWithLimit(body, options.maxContentLength);
 }
 
 /**
- * Reads the body as a UTF-8 string. When nothing needs decompressing this
- * defers to undici's own `.text()` (which already strips a BOM), so the
- * common, uncompressed path costs nothing extra.
+ * Reads the body as a UTF-8 string. When nothing needs decompressing or
+ * limiting this defers to undici's own `.text()` (which already strips a
+ * BOM), so the common, unlimited/uncompressed path costs nothing extra.
  */
 export async function readText(
   body: Dispatcher.ResponseData['body'],
   options: BodyDecodeOptions,
 ): Promise<string> {
-  if (!shouldDecompress(options)) return body.text();
-  const buffer = decompressBuffer(
-    Buffer.from(await body.arrayBuffer()),
-    options.contentEncoding!,
-  );
+  if (shouldDecompress(options)) {
+    // Same split as `readBuffer`: stream-and-enforce only when a limit is
+    // actually set, otherwise the fast, fully-buffered sync decompress.
+    if (hasContentLengthLimit(options.maxContentLength)) {
+      const buffer = await readDecompressedBufferWithLimit(
+        body as unknown as Readable,
+        options.contentEncoding!,
+        options.maxContentLength!,
+      );
+      return stripBOM(buffer.toString('utf8'));
+    }
+    const buffer = decompressBuffer(
+      Buffer.from(await body.arrayBuffer()),
+      options.contentEncoding!,
+    );
+    return stripBOM(buffer.toString('utf8'));
+  }
+  if (!options.maxContentLength || options.maxContentLength <= -1) {
+    return body.text();
+  }
+  const buffer = await readBufferWithLimit(body, options.maxContentLength);
   return stripBOM(buffer.toString('utf8'));
 }
 

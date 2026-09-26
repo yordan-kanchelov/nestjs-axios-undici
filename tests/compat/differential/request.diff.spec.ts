@@ -278,7 +278,18 @@ differential('Differential: request serialization', routes, [
       server: serverView(SERVER_HEADERS)(o),
       ok: !!o.result,
     }),
-    knownDifference: 'plan.md phase 2: fix(errors): match axios errors',
+  },
+  {
+    // `config.auth` wins over credentials embedded in the URL, as in axios.
+    name: 'credentials in URL; config.auth wins',
+    run: (s, ctx) =>
+      s.get(ctx.base.replace('http://', 'http://user:pass@') + '/echo', {
+        auth: { username: 'other', password: 'secret' },
+      }),
+    normalize: (o: any) => ({
+      server: serverView(SERVER_HEADERS)(o),
+      ok: !!o.result,
+    }),
   },
   ...paramsCases.map(([name, prm, cfg]) => ({
     name: `params: ${name}`,
@@ -291,6 +302,14 @@ differential('Differential: request serialization', routes, [
     normalize: (o: any) => lastRequest(o)?.url,
   },
   {
+    // axios' own query encoder (`encodeURIComponent`, which leaves `'`
+    // unescaped) matches what this library's `buildURL`/`encodeParam`
+    // already produce - but undici always dispatches through a WHATWG
+    // `new URL()` parse (`parseURL` in `undici/lib/core/util.js`, with no
+    // way to opt out), and the URL Standard's *special-query* percent-encode
+    // set adds `'` specifically for http(s) - so it comes out as `%27`
+    // regardless of what string this library handed it. Not fixable without
+    // bypassing undici's own URL parsing (out of scope).
     name: "params: '' encodes as %27 (WHATWG URL parsing)",
     run: (s, ctx) => s.get(echo(ctx), { params: { q: "a'b" } }),
     normalize: (o: any) => lastRequest(o)?.url,
@@ -309,7 +328,6 @@ differential('Differential: request serialization', routes, [
         allowAbsoluteUrls: false,
       }),
     normalize: (o: any) => lastRequest(o)?.url,
-    knownDifference: 'plan.md phase 2: fix(errors): match axios errors',
   },
   {
     name: 'URL object as url',

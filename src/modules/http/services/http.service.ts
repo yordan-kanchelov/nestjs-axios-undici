@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Transform } from 'node:stream';
 import {
   request,
   ProxyAgent,
@@ -44,12 +45,21 @@ import {
   isAxiosRequestConfig,
   normalizeAxiosRequest,
   serializeAxiosConfig,
+  SIGNAL_CLEANUP,
 } from '../adapters/axios-request.adapter';
 import {
   STATUS_TEXT_MAP,
+  RequestInfo,
   toAxiosLikeResponse,
 } from '../adapters/axios-response.adapter';
-import { createStatusError, toAxiosError } from '../errors/axios-error';
+import {
+  createStatusError,
+  createTimeoutError,
+  createUnsupportedProtocolError,
+  isDeadlineTimeoutReason,
+  toAxiosError,
+  type DeadlineTimeoutReason,
+} from '../errors/axios-error';
 import {
   DEFAULT_MAX_REDIRECTS,
   buildRedirectHop,
@@ -240,6 +250,128 @@ class RequestAbortSignal {
     this.listener = undefined;
     listener?.();
   }
+}
+
+/** Protocols this library (like axios) can actually dispatch. */
+const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * True when `url` starts with `http://` or `https://`, checked
+ * case-insensitively (axios itself always lowercases the protocol) via
+ * `charCodeAt` rather than a regex or a `.slice().toLowerCase()` - no
+ * substring/array allocation, just a handful of integer comparisons. This is
+ * the overwhelming majority of requests, so `unsupportedProtocol` below
+ * checks it first and skips the regex entirely once it matches.
+ */
+function isHttpOrHttpsPrefix(url: string): boolean {
+  // 'h'/'H'
+  if ((url.charCodeAt(0) | 0x20) !== 0x68) return false;
+  // 't'/'T', 't'/'T', 'p'/'P'
+  if (
+    (url.charCodeAt(1) | 0x20) !== 0x74 ||
+    (url.charCodeAt(2) | 0x20) !== 0x74 ||
+    (url.charCodeAt(3) | 0x20) !== 0x70
+  ) {
+    return false;
+  }
+  const c4 = url.charCodeAt(4);
+  if (c4 === 0x3a /* ':' */) {
+    return url.charCodeAt(5) === 0x2f && url.charCodeAt(6) === 0x2f; // '//'
+  }
+  if ((c4 | 0x20) === 0x73 /* 's'/'S' */) {
+    return (
+      url.charCodeAt(5) === 0x3a &&
+      url.charCodeAt(6) === 0x2f &&
+      url.charCodeAt(7) === 0x2f
+    );
+  }
+  return false;
+}
+
+/**
+ * The URL's protocol, when it names one this library can't dispatch (e.g.
+ * `tel:`, `ftp:`) - `undefined` for a supported protocol *or* a relative
+ * URL/path (no scheme at all; resolved fine against a dispatcher's base).
+ * Checked before ever calling undici's `request()`, which throws its own
+ * (undici-flavoured, synchronous) error for the same input - axios instead
+ * rejects with a proper `Unsupported protocol ${protocol}` `AxiosError`
+ * (`createUnsupportedProtocolError`), checked against real axios 1.20.
+ */
+function unsupportedProtocol(
+  url: string | URL | UrlObject,
+): string | undefined {
+  let protocol: string | undefined;
+  if (url instanceof URL) {
+    protocol = url.protocol;
+  } else if (typeof url === 'string') {
+    // Fast path: skip the regex entirely for a plain http(s) URL (see
+    // `isHttpOrHttpsPrefix`).
+    if (isHttpOrHttpsPrefix(url)) return undefined;
+    // Cheap prefix check first: only a request whose URL *looks* absolute
+    // (`<scheme>:...`) pays for anything more.
+    const match = /^([a-z][a-z\d+\-.]*):/i.exec(url);
+    if (match) protocol = match[1].toLowerCase() + ':';
+  } else if (url && typeof url === 'object') {
+    protocol = (url as UrlObject).protocol ?? undefined;
+  }
+  return protocol !== undefined && !SUPPORTED_PROTOCOLS.has(protocol)
+    ? protocol
+    : undefined;
+}
+
+/**
+ * Enforces `maxBodyLength` on the *request* body, matching axios' own
+ * precedence and codes (checked against real axios 1.20 and its default
+ * `follow-redirects` transport):
+ * - a string/Buffer body (known length upfront) is checked synchronously,
+ *   before ever dispatching - `ERR_BAD_REQUEST`, "Request body larger than
+ *   maxBodyLength limit".
+ * - a stream body is checked as bytes are written, matching axios' default
+ *   (redirects-following) transport - `ERR_FR_MAX_BODY_LENGTH_EXCEEDED`,
+ *   same message. Only wraps the stream when a limit is actually set.
+ *
+ * Returns the (possibly wrapped) body to send, or a ready-to-throw `error`
+ * when a known-length body already exceeds the limit (nothing is sent).
+ */
+function enforceMaxBodyLength(
+  body: unknown,
+  maxBodyLength: number | undefined,
+): { body: unknown; error?: any } {
+  if (maxBodyLength === undefined || maxBodyLength < 0) return { body };
+  if (typeof body === 'string' || Buffer.isBuffer(body)) {
+    const size =
+      typeof body === 'string' ? Buffer.byteLength(body) : body.length;
+    if (size > maxBodyLength) {
+      const error: any = new Error(
+        'Request body larger than maxBodyLength limit',
+      );
+      error.code = 'ERR_BAD_REQUEST';
+      return { body, error };
+    }
+    return { body };
+  }
+  if (body && typeof (body as any).pipe === 'function') {
+    let total = 0;
+    const counted = new Transform({
+      transform(chunk, _encoding, callback) {
+        total += chunk.length;
+        if (total > maxBodyLength) {
+          const error: any = new Error(
+            'Request body larger than maxBodyLength limit',
+          );
+          error.code = 'ERR_FR_MAX_BODY_LENGTH_EXCEEDED';
+          callback(error);
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    (body as NodeJS.ReadableStream).on('error', error =>
+      counted.destroy(error),
+    );
+    return { body: (body as NodeJS.ReadableStream).pipe(counted) };
+  }
+  return { body };
 }
 
 @Injectable()
@@ -698,9 +830,15 @@ export class HttpService {
               config,
               request: rawResponse?.request ?? {},
             };
-            const validateStatus =
-              config.validateStatus || ((s: number) => s >= 200 && s < 300);
-            if (!validateStatus(status)) {
+            // `validateStatus: null` (axios: always resolves) vs. simply
+            // unset (the default 2xx range) - see `toAxiosLikeResponse`.
+            const isValidStatus =
+              typeof config.validateStatus === 'function'
+                ? config.validateStatus(status)
+                : config.validateStatus === null
+                  ? true
+                  : status >= 200 && status < 300;
+            if (!isValidStatus) {
               subscriber.error(createStatusError(response));
               return;
             }
@@ -766,20 +904,21 @@ export class HttpService {
       dispatcher: restOptions.dispatcher,
     };
 
-    // Map timeout to undici's timeout options
+    // Map timeout to undici's timeout options, and keep the raw ms value
+    // too (`normalizeAxiosRequest` already resolved request vs. module
+    // precedence) - `executeRequest`'s own deadline timer reads it;
+    // `headersTimeout`/`bodyTimeout` stay a backstop against undici's idle
+    // timers.
     if (timeout !== undefined) {
+      (mergedOptions as any).timeout = timeout;
       mergedOptions.headersTimeout = timeout;
       mergedOptions.bodyTimeout = timeout;
     }
-
-    // Pass through size limit options from module config
-    const moduleOpts = this.moduleOptions as any;
-    if (moduleOpts?.maxBodyLength !== undefined) {
-      (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
-    }
-    if (moduleOpts?.maxContentLength !== undefined) {
-      (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
-    }
+    // `maxContentLength`/`maxBodyLength`/`timeoutErrorMessage`/`transitional`
+    // module-vs-request precedence was already resolved by
+    // `normalizeAxiosRequest` (per-request wins, as in axios) - see
+    // `plan/reports/axios-compat.md`'s "a module-level `maxContentLength`
+    // overrides the per-request value" bug. Nothing more to do here.
 
     // `baseURL` was already applied by `normalizeAxiosRequest` above (it
     // reads `instanceOptions.baseURL` directly); `socketPath` (module- or
@@ -834,6 +973,15 @@ export class HttpService {
         maxRedirections,
         beforeRedirect: requestBeforeRedirect,
         socketPath: requestSocketPath,
+        // The raw axios `timeout` (ms): a total deadline, read by this
+        // method's own timer below - not undici's own `headersTimeout`/
+        // `bodyTimeout` (still set alongside it, as a backstop; see
+        // `dispatchFastPath`/`serializeAxiosConfig`). Stripped here so it
+        // never reaches undici's own request options.
+        timeout: deadlineMs,
+        timeoutErrorMessage,
+        transitional,
+        maxBodyLength,
         ...restOptions
       } = rawOptions;
       // Destructuring a rest element off a `Record<string, any>`-shaped
@@ -869,6 +1017,12 @@ export class HttpService {
       const userSignal = requestOptions.signal as AbortSignal | undefined;
       const abortSignal = new RequestAbortSignal();
       let settled = false;
+      // axios never sets `error.request` for a signal that was already
+      // aborted *before* the request was ever dispatched (checked against
+      // real axios 1.20: no request object exists yet at that point) -
+      // unlike a mid-flight abort, which does. `preAborted` distinguishes
+      // the two for `fail()`'s `CanceledError` below.
+      const preAborted = userSignal?.aborted === true;
       let onUserAbort: (() => void) | undefined;
       if (userSignal) {
         if (userSignal.aborted) {
@@ -881,6 +1035,38 @@ export class HttpService {
         }
       }
 
+      // Total (deadline) timeout, as in axios: one timer for the whole
+      // request - from now until the response is fully read (or, for
+      // `responseType: 'stream'`, until the headers arrive - `settled`
+      // flips true right after that, see the stream branch of
+      // `toAxiosLikeResponse`, so the timer below never fires once it has).
+      // Only created when `timeout > 0` (perf: no timer at all otherwise).
+      // Kept separate from undici's own `headersTimeout`/`bodyTimeout`
+      // (still set, as a backstop against undici's *idle* timers) because
+      // those reset on every chunk - a slowly-but-steadily trickling body
+      // would never trip them, where axios' own timeout is a hard deadline.
+      const clarifyTimeoutError = !!transitional?.clarifyTimeoutError;
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      if (typeof deadlineMs === 'number' && deadlineMs > 0) {
+        deadlineTimer = setTimeout(() => {
+          deadlineTimer = undefined;
+          if (settled) return;
+          const reason: DeadlineTimeoutReason = {
+            axiosDeadlineTimeout: true,
+            timeout: deadlineMs,
+            timeoutErrorMessage,
+            clarifyTimeoutError,
+          };
+          abortSignal.abort(reason);
+        }, deadlineMs);
+      }
+      const clearDeadline = (): void => {
+        if (deadlineTimer !== undefined) {
+          clearTimeout(deadlineTimer);
+          deadlineTimer = undefined;
+        }
+      };
+
       // Spreading a `Record<string, any>` into an object literal doesn't
       // propagate its index signature to the literal's inferred type either
       // - annotate explicitly (see `requestOptions` above).
@@ -890,9 +1076,32 @@ export class HttpService {
         signal: abortSignal as any,
       };
 
+      // `maxBodyLength`, as in axios: a string/Buffer body is checked
+      // synchronously before ever dispatching; a stream body is checked as
+      // bytes are written (see `enforceMaxBodyLength`'s doc comment for the
+      // exact codes/precedence).
+      let maxBodyLengthError: any;
+      if (maxBodyLength !== undefined) {
+        const enforced = enforceMaxBodyLength(options.body, maxBodyLength);
+        options.body = enforced.body;
+        maxBodyLengthError = enforced.error;
+      }
+
       const fail = (error: unknown): void => {
         settled = true;
-        subscriber.error(toAxiosError(error, interceptorRequest));
+        clearDeadline();
+        const info = preAborted
+          ? undefined
+          : new RequestInfo(currentUrl, currentOptions.method);
+        if (isDeadlineTimeoutReason(abortSignal.reason)) {
+          subscriber.error(
+            createTimeoutError(abortSignal.reason, interceptorRequest, info),
+          );
+          return;
+        }
+        subscriber.error(
+          toAxiosError(error, interceptorRequest, abortSignal, info),
+        );
       };
 
       // `currentUrl`/`currentOptions` track the most recent hop, so a
@@ -904,14 +1113,29 @@ export class HttpService {
       let currentOptions: Record<string, any> = options;
       let redirectCount = 0;
       let maxRedirects: number | undefined;
-      // `timeout` is one budget for the whole redirect chain, as in axios,
-      // not a fresh one per hop: each hop gets what's left of it.
-      const timeout = options.headersTimeout as number | undefined;
-      const startedAt = timeout ? performance.now() : 0;
+      // The *backstop* idle-timer budget is one budget for the whole
+      // redirect chain, as in axios, not a fresh one per hop: each hop gets
+      // what's left of it. The deadline timer above needs no such
+      // adjustment (it isn't reset per hop at all).
+      const backstopTimeout = options.headersTimeout as number | undefined;
+      const startedAt = backstopTimeout ? performance.now() : 0;
+
+      if (maxBodyLengthError) {
+        fail(maxBodyLengthError);
+        return;
+      }
+      const badProtocol = unsupportedProtocol(interceptorRequest.url);
+      if (badProtocol) {
+        settled = true;
+        clearDeadline();
+        subscriber.error(
+          createUnsupportedProtocolError(badProtocol, interceptorRequest),
+        );
+        return;
+      }
 
       const onResponse = (res: UndiciResponse): void => {
         const location = res.headers.location as string | string[] | undefined;
-        let finalUrl: string | undefined;
 
         if (isRedirectResponse(res.statusCode, location)) {
           maxRedirects ??=
@@ -957,9 +1181,9 @@ export class HttpService {
                 headers: hop.headers,
                 body: hop.body,
               };
-              if (timeout) {
+              if (backstopTimeout) {
                 const remaining = Math.floor(
-                  timeout - (performance.now() - startedAt),
+                  backstopTimeout - (performance.now() - startedAt),
                 );
                 if (remaining <= 0) {
                   fail(
@@ -985,13 +1209,23 @@ export class HttpService {
             });
             return;
           }
-        } else if (redirectCount > 0) {
-          finalUrl = urlToString(currentUrl);
         }
 
-        toAxiosLikeResponse(interceptorRequest, res, finalUrl).then(
+        // Built from the hop that was actually dispatched (matching axios'
+        // `response.request` - see `RequestInfo`'s doc comment): `res`'s
+        // `responseUrl` (computed lazily, only if read) is always the final
+        // hop's URL, whether or not a redirect was actually followed,
+        // exactly like axios' own.
+        const requestInfo = new RequestInfo(
+          currentUrl,
+          currentOptions.method,
+          currentUrl,
+        );
+
+        toAxiosLikeResponse(interceptorRequest, res, requestInfo).then(
           axiosRes => {
             settled = true;
+            clearDeadline();
             subscriber.next(axiosRes);
             subscriber.complete();
           },
@@ -1011,9 +1245,15 @@ export class HttpService {
       request(interceptorRequest.url, options).then(onResponse, fail);
 
       return () => {
+        clearDeadline();
         if (!settled) abortSignal.abort();
         // Don't leave a listener on a long-lived user signal for every request
         if (onUserAbort) userSignal!.removeEventListener('abort', onUserAbort);
+        // Review follow-up (PR #15): also remove the listener `resolveSignal`
+        // (axios-request.adapter.ts) may have added directly on the
+        // *caller's* signal when combining it with a legacy `cancelToken` -
+        // see `SIGNAL_CLEANUP`'s doc comment.
+        (userSignal as any)?.[SIGNAL_CLEANUP]?.();
       };
     });
   }

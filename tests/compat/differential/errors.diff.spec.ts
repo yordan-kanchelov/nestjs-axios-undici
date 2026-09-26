@@ -3,6 +3,8 @@
  * See harness.ts.
  */
 import axios from 'axios';
+import { Readable } from 'node:stream';
+import { gzipSync } from 'node:zlib';
 import { differential, Ctx } from './harness';
 
 const ERRORS = 'plan.md phase 2: fix(errors): match axios errors';
@@ -29,6 +31,19 @@ const routes = {
       'Content-Encoding': 'gzip',
     });
     res.end('this is not gzip');
+  },
+  // A highly compressible body: small on the wire, large once decompressed -
+  // `maxContentLength` must be checked against the *decompressed* size, as
+  // in axios (`plan.md`: fix(maxContentLength for gzip)).
+  '/gzip-big': (req: any, res: any) => {
+    const n = Number(
+      new URL(req.url, 'http://x').searchParams.get('n') || 100000,
+    );
+    res.writeHead(200, {
+      'Content-Type': 'text/plain',
+      'Content-Encoding': 'gzip',
+    });
+    res.end(gzipSync(Buffer.alloc(n, 'x')));
   },
   '/redirect-loop': (_req: any, res: any) => {
     res.writeHead(302, { Location: '/redirect-loop' });
@@ -115,13 +130,11 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     name: 'ECONNREFUSED',
     run: s => s.get('http://127.0.0.1:1/x'),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'ENOTFOUND',
     run: s => s.get('http://does-not-exist.invalid/x'),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'socket hang up / ECONNRESET',
@@ -138,7 +151,6 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     name: 'unsupported protocol',
     run: s => s.get('ftp://127.0.0.1/x'),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'AbortSignal already aborted',
@@ -153,14 +165,12 @@ differential('Differential: errors, timeouts, cancellation', routes, [
       return s.get(`${ctx.base}/slow?ms=2000`, { signal: c.signal });
     },
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'AbortSignal.timeout()',
     run: (s, ctx) =>
       s.get(`${ctx.base}/slow?ms=2000`, { signal: AbortSignal.timeout(100) }),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
     name: 'CancelToken with message',
@@ -176,21 +186,26 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     run: (s, ctx) =>
       s.get(`${ctx.base}/raw?status=500&body=x`, { validateStatus: null }),
     normalize: (o: any) => ({ status: o.result?.status, data: o.result?.data }),
-    knownDifference: ERRORS,
   },
   {
     name: 'timeout: headers never arrive (code/message)',
     run: (s, ctx) => s.get(`${ctx.base}/slow?ms=3000`, { timeout: 300 }),
     normalize: errShape,
-    knownDifference: ERRORS,
   },
   {
-    // Still differs after the observable/abort fix (verified): undici's
-    // headersTimeout/bodyTimeout are idle timers that reset on every chunk,
-    // so a slowly-but-steadily trickling body never times out; axios' timeout
-    // is a deadline from request start. That's the "total (deadline) timeout"
-    // gap tracked under fix(errors), not the observable item this was
-    // originally filed under.
+    // `executeRequest`'s deadline timer now fires at the right time (a
+    // slowly-but-steadily trickling body used to never time out at all -
+    // fixed), but axios' own error *shape* for a timeout that lands after
+    // the response has already started streaming is a genuine quirk: real
+    // axios' http adapter destroys the request on timeout, which - only
+    // once a response object already exists - fires the response stream's
+    // own 'aborted' handler first (`ERR_BAD_RESPONSE`, "stream has been
+    // aborted"), *instead of* its usual `ECONNABORTED`/"timeout of Nms
+    // exceeded" (checked against real axios 1.20). Replicating that exact
+    // internal race (checked here, not attempted: it depends on whether
+    // axios' own response object happens to exist yet) is out of scope;
+    // this library gives the same, correct `ECONNABORTED` timeout error
+    // either way, which is arguably more useful.
     name: 'timeout covers a slowly trickling body (axios: total time)',
     run: (s, ctx) => s.get(`${ctx.base}/slow-body?ms=1500`, { timeout: 500 }),
     normalize: errShape,
@@ -204,7 +219,6 @@ differential('Differential: errors, timeouts, cancellation', routes, [
         transitional: { clarifyTimeoutError: true },
       }),
     normalize: (o: any) => o.error?.code,
-    knownDifference: ERRORS,
   },
   {
     name: 'timeoutErrorMessage',
@@ -214,7 +228,6 @@ differential('Differential: errors, timeouts, cancellation', routes, [
         timeoutErrorMessage: 'custom!',
       }),
     normalize: (o: any) => o.error?.message,
-    knownDifference: ERRORS,
   },
   // ---- redirects
   ...(
@@ -296,13 +309,57 @@ differential('Differential: errors, timeouts, cancellation', routes, [
     run: (s, ctx) =>
       s.get(`${ctx.base}/big?n=2000`, { maxContentLength: 1000 }),
     normalize: (o: any) => ({ code: o.error?.code, name: o.error?.name }),
-    knownDifference: ERRORS,
+  },
+  {
+    // A small gzip response that decompresses well past `maxContentLength`:
+    // axios enforces the limit on the decompressed stream (`lib/adapters/
+    // http.js`), not the (much smaller) compressed body on the wire - this
+    // must match, not just "reject somehow".
+    name: 'maxContentLength per request (gzip, checked against decompressed size)',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/gzip-big?n=100000`, { maxContentLength: 1000 }),
+    normalize: (o: any) => ({ code: o.error?.code, name: o.error?.name }),
   },
   {
     name: 'maxBodyLength per request',
     run: (s, ctx) =>
       s.post(`${ctx.base}/echo`, 'x'.repeat(2000), { maxBodyLength: 1000 }),
     normalize: (o: any) => ({ code: o.error?.code, sent: o.requests.length }),
+  },
+  {
+    // A stream body over `maxBodyLength`, with the default (redirects-on)
+    // `maxRedirects`: axios' default transport (`follow-redirects`)
+    // enforces this itself - `ERR_FR_MAX_BODY_LENGTH_EXCEEDED` (checked
+    // against real axios 1.20), not axios' own `ERR_BAD_REQUEST` (that code
+    // is only for a body whose length axios can check upfront - a string or
+    // Buffer, see the case above).
+    name: 'maxBodyLength per request with a stream body',
+    run: (s, ctx) =>
+      s.post(`${ctx.base}/echo`, Readable.from([Buffer.alloc(2000, 'x')]), {
+        maxBodyLength: 1000,
+      }),
+    normalize: (o: any) => ({ code: o.error?.code, sent: o.requests.length }),
+  },
+  {
+    // Undici validates a header value (rejecting a bare `\n`) more strictly
+    // than Node's own `http` module (which axios uses, and which silently
+    // strips it) - checked against real axios 1.20: it resolves 200 with
+    // the newline removed, where this library rejects. Full parity would
+    // need this library to sanitize header values the same way Node's own
+    // `http` does before ever handing them to undici; not attempted. What
+    // *is* fixed: the rejection is a well-formed `AxiosError`
+    // (`ERR_BAD_REQUEST`, `config`/`request` set), not a raw undici
+    // `InvalidArgumentError` - plan.md phase 2 "fix(errors): match axios
+    // errors", item 2 ("synchronous undici errors... become AxiosErrors").
+    name: 'header value with an embedded newline',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/echo`, { headers: { 'X-Bad': 'a\nb' } }),
+    normalize: (o: any) => ({
+      resolved: !!o.result,
+      code: o.error?.code,
+      isAxiosError: axios.isAxiosError(o.error),
+      hasConfig: !!o.error?.config,
+    }),
     knownDifference: ERRORS,
   },
 ]);

@@ -33,7 +33,7 @@ export class CatsService {
 
 To accept other status codes, pass `validateStatus` in the module configuration or per request, as you would with axios.
 
-To tell status errors from errors without a response, check `error.response`. Don't rely on `error.request`: unlike axios, it is not set for network errors.
+To tell status errors from errors without a response, check `error.response`. `error.request` is set for network, timeout and cancellation errors too (built from the hop that was actually dispatched: `path`, `method`, `host`, `protocol`, `res.responseUrl`) - it just isn't set for the couple of cases where axios itself never builds a request object either (a signal already aborted before the request was ever dispatched, an unsupported URL protocol).
 
 ```typescript
 import { isAxiosError } from 'nestjs-axios-undici';
@@ -73,7 +73,9 @@ this.httpService.get('https://api.example.com')
 
 ## Timeouts
 
-A `timeout` (module-level or per request) maps to undici's `headersTimeout` and `bodyTimeout` (about 1s resolution). Like axios, a timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`:
+A `timeout` (module-level or per request) is a **total (deadline) timeout, like axios**: it covers the whole request, from the moment it starts until the response body is fully read (or, for `responseType: 'stream'`, until the response headers arrive - matching axios there too). This is a real timer, not undici's idle `headersTimeout`/`bodyTimeout` (still set alongside it, as a backstop) - a response body that trickles in slowly, one byte at a time, still times out at the configured value.
+
+A timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`, exactly like axios:
 
 ```typescript
 import { isAxiosError } from 'nestjs-axios-undici';
@@ -82,9 +84,19 @@ try {
   await lastValueFrom(this.httpService.get('https://slow-api.com', { timeout: 2000 }));
 } catch (error) {
   if (isAxiosError(error) && error.code === 'ECONNABORTED') {
-    // Handle timeout; error.cause is the undici HeadersTimeoutError/BodyTimeoutError
+    // Handle timeout
   }
 }
+```
+
+Two axios options are honoured on the message/code:
+
+```typescript
+this.httpService.get('https://slow-api.com', {
+  timeout: 2000,
+  timeoutErrorMessage: 'The upstream API took too long to respond',
+  transitional: { clarifyTimeoutError: true }, // code becomes 'ETIMEDOUT' instead of 'ECONNABORTED'
+});
 ```
 
 ## Cancellation

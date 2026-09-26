@@ -24,15 +24,16 @@ export class SizeLimitInterceptor implements HttpInterceptor {
     request: HttpInterceptorRequest,
     next: HttpInterceptorHandler,
   ): Observable<any> {
-    // Check request body size
+    // Check request body size (matches axios' own `ERR_BAD_REQUEST`/message
+    // for a body whose length is known upfront - a string or Buffer).
     if (this.options.maxBodyLength && request.options.body) {
       const bodySize = this.getBodySize(request.options.body);
       if (bodySize > this.options.maxBodyLength) {
         return throwError(() => {
           const error: any = new Error(
-            `maxBodyLength size of ${this.options.maxBodyLength} exceeded`,
+            'Request body larger than maxBodyLength limit',
           );
-          error.code = 'ERR_FR_MAX_BODY_LENGTH_EXCEEDED';
+          error.code = 'ERR_BAD_REQUEST';
           return error;
         });
       }
@@ -50,9 +51,9 @@ export class SizeLimitInterceptor implements HttpInterceptor {
             const contentLength = parseInt(contentLengthHeader as string, 10);
             if (contentLength > this.options.maxContentLength) {
               const error: any = new Error(
-                `Response content size (${contentLength} bytes) exceeds maxContentLength (${this.options.maxContentLength} bytes)`,
+                `maxContentLength size of ${this.options.maxContentLength} exceeded`,
               );
-              error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+              error.code = 'ERR_BAD_RESPONSE';
               throw error;
             }
           }

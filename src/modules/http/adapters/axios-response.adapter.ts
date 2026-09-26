@@ -1,24 +1,112 @@
+import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
-import { createStatusError } from '../errors/axios-error';
+import { AxiosError, createStatusError } from '../errors/axios-error';
 import {
   readBodyAsResponseType,
   readDefaultBody,
   readText,
 } from './axios-response-type.adapter';
 import { buildLazyAxiosConfig } from './axios-request.adapter';
+import { urlToString } from './redirect.adapter';
 import type { HttpInterceptorRequest } from '../interfaces/http-interceptor.interface';
 import type {
   AxiosLikeResponse,
   InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
 
+type ParsedRequestUrl = {
+  protocol: string | undefined;
+  host: string | undefined;
+  path: string | undefined;
+};
+
 /**
- * Shared, frozen placeholder for `response.request`: axios sets it to the
- * underlying `http.ClientRequest`; we don't have an equivalent undici object
- * worth exposing, so callers get a cheap, always-truthy stand-in (matching
- * axios on `!!response.request`) instead of `undefined`.
+ * A lightweight stand-in for axios' `response.request`/`error.request` (the
+ * real `http.ClientRequest`, wrapped by `follow-redirects`): axios' own,
+ * commonly-read fields (`path`, `method`, `host`, `protocol`, and
+ * `res.responseUrl` - the final hop's URL, set whether or not a redirect was
+ * actually followed).
+ *
+ * Perf: the constructor only stores the raw inputs (no `new URL()` parse, no
+ * object allocation beyond `this`) - this is built on *every* response and
+ * error, so a request whose `.request`/`.response.request` is never read
+ * (the overwhelmingly common case) pays nothing beyond that. `path`/`host`/
+ * `protocol`/`res` are lazy prototype getters: the URL parse (or
+ * `urlToString`, for `res.responseUrl`) runs at most once, on first access,
+ * and its result is cached in a private field - a second read of the same
+ * field, or of `{ ...response }`'s copy (same instance, by reference), is
+ * then free.
  */
-const RESPONSE_REQUEST_PLACEHOLDER = Object.freeze({});
+export class RequestInfo {
+  private readonly _url: string | URL | UrlObject;
+  private readonly _method: string;
+  // `undefined` when this request never reached a response at all (e.g. a
+  // network/timeout error) - `res` then stays `undefined`, matching axios.
+  private readonly _responseUrlSource: string | URL | UrlObject | undefined;
+  private _parsed?: ParsedRequestUrl;
+  private _res?: { responseUrl: string };
+
+  constructor(
+    url: string | URL | UrlObject,
+    method: string,
+    responseUrlSource?: string | URL | UrlObject,
+  ) {
+    this._url = url;
+    this._method = method;
+    this._responseUrlSource = responseUrlSource;
+  }
+
+  private parse(): ParsedRequestUrl {
+    if (this._parsed) return this._parsed;
+    let protocol: string | undefined;
+    let host: string | undefined;
+    let path: string | undefined;
+    const url = this._url;
+    if (url instanceof URL) {
+      protocol = url.protocol;
+      host = url.hostname;
+      path = `${url.pathname}${url.search}`;
+    } else if (typeof url === 'string') {
+      try {
+        const parsed = new URL(url);
+        protocol = parsed.protocol;
+        host = parsed.hostname;
+        path = `${parsed.pathname}${parsed.search}`;
+      } catch {
+        // Leave path/host/protocol undefined - same as axios itself would
+        // give for a request that never got far enough to resolve one.
+      }
+    } else if (url && typeof url === 'object') {
+      protocol = (url as UrlObject).protocol ?? undefined;
+      host = (url as UrlObject).hostname ?? undefined;
+      path = `${(url as UrlObject).pathname ?? ''}${(url as UrlObject).search ?? ''}`;
+    }
+    return (this._parsed = { protocol, host, path });
+  }
+
+  get method(): string {
+    return this._method;
+  }
+
+  get protocol(): string | undefined {
+    return this.parse().protocol;
+  }
+
+  get host(): string | undefined {
+    return this.parse().host;
+  }
+
+  get path(): string | undefined {
+    return this.parse().path;
+  }
+
+  get res(): { responseUrl: string } | undefined {
+    if (this._responseUrlSource === undefined) return undefined;
+    return (this._res ??= {
+      responseUrl: urlToString(this._responseUrlSource),
+    });
+  }
+}
 
 /**
  * `AxiosLikeResponse` with `config` built lazily, from a `config` getter on
@@ -30,7 +118,7 @@ class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
   // `config` is a plain own property, as in axios, so it survives
   // `{ ...response }`, `JSON.stringify` and `structuredClone`.
   public config: InternalAxiosLikeRequestConfig;
-  public request: any = RESPONSE_REQUEST_PLACEHOLDER;
+  public request: any;
   public data: T;
   public status: number;
   public statusText: string;
@@ -63,12 +151,14 @@ class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
     statusText: string,
     headers: any,
     configRequest: HttpInterceptorRequest,
+    requestInfo: RequestInfo | Record<string, any>,
   ) {
     this.data = data;
     this.status = status;
     this.statusText = statusText;
     this.headers = headers;
     this.config = buildLazyAxiosConfig(configRequest);
+    this.request = requestInfo;
   }
 }
 
@@ -150,12 +240,17 @@ export const STATUS_TEXT_MAP: Record<number, string> = {
 export async function toAxiosLikeResponse(
   request: HttpInterceptorRequest,
   undiciResponse: Dispatcher.ResponseData,
-  // Set only once a redirect was actually followed (see `HttpService.executeRequest`).
-  // Mirrors axios' `response.request.res.responseUrl`, at no cost on a
-  // request that never redirects (the default, shared `request` placeholder
-  // is kept in that case).
-  responseUrl?: string,
+  // Built by `HttpService.executeRequest` from the hop that was actually
+  // dispatched (a `RequestInfo`), whether or not a redirect was followed,
+  // matching axios. Callers with no such hop tracking of their own (e.g. the
+  // standalone `AxiosResponseAdapterInterceptor`) can omit it; a reasonable
+  // one is then built from `request` itself.
+  requestInfo?: RequestInfo | Record<string, any>,
 ): Promise<AxiosLikeResponse> {
+  requestInfo ??= new RequestInfo(
+    request.url,
+    String((request.options as any)?.method || 'GET'),
+  );
   // Parse the body based on content type
   const contentType = (undiciResponse.headers['content-type'] as string) || '';
   let parsedData: any;
@@ -222,13 +317,24 @@ export async function toAxiosLikeResponse(
       parsedData = '';
     }
   } catch (error) {
-    // Size-limit errors, and failures after the body was read (for example
-    // corrupt gzip/br/deflate data), reject like axios does: the body can't be
-    // read again, so falling back would silently return empty data.
-    if (
-      (error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED' ||
-      (undiciResponse.body as any)?.bodyUsed
-    ) {
+    // `maxContentLength` exceeded: a well-formed AxiosError (`name` stays
+    // `'AxiosError'`, not the plain internal `Error`'s own `'Error'`), not
+    // the plain, internal `Error` `assertMaxContentLength` throws to keep
+    // the hot, no-limit path free of any AxiosError construction cost.
+    if ((error as any)?.code === 'ERR_BAD_RESPONSE') {
+      const axiosError = new AxiosError(
+        (error as Error).message,
+        AxiosError.ERR_BAD_RESPONSE,
+        undefined,
+        requestInfo,
+      );
+      axiosError._setLazyConfig(request);
+      throw axiosError;
+    }
+    // Failures after the body was read (for example corrupt gzip/br/deflate
+    // data), reject like axios does: the body can't be read again, so
+    // falling back would silently return empty data.
+    if ((undiciResponse.body as any)?.bodyUsed) {
       throw error;
     }
 
@@ -256,21 +362,24 @@ export async function toAxiosLikeResponse(
       'Unknown',
     undiciResponse.headers as Record<string, string | string[]>,
     request,
+    requestInfo,
   );
-  if (responseUrl !== undefined) {
-    axiosLikeResponse.request = { res: { responseUrl } };
-  }
 
-  // Axios throws errors for 4xx and 5xx status codes by default
-  // Unless validateStatus says otherwise
-  // Note: Axios also treats 3xx codes as errors by default
-  const validateStatus =
-    (request.options as any)?.validateStatus ||
-    ((status: number) => {
-      // Default axios behavior: only 2xx are valid
-      return status >= 200 && status < 300;
-    });
-  const isValidStatus = validateStatus(undiciResponse.statusCode);
+  // Axios throws errors for 4xx and 5xx status codes by default, unless
+  // `validateStatus` says otherwise. `validateStatus: null` (or `undefined`
+  // set as an explicit own key - see `normalizeAxiosRequest`) means every
+  // status resolves, as in axios' `settle()` (`!validateStatus ||
+  // validateStatus(status)`): only a *function* ever narrows this.
+  const configuredValidateStatus = (request.options as any)?.validateStatus;
+  const isValidStatus =
+    typeof configuredValidateStatus === 'function'
+      ? configuredValidateStatus(undiciResponse.statusCode)
+      : Object.prototype.hasOwnProperty.call(
+            request.options as any,
+            'validateStatus',
+          )
+        ? true
+        : undiciResponse.statusCode >= 200 && undiciResponse.statusCode < 300;
 
   if (!isValidStatus) {
     throw createStatusError(axiosLikeResponse, request);

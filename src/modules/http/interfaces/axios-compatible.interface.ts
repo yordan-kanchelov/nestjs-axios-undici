@@ -59,12 +59,33 @@ export interface AxiosLikeRequestConfig<D = any> {
   url?: string;
   method?: string;
   baseURL?: string;
+  /**
+   * axios >=1.8: `false` makes an absolute request `url` be treated as
+   * relative to `baseURL` anyway (naively concatenated, exactly like a
+   * relative one - see `combineURLs`), instead of replacing it outright.
+   * Default (`undefined`/`true`): an absolute `url` ignores `baseURL`.
+   */
+  allowAbsoluteUrls?: boolean;
   headers?: Record<string, any> | AxiosHeaders;
   params?: any;
   paramsSerializer?: AxiosParamsSerializer;
   /** Request body, serialised like axios (object => JSON, URLSearchParams, FormData, Buffer, string) */
   data?: D;
   timeout?: number;
+  /** Message used instead of the default `timeout of ${timeout}ms exceeded`, as in axios. */
+  timeoutErrorMessage?: string;
+  /**
+   * axios' escape hatch for behaviour that will change in a future major.
+   * Only `clarifyTimeoutError` (code `ETIMEDOUT` instead of `ECONNABORTED`
+   * on a timeout) is honoured; `silentJSONParsing`/`forcedJSONParsing` are
+   * accepted for type compatibility but describe the default parsing this
+   * library already does unconditionally.
+   */
+  transitional?: {
+    clarifyTimeoutError?: boolean;
+    silentJSONParsing?: boolean;
+    forcedJSONParsing?: boolean;
+  };
   responseType?: AxiosResponseType;
   maxRedirects?: number;
   /** Same spelling undici's own redirect interceptor uses; an alias for `maxRedirects` read when `maxRedirects` itself is unset. */
