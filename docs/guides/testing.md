@@ -129,6 +129,18 @@ describe('LoggingInterceptor', () => {
 
 To test an interceptor together with the real `HttpService`, register it on `HttpModule` with a `MockAgent` dispatcher, as shown above.
 
+## Upstream conformance suites
+
+This package's own test suite is one thing; whether it actually behaves like `@nestjs/axios` and axios is another. `tests/upstream/` runs each project's *own, unmodified* test files against this package: `@nestjs/axios`'s `http.service.spec.ts`/`http.module.spec.ts` against `HttpModule`/`HttpService`, and axios' `tests/unit/adapters/http.test.js` against both `axiosRef` (as the axios instance) and a small adapter backed by this package's transport code. Each upstream project is cloned at a pinned tag at run time (never vendored), and a checked-in `expected-failures*.json` per suite tracks the known, already-understood gaps - the run fails on any *new* failure, and on any expected failure that starts passing (a fix landed; remove it from the list).
+
+```bash
+npm run test:upstream          # both suites
+npm run test:upstream:nestjs   # just @nestjs/axios
+npm run test:upstream:axios    # just axios (both strategies)
+```
+
+See `tests/upstream/README.md` for the full breakdown, the expected-failures format, and the licensing note for the two cloned projects.
+
 ## Overriding the module's own providers
 
 `HttpModule.register()`/`.registerAsync()` register `HttpService` from two injection tokens, both exported so a test module can override either directly with Nest's `overrideProvider()` instead of building a whole `HttpModule.register({...})`:

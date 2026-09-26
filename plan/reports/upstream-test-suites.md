@@ -1,8 +1,13 @@
 # Exploration report: running upstream test suites as a conformance suite
 
 Explorer run on 2026-09-25 against `origin/claude/v1.0.0`. Prototypes referenced below
-live in `plan/prototypes/upstream-tests/`; nothing under `src/` was touched. Upstream
-repos are cloned at runtime by the prototype scripts, not committed.
+have since been promoted into maintained CI jobs at `tests/upstream/` (`claude/upstream-
+conformance`); `plan/prototypes/upstream-tests/` is deleted. Nothing under `src/` was
+touched, then or since. Upstream repos are cloned at runtime by the suite's `run.mjs`
+scripts, not committed. See `tests/upstream/README.md` for the maintained suites and
+their current pass/expected-failure counts (higher than the numbers below: PRs #23 and
+#25 landed `axiosRef` as a real axios instance and matched axios' errors after this
+report was written).
 
 Installed versions in this repo (`node_modules/*/package.json`): `@nestjs/axios` 12.0.1,
 `axios` 1.20.0. Both projects are cloned at the matching tag, plus `nestjs/axios@main`
@@ -43,7 +48,7 @@ mechanical substitutions (not axios-internal spying, and no rewritten assertions
 → this package's constants (`HTTP_MODULE_ID`/`HTTP_MODULE_OPTIONS` are literally the same
 string tokens in both packages; `AXIOS_INSTANCE_TOKEN` has no real match - see below).
 
-### Prototype: `plan/prototypes/upstream-tests/nestjs-axios/`
+### Suite: `tests/upstream/nestjs-axios/`
 
 `run.mjs` clones `nestjs/axios` at a pinned tag, copies the two behavioural spec files
 verbatim into a scratch dir, and runs them with **this repo's own Jest + ts-jest**
@@ -149,7 +154,7 @@ unmodified spec file with `-t` filtering (or unfiltered) against it.
   (`buildRedirectHop`/`isRedirectResponse`), and error adaptation (`toAxiosError`) -
   reused directly from `src/modules/http/adapters/*` and `src/modules/http/errors/*`
   (via the built `lib/`), not reimplemented. See
-  `plan/prototypes/upstream-tests/axios/undici-adapter.cjs`'s header comment for the
+  `tests/upstream/axios/adapters/undici-adapter.cjs`'s header comment for the
   exact axios adapter contract it has to satisfy (config already transform-requested;
   it must build the full URL itself; return data still untransformed).
 - **What it bypasses:** axiosRef's interceptor chain and config-normalization
@@ -173,7 +178,7 @@ strategy (b) as a standing, narrower transport/response/error conformance check
 alongside it: it is cheap to run (no DI, no interceptor setup) and, per the concrete
 finding below, still catches real bugs strategy (a) wouldn't reach any faster.
 
-### Prototype: `plan/prototypes/upstream-tests/axios/`
+### Suite: `tests/upstream/axios/`
 
 `run.mjs` clones `axios` at a pinned tag, `npm install`s its own dev dependencies (no
 `--ignore-scripts`-driven browser downloads are triggered, because the generated vitest
@@ -272,7 +277,7 @@ remaining, currently-unrun tests in the file.
 ## Proposed PR plan
 
 1. **`ci(conformance): @nestjs/axios spec suite (strategy a).`** Add
-   `plan/prototypes/upstream-tests/nestjs-axios/run.mjs` (promoted out of `plan/`) as a
+   `tests/upstream/nestjs-axios/run.mjs` (promoted out of `plan/`) as a
    CI job: clone at a pinned tag, run, diff against a checked-in expected-failures list
    (see below) so the job only fails on a *new* regression, not on the known,
    already-tracked gaps §1 lists.
