@@ -318,7 +318,20 @@ HttpModule.register({ cookieJar: new CookieJar() });
 
 **Breaking changes**:
 
-- **Per-service default dispatcher.** Every `HttpService` now owns its own undici `Agent`, built from this package's own undici copy, and uses it whenever no per-request `dispatcher`/`socketPath` and no module `dispatcher`/module-built dispatcher applies. It used to fall back to undici's *global* dispatcher (`undici.getGlobalDispatcher()`) instead: `undici.setGlobalDispatcher()` elsewhere in the process **no longer affects requests made through `HttpService`** at all. If you were relying on `setGlobalDispatcher()` (from `undici`) to redirect this library's traffic, configure the dispatcher through module options, a per-request `dispatcher`, or `HttpService#setDispatcher()` instead. This also fixes the "two copies of undici" case: on a Node.js version that bundles its own undici, a plain request used to quietly run on Node's bundled `Agent` instead of this package's own.
+- **Per-service default dispatcher.** Every `HttpService` now owns its own undici `Agent`, built from this package's own undici copy, and uses it whenever no per-request `dispatcher`/`socketPath` and no module `dispatcher`/module-built dispatcher applies. It used to fall back to undici's *global* dispatcher (`undici.getGlobalDispatcher()`) instead: `undici.setGlobalDispatcher()` elsewhere in the process **no longer affects requests made through `HttpService`** at all. If you were relying on `setGlobalDispatcher()` (from `undici`) to redirect this library's traffic, configure the dispatcher through module options, a per-request `dispatcher`, or `HttpService#setDispatcher()` instead.
+
+  **Tests using undici's `MockAgent`:** the common pattern `setGlobalDispatcher(mockAgent)` no longer intercepts requests made through `HttpService`. The requests go to the real network instead, silently, and not even `mockAgent.disableNetConnect()` fires. Pass the mock to the module instead:
+
+  ```ts
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  // either
+  HttpModule.register({ dispatcher: mockAgent });
+  // or, on an existing service
+  httpService.setDispatcher(mockAgent);
+  ```
+
+  A `dispatcher` you pass in is never closed by the module, so the test still owns `mockAgent.close()`. See also [Testing](/docs/guides/testing.md). This also fixes the "two copies of undici" case: on a Node.js version that bundles its own undici, a plain request used to quietly run on Node's bundled `Agent` instead of this package's own.
 - **`OnModuleDestroy`.** `HttpService` now implements it: `app.close()` gracefully closes every dispatcher this library created for that service (the per-service default `Agent`, the module-built dispatcher, and any cached `socketPath` `Agent`s). A `dispatcher` you supplied yourself is never closed. If your tests create a module and never call `module.close()`, they still won't hang (nothing changed there), but a real app that used to see a lingering open connection or socket handle after shutdown no longer will - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle).
 - **The static `HttpModule` import (no `register()` call) no longer shares one options object across every app that imports it.** Each app's `HttpService` now gets its own; previously, `setGlobalDispatcher()`/`setDispatcher()` (or anything else mutating the shared options object) in one app leaked into every other app that imported the bare `HttpModule`.
 - **`setGlobalDispatcher(dispatcher)` is renamed to `setDispatcher(dispatcher)`, with no alias.** It never touched undici's own global dispatcher, only this service, so the new name is accurate; the old name is gone, not deprecated. If the dispatcher it replaces is one this service created itself, that dispatcher is now closed (see above); a dispatcher you supplied is never closed.
