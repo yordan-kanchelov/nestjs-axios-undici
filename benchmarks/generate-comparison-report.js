@@ -110,9 +110,13 @@ function buildHeadline(runs) {
   const versions = runs.map((r) => r.version).join(', ');
   const throughput = runs.flatMap((r) => PAIRS.filter((p) => !p.axios.endsWith('_interceptor')).map((p) => throughputRatio(r, p.undici, p.axios)));
   const p95 = runs.flatMap((r) => PAIRS.filter((p) => !p.axios.endsWith('_interceptor')).map((p) => lowerPercent(r, p.undici, p.axios, 'duration_p95')));
+  // Results that didn't come from the full Docker + k6 run say so in the
+  // headline itself, until the next full run replaces them.
+  const local = runs.some((r) => /^Local run/i.test(r.data.test_info?.environment ?? ''));
   return (
     `Same NestJS app, only the import changed: **nestjs-axios-undici served ${range(throughput)}x the requests/s of ` +
-    `@nestjs/axios, with ${range(p95, 0)}% lower p95 latency** (Express and Fastify, Node.js ${versions}).`
+    `@nestjs/axios, with ${range(p95, 0)}% lower p95 latency** (Express and Fastify, Node.js ${versions}).` +
+    (local ? ' Preliminary: from a short local run; the full Docker + k6 benchmark replaces these numbers on the next release.' : '')
   );
 }
 

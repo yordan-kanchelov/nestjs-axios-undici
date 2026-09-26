@@ -34,6 +34,18 @@ export function createBenchmark({ nodeVersion, portBase }) {
   const tests = {};
   const scenarios = {};
 
+  // Run the services in a shuffled order each time, so neither client is
+  // always measured first (or last) on a warming or throttling machine.
+  const order = SERVICES.slice();
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const slot = {};
+  order.forEach((service, i) => {
+    slot[service.key] = SERVICES[i].startTime;
+  });
+
   for (const service of SERVICES) {
     const m = {
       duration: new Trend(`${service.key}_duration`, true),
@@ -70,7 +82,7 @@ export function createBenchmark({ nodeVersion, portBase }) {
       startVUs: 0,
       stages: STAGES,
       exec: service.exec,
-      startTime: service.startTime,
+      startTime: slot[service.key],
     };
   }
 

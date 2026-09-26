@@ -2,7 +2,7 @@
 
 > Generated from [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.
 
-Same NestJS app, only the import changed: **nestjs-axios-undici served 4.0-4.2x the requests/s of @nestjs/axios, with 77% lower p95 latency** (Express and Fastify, Node.js 24).
+Same NestJS app, only the import changed: **nestjs-axios-undici served 4.0-4.2x the requests/s of @nestjs/axios, with 77% lower p95 latency** (Express and Fastify, Node.js 24). Preliminary: from a short local run; the full Docker + k6 benchmark replaces these numbers on the next release.
 
 ## Throughput and latency ratios
 

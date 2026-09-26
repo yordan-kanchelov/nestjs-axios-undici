@@ -196,21 +196,21 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
     - merge the promise `.then()` calls
     - avoid `AxiosHeaders` Proxy access on the hot path
 - [x] ★ **Abort the request on unsubscribe.** Done in PR #15. This is the same item as in phase 2. It costs 1–3 µs per request.
-- [~] ★ **bench: a fair app set.** PR open (`claude/bench-fair`).
+- [~] ★ **bench: a fair app set.** PR #29 open (`claude/bench-fair`).
   - Configurations: `@nestjs/axios` and nestjs-axios-undici in identical apps, each with and without the same axiosRef interceptor (no stdout logging), plus raw undici as the floor.
   - The mock backend runs with `logger: false`.
   - Drop `nestjs-fastify-undici`, the upstream `nestjs-undici` dependency, and the 3 separate compose files.
   - Decided: both Express and Fastify.
   - Update the k6 script and the report generator to match.
-- [~] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. PR open (`claude/bench-fair`). Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
+- [~] ★ **A light end-to-end A/B check without Docker or k6** that runs on PRs and releases and publishes the throughput ratio. PR #29 open (`claude/bench-fair`). Prototype: `plan/prototypes/perf/e2e/`, not run yet; it needs `@nestjs/platform-fastify` and `autocannon`.
 - [ ] Later: cheaper request-adapter paths (saves 2–8 µs), a streaming `maxContentLength` check, instruction-count benchmarks, and the full k6 run on the version PR before publish.
 
 ### Phase 5: docs (see `plan/reports/docs-critic.md`)
 
-- [~] bench: rewrite the report generator. The README and docs headline are generated from the same numbers, as ratios, with no caveats. PR open (`claude/bench-fair`).
+- [~] bench: rewrite the report generator. The README and docs headline are generated from the same numbers, as ratios, with no caveats. PR #29 open (`claude/bench-fair`).
 - [ ] docs: present the package on its own terms. Delete `docs/features.md`, trim the migration guide, keep the fork mention only in the README Credits.
 - [ ] docs: fix inaccurate or stale statements, keep the dispatcher snippet in one place, and use consistent terminology.
-- [~] bench: turn `benchmarks/README.md` into a short how-to-run page. PR open (`claude/bench-fair`).
+- [~] bench: turn `benchmarks/README.md` into a short how-to-run page. PR #29 open (`claude/bench-fair`).
 
 ### Phase 6: 1.0.0 release
 
@@ -307,3 +307,7 @@ Measured: library overhead is small. Per-request client CPU is 41 µs, vs 35 µs
   - Known follow-up: api-extractor bundles TS 5.9 while the repo uses TS 6.0. It currently only warns; upgrade api-extractor when a TS 6 build ships.
 - 2026-09-26: PR #27 merged: public API trimmed from 57 to 39 exports (the axiosRef dispatch bridge and its context types are now internal), api-extractor report plus `api:check` in CI, build-time version constant, typed internal `ResolvedModuleConfig`, `reflect-metadata` peer dropped. CI all green.
 - 2026-09-26: PR open (`claude/bench-fair`, Phase 4/5 bench items): one shared `benchmarks/apps/nestjs-app` (`CLIENT=axios|undici`, `PLATFORM=express|fastify`, `INTERCEPTOR=0|1`) replaces the 7-app zoo; `apps/undici-raw` is the floor; the upstream `nestjs-undici` dependency and app are gone; mock backend runs with `logger: false`. Compose files, `k6-scripts/lib/benchmark.js` (new `SERVICES`/comparison keys), `test-node*.js` and `simple-test.sh` updated to match - the 3 compose files were updated in place, not consolidated into one `NODE_VERSION`-templated file (left for later, see performance.md). `generate-comparison-report.js` rewritten: new `CONFIGS`, a single `buildHeadline()` shared by a new `--headline <file>` flag (writes `<!-- bench-headline -->` markers) and `--docs`; no more `fastify_undici`/`INTERCEPTOR_BASES`/framework-impact code or the two-different-libraries "Interceptor Overhead" table; wording is ratio-only (`Nx throughput`, `NN% lower latency`, never "faster"/"overhead"/"fork"/"upstream" - `grep -niE "fork|upstream|faster|overhead|this repository" docs/benchmarks.md benchmarks/README.md` is clean). Added `benchmarks/e2e/` (`upstream.js`, `load.js`, `run.js`): a no-Docker/no-k6 A/B check (`npm run bench:ab`, ~20-40s locally) alternating axios/undici rounds of the shared Express app and reporting the throughput and p95-latency ratios; wired into `.github/workflows/benchmarks.yml` as an informational (`continue-on-error: true`) `ab_check` job on pull requests and on releases (`workflow_call`), timeout 5 minutes. `benchmarks/README.md` cut to ~75 lines (how-to-run only). Docker has no daemon in this sandbox, so the full Docker+k6 suite could not be run here; seeded `benchmarks/results/node24-performance-summary.json` and regenerated `docs/benchmarks.md`/the README headline from a short local run of the new apps through `benchmarks/e2e` instead (Node.js 24 only, said plainly in both places) - the next `full`/`publish` run of `benchmarks.yml` replaces these with real Docker+k6 numbers across Node 22/24/26. `benchmarks/npm run typecheck` and `npm run bench:ab` both green on Node 24; root `format:check`/`lint` unaffected (benchmarks/ is prettier-ignored, lint only covers `src`/`tests`). Left undone: single-template compose file consolidation (not required by the task, deferred); Fastify interceptor rows and a native-interceptor row (marked optional in docs-critic.md, skipped for time).
+- 2026-09-26: PR #29 review:
+  - The setup is fair: byte-identical app code, the same logging-free interceptor, keep-alive on both sides.
+  - The reviewer's own run reproduced about 3.9x.
+  - Fixes: the README's stale hand-typed "About 2x" lead-in is replaced by a number-free one; the generated headline now labels local-run numbers as preliminary until the full Docker + k6 run replaces them; the k6 harness shuffles the service order each run, instead of always running axios first.
