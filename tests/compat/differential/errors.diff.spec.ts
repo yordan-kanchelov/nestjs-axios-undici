@@ -327,6 +327,21 @@ differential('Differential: errors, timeouts, cancellation', routes, [
         },
       }),
   },
+  {
+    // plan.md phase 2 "fix: wrap a throwing beforeRedirect like axios" -
+    // checked against real axios 1.20's "should support beforeRedirect"
+    // test: a throwing `beforeRedirect` gives axios'/follow-redirects'
+    // "Redirected request failed: <message>" wrapping, not the raw,
+    // unwrapped error.
+    name: 'redirect: a throwing beforeRedirect wraps the error like axios',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/redirect?code=302&to=/echo`, {
+        beforeRedirect: () => {
+          throw new Error('Provided path is not allowed');
+        },
+      }),
+    normalize: errShape,
+  },
   // ---- size limits per request
   {
     name: 'maxContentLength per request',
@@ -411,6 +426,50 @@ differential('Differential: errors, timeouts, cancellation', routes, [
       code: o.error?.code,
       message: o.error?.message,
       isAxiosError: axios.isAxiosError(o.error),
+    }),
+  },
+  {
+    // plan.md phase 2 "fix: parse a numeric-string timeout like axios":
+    // `timeout: '250'` is enforced exactly like `timeout: 250` - checked
+    // against real axios' own `parseInt(config.timeout, 10)`
+    // (`lib/adapters/http.js`).
+    name: 'a numeric-string timeout is enforced like a numeric one',
+    run: (s, ctx) =>
+      s.get(`${ctx.base}/slow?ms=2000`, { timeout: '250' as any }),
+    normalize: (o: any) => ({
+      code: o.error?.code,
+      message: o.error?.message,
+      isAxiosError: axios.isAxiosError(o.error),
+    }),
+  },
+  {
+    // plan.md phase 2 "fix: reject a malformed URL like axios instead of
+    // silently dispatching it" - checked against real axios 1.20's own
+    // "rejects malformed HTTP URLs before Node URL normalization and
+    // preserves config" test.
+    name: 'a malformed http(s) URL (embedded null byte) rejects with ERR_INVALID_URL',
+    run: (s, ctx) =>
+      s.get(`\u0000https:${ctx.base.replace(/^https?:\/\//, '')}/echo`, {
+        headers: { 'X-Test': 'yes' },
+      }),
+    normalize: (o: any) => ({
+      code: o.error?.code,
+      message: o.error?.message,
+      isAxiosError: axios.isAxiosError(o.error),
+      configUrl: o.error?.config?.url,
+    }),
+  },
+  {
+    name: 'a malformed http(s) URL (embedded newline) rejects with ERR_INVALID_URL',
+    run: (s, ctx) =>
+      s.get(`h\nttp:${ctx.base.replace(/^https?:\/\//, '')}/echo`, {
+        headers: { 'X-Test': 'yes' },
+      }),
+    normalize: (o: any) => ({
+      code: o.error?.code,
+      message: o.error?.message,
+      isAxiosError: axios.isAxiosError(o.error),
+      configUrl: o.error?.config?.url,
     }),
   },
   {

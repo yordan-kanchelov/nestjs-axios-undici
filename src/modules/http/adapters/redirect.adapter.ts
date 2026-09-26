@@ -244,11 +244,19 @@ export function buildRedirectHop(input: RedirectHopInput): RedirectHopResult {
       method,
       headers,
     };
-    input.beforeRedirect(
-      brOptions,
-      { headers: input.responseHeaders, statusCode: input.statusCode },
-      { url: input.currentUrl, method: input.method, headers: input.headers },
-    );
+    try {
+      input.beforeRedirect(
+        brOptions,
+        { headers: input.responseHeaders, statusCode: input.statusCode },
+        {
+          url: input.currentUrl,
+          method: input.method,
+          headers: input.headers,
+        },
+      );
+    } catch (cause) {
+      throw createRedirectionFailureError(cause);
+    }
     method = brOptions.method ?? method;
     headers = brOptions.headers ?? headers;
     const port = brOptions.port ? `:${brOptions.port}` : '';
@@ -271,6 +279,47 @@ export function createTooManyRedirectsError(): Error & { code: string } {
     code: string;
   };
   error.code = 'ERR_FR_TOO_MANY_REDIRECTS';
+  return error;
+}
+
+/**
+ * follow-redirects' own wrapping (`createErrorType`, `index.js`) of whatever
+ * a throwing `beforeRedirect` raises: `code: 'ERR_FR_REDIRECTION_FAILURE'`,
+ * message `"Redirected request failed: " + cause.message` (a plain template,
+ * matching follow-redirects' own un-guarded `this.cause.message` - a
+ * `cause` with no `.message` becomes the literal "...: undefined", exactly
+ * as it does there), and a plain (enumerable, `Object.assign`-style) `.cause`
+ * - not the non-enumerable `cause` `AxiosError.from`/this library's own
+ * `AxiosError.from` use. `HttpService.executeRequest`'s generic error path
+ * (`toAxiosError`) then wraps *this* error the normal way: the final
+ * `AxiosError` gets this error's `code`/`message` and its own non-enumerable
+ * `cause` pointing at it - a two-level `cause` chain, exactly like real
+ * axios (`AxiosError.from(err, null, config, req)` in `lib/adapters/http.js`
+ * wrapping the `RedirectionError` `follow-redirects` already emitted).
+ * Left unchanged (not re-wrapped) when `cause` is already one of these, like
+ * follow-redirects' own `cause instanceof RedirectionError ? cause : ...`.
+ */
+export function createRedirectionFailureError(
+  cause: unknown,
+): Error & { code: string; cause: unknown } {
+  if (
+    cause instanceof Error &&
+    (cause as Error & { code?: string }).code === 'ERR_FR_REDIRECTION_FAILURE'
+  ) {
+    return cause as Error & { code: string; cause: unknown };
+  }
+  const causeMessage = (cause as { message?: unknown } | undefined)?.message;
+  const error = new Error(
+    `Redirected request failed: ${causeMessage}`,
+  ) as Error & { code: string; cause: unknown };
+  error.code = 'ERR_FR_REDIRECTION_FAILURE';
+  error.cause = cause;
+  // follow-redirects' `createErrorType` sets a custom, non-enumerable
+  // `.name` on the error class' prototype (`"Error [" + code + "]"`) -
+  // `AxiosError.from`'s `axiosError.name = error.name` (both real axios'
+  // and this library's own) copies it onto the *final* error too, so this
+  // needs to match for `error.name` parity all the way up the chain.
+  error.name = `Error [${error.code}]`;
   return error;
 }
 

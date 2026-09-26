@@ -493,6 +493,42 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
+    /**
+     * plan.md phase 2 (investigate: axios' "should able to cancel multiple
+     * requests with CancelToken" upstream test) - root-caused: that upstream
+     * test fails deterministically, in every environment including real CI
+     * (confirmed against a GitHub Actions job log), because it calls
+     * `axios.CancelToken.source()` where `axios` is *this library's own*
+     * `axiosRef` (the upstream harness's strategy-(a) shim) - and
+     * `axiosRef.CancelToken` (the legacy top-level class) was deliberately
+     * dropped in the API trim (axios itself deprecates it in favour of
+     * `AbortSignal`; the *shape*-level `config.cancelToken` support this
+     * test actually exercises was never touched). Not a cancellation bug -
+     * this test pins the real scenario (5 concurrent requests sharing one
+     * `cancelToken`, cancelled synchronously right after they start) using
+     * the real `axios` package's `CancelToken` (this file's own top-level
+     * import) as the token source, which both services accept.
+     */
+    it('cancels multiple in-flight requests sharing one cancelToken', async () => {
+      const [a, u] = await both(async s => {
+        const source = axios.CancelToken.source();
+        const canceled: number[] = [];
+        const requests = [1, 2, 3, 4, 5].map(async id => {
+          try {
+            await first(s.get(`${base}/slow`, { cancelToken: source.token }));
+          } catch (error: any) {
+            if (!axios.isCancel(error)) throw error;
+            canceled.push(id);
+          }
+        });
+        source.cancel('Aborted by user');
+        await Promise.all(requests);
+        return canceled.sort();
+      });
+      expect(u).toEqual([1, 2, 3, 4, 5]);
+      expect(u).toEqual(a);
+    });
+
     it('timeout rejects with ECONNABORTED and the axios message', async () => {
       const error = await errorOf(
         firstValueFrom(undiciService.get(`${base}/slow`, { timeout: 200 })),
