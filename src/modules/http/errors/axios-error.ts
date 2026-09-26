@@ -3,7 +3,7 @@ import type {
   AxiosLikeResponse,
   InternalAxiosLikeRequestConfig,
 } from '../interfaces/axios-compatible.interface';
-import { buildLazyAxiosConfig } from '../adapters/axios-request.adapter';
+import { attachLazyAxiosConfig } from '../adapters/axios-request.adapter';
 import type { RequestInfo } from '../adapters/axios-response.adapter';
 
 /**
@@ -63,11 +63,12 @@ export class AxiosError<T = any> extends Error {
   }
 
   /**
-   * Internal: sets `config` from the request that produced this error (see
-   * `buildLazyAxiosConfig`).
+   * Internal: installs a lazy `config` accessor from the request that
+   * produced this error (see `attachLazyAxiosConfig`) - built only if
+   * `error.config` is actually read.
    */
   _setLazyConfig(request: HttpInterceptorRequest): void {
-    this.config = buildLazyAxiosConfig(request);
+    attachLazyAxiosConfig(this, request);
   }
 
   /**

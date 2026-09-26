@@ -15,7 +15,7 @@ import {
   readText,
   STRICT_JSON_RAW_TEXT,
 } from './axios-response-type.adapter';
-import { buildLazyAxiosConfig } from './axios-request.adapter';
+import { attachLazyAxiosConfig } from './axios-request.adapter';
 import type { AbortableSignal } from './axios-progress.adapter';
 import { meterDownloadBody, resolveMaxRates } from './axios-progress.adapter';
 import { urlToString } from './redirect.adapter';
@@ -150,15 +150,15 @@ export class RequestInfo {
 }
 
 /**
- * `AxiosLikeResponse` with `config` built lazily, from a `config` getter on
- * the prototype (defined once) rather than a `Object.defineProperty` call
- * per instance - the getter itself costs nothing until `.config` is read,
- * unlike installing a per-instance accessor on every response.
+ * `AxiosLikeResponse` with `config` built on first read, see
+ * `attachLazyAxiosConfig`.
  */
 class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
-  // `config` is a plain own property, as in axios, so it survives
-  // `{ ...response }`, `JSON.stringify` and `structuredClone`.
-  public config: InternalAxiosLikeRequestConfig;
+  // `config` is installed as an own accessor by `attachLazyAxiosConfig`
+  // (below) - built only if actually read, and still an own, enumerable
+  // property once it is, so it survives `{ ...response }`, `JSON.stringify`
+  // and `structuredClone` exactly like axios' own plain `config` field.
+  public config!: InternalAxiosLikeRequestConfig;
   public request: any;
   public data: T;
   public status: number;
@@ -198,7 +198,7 @@ class AxiosLikeResponseImpl<T = any> implements AxiosLikeResponse<T> {
     this.status = status;
     this.statusText = statusText;
     this.headers = headers;
-    this.config = buildLazyAxiosConfig(configRequest);
+    attachLazyAxiosConfig(this, configRequest);
     this.request = requestInfo;
   }
 }
