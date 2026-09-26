@@ -15,7 +15,7 @@ The `@nestjs/axios` `HttpModule` and `HttpService`, running on [undici](https://
 `@nestjs/axios` sends every request through axios and Node.js's `http` module. This package sends them through undici, the HTTP client behind Node.js's own `fetch()`, which does less work per request. The API your services call stays the same.
 
 <!-- bench-headline:start -->
-In the same NestJS app, with only the import changed, **nestjs-axios-undici served 4.0-4.2x the requests per second of @nestjs/axios, with 77% lower p95 latency**, on Express and Fastify with Node.js 24. These numbers are preliminary, from a short local run. The full Docker and k6 benchmark replaces them on the next release.
+In the same NestJS app, with only the import changed, **nestjs-axios-undici served 2.0-2.5x the requests per second of @nestjs/axios, with 51-62% lower p95 latency**, on Express and Fastify with Node.js 22, 24, 26.
 <!-- bench-headline:end -->
 
 The [benchmarks page](https://yordan-kanchelov.github.io/nestjs-axios-undici/#/docs/benchmarks) has the full results, and CI reruns the full benchmark for every release.

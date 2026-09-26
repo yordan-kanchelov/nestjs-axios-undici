@@ -1,0 +1,128 @@
+{
+  "test_info": {
+    "node_version": "Node.js 26",
+    "timestamp": "2026-09-26T22:21:13.927Z",
+    "duration_seconds": 520,
+    "scenarios": [
+      "express_axios",
+      "express_undici",
+      "fastify_axios",
+      "fastify_undici",
+      "express_axios_interceptor",
+      "express_undici_interceptor",
+      "undici_raw"
+    ],
+    "max_vus": 100,
+    "environment": "GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner",
+    "library_ref": "nestjs-axios-undici@1.0.0 (8f104b3)"
+  },
+  "results": {
+    "express_axios": {
+      "requests": 123145,
+      "duration_avg": 36.40553327620312,
+      "duration_med": 32.351407,
+      "duration_p95": 64.77980859999998,
+      "duration_p99": 72.9604986,
+      "duration_min": 0.587658,
+      "duration_max": 168.323492,
+      "error_rate": 0,
+      "rps": 1759.2142857142858
+    },
+    "express_undici": {
+      "requests": 298178,
+      "duration_avg": 14.956830903490589,
+      "duration_med": 11.966244,
+      "duration_p95": 26.688366749999997,
+      "duration_p99": 31.980645509999974,
+      "duration_min": 0.273773,
+      "duration_max": 54.601485,
+      "error_rate": 0,
+      "rps": 4259.685714285714
+    },
+    "fastify_axios": {
+      "requests": 127142,
+      "duration_avg": 35.25975680979514,
+      "duration_med": 30.853277,
+      "duration_p95": 63.38787195,
+      "duration_p99": 72.44973462999998,
+      "duration_min": 0.547958,
+      "duration_max": 144.017493,
+      "error_rate": 0,
+      "rps": 1816.3142857142857
+    },
+    "fastify_undici": {
+      "requests": 322597,
+      "duration_avg": 13.812756074514033,
+      "duration_med": 11.153715,
+      "duration_p95": 24.036297200000003,
+      "duration_p99": 28.109269719999965,
+      "duration_min": 0.275095,
+      "duration_max": 51.681046,
+      "error_rate": 0,
+      "rps": 4608.528571428571
+    },
+    "express_axios_interceptor": {
+      "requests": 112341,
+      "duration_avg": 39.92188464885449,
+      "duration_med": 34.890571,
+      "duration_p95": 71.097284,
+      "duration_p99": 79.56964320000002,
+      "duration_min": 0.613427,
+      "duration_max": 160.049262,
+      "error_rate": 0,
+      "rps": 1604.8714285714286
+    },
+    "express_undici_interceptor": {
+      "requests": 204331,
+      "duration_avg": 21.889579837699888,
+      "duration_med": 17.630921,
+      "duration_p95": 38.0762075,
+      "duration_p99": 42.81251810000004,
+      "duration_min": 0.378552,
+      "duration_max": 83.879588,
+      "error_rate": 0,
+      "rps": 2919.0142857142855
+    },
+    "undici_raw": {
+      "requests": 373498,
+      "duration_avg": 11.909081694555304,
+      "duration_med": 9.5849035,
+      "duration_p95": 21.038080849999997,
+      "duration_p99": 25.064705109999995,
+      "duration_min": 0.223218,
+      "duration_max": 49.660087,
+      "error_rate": 0,
+      "rps": 5335.685714285714
+    }
+  },
+  "comparison": {
+    "express_undici_vs_express_axios": {
+      "throughput_improvement": "142.14%",
+      "avg_response_improvement": "58.92%",
+      "p95_response_improvement": "58.80%",
+      "p99_response_improvement": "56.17%"
+    },
+    "fastify_undici_vs_fastify_axios": {
+      "throughput_improvement": "153.73%",
+      "avg_response_improvement": "60.83%",
+      "p95_response_improvement": "62.08%",
+      "p99_response_improvement": "61.20%"
+    },
+    "express_undici_vs_undici_raw": {
+      "throughput_improvement": "-20.17%",
+      "avg_response_improvement": "-25.59%",
+      "p95_response_improvement": "-26.86%",
+      "p99_response_improvement": "-27.59%"
+    },
+    "interceptor_overhead": {
+      "express_axios": {
+        "throughput_impact": "-8.77%",
+        "avg_response_impact": "8.81%"
+      },
+      "express_undici": {
+        "throughput_impact": "-31.47%",
+        "avg_response_impact": "31.67%"
+      }
+    }
+  }
+}

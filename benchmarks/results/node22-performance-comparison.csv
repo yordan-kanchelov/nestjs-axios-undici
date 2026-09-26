@@ -1,0 +1,10 @@
+Metric,Express + @nestjs/axios,Express + nestjs-axios-undici,Fastify + @nestjs/axios,Fastify + nestjs-axios-undici,Express + @nestjs/axios + interceptor,Express + nestjs-axios-undici + interceptor,Raw undici (floor),Winner (No Interceptor),Winner (With Interceptor)
+Total Requests,80318,161270,88740,215147,72690,122613,247422,,
+Throughput (req/s),1147.40,2303.86,1267.71,3073.53,1038.43,1751.61,3534.60,Raw undici (floor),Express + nestjs-axios-undici + interceptor
+Avg Response Time (ms),55.87,27.76,50.56,20.77,61.76,36.56,18.03,Raw undici (floor),Express + nestjs-axios-undici + interceptor
+Median Response Time (ms),49.40,22.57,43.75,17.24,51.43,29.24,14.14,Raw undici (floor),Express + nestjs-axios-undici + interceptor
+P95 Response Time (ms),101.71,50.03,92.19,37.40,114.83,65.41,33.52,Raw undici (floor),Express + nestjs-axios-undici + interceptor
+P99 Response Time (ms),115.99,55.51,121.44,42.06,182.36,72.99,38.63,Raw undici (floor),Express + nestjs-axios-undici + interceptor
+Min Response Time (ms),0.73,0.36,0.66,0.28,0.77,0.46,0.28,,
+Max Response Time (ms),233.34,127.25,254.78,74.44,273.25,154.90,76.74,Fastify + nestjs-axios-undici,Express + nestjs-axios-undici + interceptor
+Error Rate (%),0.00,0.00,0.00,0.00,0.00,0.00,0.00,Express + @nestjs/axios,Express + @nestjs/axios + interceptor
