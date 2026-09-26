@@ -35,10 +35,15 @@ const routes = {
     });
     res.end(buf);
   },
+  '/redirect': (_req: any, res: any) => {
+    res.writeHead(307, { Location: '/echo' });
+    res.end();
+  },
 };
 
 const echo = (ctx: Ctx) => `${ctx.base}/echo`;
 const download = (ctx: Ctx) => `${ctx.base}/download`;
+const redirect = (ctx: Ctx) => `${ctx.base}/redirect`;
 
 /**
  * Splits a multipart body into `[name, value]` pairs by its own
@@ -119,6 +124,28 @@ differential('progress callbacks / formSerializer', routes, [
       });
       return {
         status: response.status,
+        ...summarizeProgress(events, 'upload'),
+      };
+    },
+    normalize: (o: any) => (o.error ? { error: true } : o.result),
+  },
+  {
+    // Review fix (PR #30): a metered upload used to turn a resendable
+    // Buffer body into a one-shot stream *before* redirect handling ever
+    // saw it, so a 307 redirect rejected here (but not without
+    // `onUploadProgress`) - axios/follow-redirects resend it fine since they
+    // buffer every byte written, regardless of any progress wrapper.
+    name: 'a 307 redirect with a Buffer body + onUploadProgress succeeds, matching axios (upload progress reported, final loaded/total, monotonic)',
+    run: async (s: any, ctx: Ctx) => {
+      const events: any[] = [];
+      const buf = Buffer.alloc(50_000, 'r');
+      const response = await s.axiosRef.post(redirect(ctx), buf, {
+        onUploadProgress: (e: any) => events.push(e),
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+      return {
+        status: response.status,
+        bodyLen: response.data.body.length,
         ...summarizeProgress(events, 'upload'),
       };
     },

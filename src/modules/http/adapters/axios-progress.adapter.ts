@@ -269,13 +269,48 @@ export interface MeterOptions {
   total?: number;
 }
 
+/** axios' own `scheduleProgress`: `process.nextTick` when available, `setImmediate` otherwise. */
+const scheduleProgress: (callback: () => void) => void =
+  typeof process !== 'undefined' && typeof process.nextTick === 'function'
+    ? callback => process.nextTick(callback)
+    : callback => setImmediate(callback);
+
+/**
+ * axios' own `asyncDecorator`: calls `fn` on a later tick instead of
+ * synchronously. Review fix: the caller's `onUploadProgress`/
+ * `onDownloadProgress` must run fully decoupled from the meter stream's own
+ * `_transform`/`emit('progress', ...)` call - axios does the same
+ * (`asyncDecorator(onDownloadProgress, scheduleProgress)` in
+ * `lib/adapters/http.js`, wrapping the raw callback *before* it ever reaches
+ * `progressEventReducer`). Without this, a synchronous throw inside the
+ * user's callback propagates straight up through the stream machinery,
+ * erroring/destroying the meter stream mid-response and - before this fix -
+ * silently replacing the real payload with `''` (see
+ * `axios-response.adapter.ts`'s `isMetered` handling). With it, the callback
+ * runs on its own tick, entirely outside the response pipeline: a throw
+ * there becomes an uncaught exception (or an `'unhandledRejection'`-shaped
+ * problem for the app to handle), exactly as it does for real axios -
+ * verified directly against axios 1.20 (a throwing `onDownloadProgress`
+ * still resolves the response with the full, correct body; the throw itself
+ * surfaces as a separate `uncaughtException`).
+ */
+function asyncDecorator(
+  fn: (event: AxiosProgressEvent) => void,
+): (event: AxiosProgressEvent) => void {
+  return event => scheduleProgress(() => fn(event));
+}
+
 function attachReporter(
   meter: ByteMeterStream,
   isDownload: boolean,
   options: MeterOptions,
 ): void {
   if (!options.onProgress) return;
-  const reporter = createProgressReporter(options.onProgress, isDownload, 3);
+  const reporter = createProgressReporter(
+    asyncDecorator(options.onProgress),
+    isDownload,
+    3,
+  );
   meter.on('progress', (loaded: number) =>
     reporter.report(loaded, options.total),
   );

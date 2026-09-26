@@ -13,6 +13,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { firstValueFrom } from 'rxjs';
 import { HttpModule, HttpService } from '../src';
 
+/** A 2MB body, slow enough over loopback with a small `maxRate` to abort mid-flight. */
+const ABORT_DOWNLOAD_SIZE = 2_000_000;
+
 describe('progress callbacks / maxRate / formSerializer', () => {
   let server: Server;
   let base: string;
@@ -31,6 +34,20 @@ describe('progress callbacks / maxRate / formSerializer', () => {
             'Content-Length': String(buf.length),
           });
           res.end(buf);
+          return;
+        }
+        if (req.url === '/download-large') {
+          const buf = Buffer.alloc(ABORT_DOWNLOAD_SIZE, 'a');
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(buf.length),
+          });
+          res.end(buf);
+          return;
+        }
+        if (req.url === '/redirect') {
+          res.writeHead(307, { Location: '/echo' });
+          res.end();
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -121,6 +138,30 @@ describe('progress callbacks / maxRate / formSerializer', () => {
       const service = await makeService({});
       const response = await firstValueFrom(service.get(`${base}/download`));
       expect((response.data as string).length).toBe(DOWNLOAD_SIZE);
+    });
+
+    // Review fix (PR #30): a metered download used to silently resolve HTTP
+    // 200 with `data: ''` on a mid-flight abort, instead of rejecting -
+    // `toAxiosLikeResponse`'s corrupt-gzip recovery fallback wasn't meant for
+    // a metered (plain `Transform`) body and swallowed the real abort error.
+    it('an abort mid-download still rejects with ERR_CANCELED, exactly like an unmetered request', async () => {
+      const service = await makeService({});
+      const controller = new AbortController();
+      const obs = service.get(`${base}/download-large`, {
+        maxRate: 200_000,
+        onDownloadProgress: () => undefined,
+        signal: controller.signal,
+      });
+      const result = firstValueFrom(obs).then(
+        response => ({ resolved: true as const, response }),
+        error => ({ resolved: false as const, error }),
+      );
+      setTimeout(() => controller.abort(), 50);
+      const outcome = await result;
+      expect(outcome.resolved).toBe(false);
+      expect((outcome as { resolved: false; error: any }).error?.code).toBe(
+        'ERR_CANCELED',
+      );
     });
   });
 
@@ -225,6 +266,55 @@ describe('progress callbacks / maxRate / formSerializer', () => {
     it('module-level maxRate is seeded into axiosRef.defaults', async () => {
       const service = await makeService({ maxRate: 100_000 });
       expect(service.axiosRef.defaults.maxRate).toBe(100_000);
+    });
+  });
+
+  describe('redirects with onUploadProgress', () => {
+    // Review fix (PR #30): `meterUploadBody` used to turn a resendable
+    // string/Buffer body into a one-shot stream *before* redirect handling
+    // ever saw it, so a 307/308 redirect rejected with
+    // `ERR_FR_REDIRECTION_FAILURE` even though the exact same request
+    // without `onUploadProgress` succeeded. axios/follow-redirects buffer
+    // every byte *written* to the socket, so a metered upload replays fine
+    // there too - matched here by keeping the original Buffer/string body
+    // available for replay and re-metering it fresh on each hop.
+    it('a 307 redirect with a Buffer body + onUploadProgress succeeds, same as without it', async () => {
+      const service = await makeService({});
+      const buf = Buffer.from('hello world, this is the POST body');
+
+      const baseline = await firstValueFrom(
+        service.post(`${base}/redirect`, buf, {
+          headers: { 'Content-Type': 'application/octet-stream' },
+        }),
+      );
+      expect(baseline.status).toBe(200);
+      expect(baseline.data.body.length).toBe(buf.length);
+
+      const events: any[] = [];
+      const response = await firstValueFrom(
+        service.post(`${base}/redirect`, buf, {
+          headers: { 'Content-Type': 'application/octet-stream' },
+          onUploadProgress: (e: any) => events.push(e),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.data.body.length).toBe(buf.length);
+      // The upload was reported for the hop that actually sent the body.
+      expect(events.length).toBeGreaterThan(0);
+      expect(events[events.length - 1].loaded).toBe(buf.length);
+    });
+
+    it('a 307 redirect with a string body + onUploadProgress succeeds', async () => {
+      const service = await makeService({});
+      const text = 'redirected string body';
+      const response = await firstValueFrom(
+        service.post(`${base}/redirect`, text, {
+          headers: { 'Content-Type': 'text/plain' },
+          onUploadProgress: () => undefined,
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.data.body).toBe(text);
     });
   });
 

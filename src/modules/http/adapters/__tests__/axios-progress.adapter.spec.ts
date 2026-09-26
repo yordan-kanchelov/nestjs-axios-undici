@@ -199,5 +199,54 @@ describe('axios-progress.adapter', () => {
         download: true,
       });
     });
+
+    // Review fix (PR #30): a throwing `onDownloadProgress`/`onUploadProgress`
+    // callback used to propagate synchronously through the meter's own
+    // `_transform`/`emit('progress', ...)` call, erroring and destroying the
+    // stream mid-response - silently swallowed further up into an
+    // HTTP-200-looking response with an empty body (see
+    // `axios-response.adapter.spec.ts`). axios decouples the raw callback via
+    // `process.nextTick` (`lib/adapters/http.js`'s `asyncDecorator`) before it
+    // ever reaches the stream/throttle machinery; this ports the same
+    // mechanism (`asyncDecorator`/`scheduleProgress` above).
+    it('a throwing onProgress callback never reaches the meter stream itself - it stays decoupled (process.nextTick), so the stream still ends normally with the full body', async () => {
+      // Intercepts the real `process.nextTick` so the deferred callback's
+      // throw can be observed and safely caught directly by this test,
+      // instead of letting it actually escape as a real, process-wide
+      // uncaught exception (which jest-circus would attribute to whatever
+      // test happens to still be running).
+      const scheduled: Array<() => void> = [];
+      const realNextTick = process.nextTick;
+      (process as any).nextTick = (cb: () => void) => scheduled.push(cb);
+      try {
+        const source = Readable.from([Buffer.from('hello world')]);
+        let sawStreamError = false;
+        const wrapped = meterDownloadBody(source, {
+          onProgress: () => {
+            throw new Error('user callback boom');
+          },
+          total: 11,
+        });
+        wrapped.on('error', () => {
+          sawStreamError = true;
+        });
+        const data = await drain(wrapped);
+        expect(data.toString()).toBe('hello world');
+        expect(sawStreamError).toBe(false);
+        // The callback was scheduled (via the real mechanism, `process.nextTick`)
+        // but never actually invoked yet - proving it never ran on the
+        // stream's own call stack.
+        expect(scheduled.length).toBeGreaterThan(0);
+        // Running it now (as the real event loop would) does throw - which
+        // is exactly what becomes an uncaught exception in a real process -
+        // but the stream above already finished cleanly regardless.
+        expect(() => scheduled.forEach(fn => fn())).toThrow(
+          'user callback boom',
+        );
+        expect(sawStreamError).toBe(false);
+      } finally {
+        process.nextTick = realNextTick;
+      }
+    });
   });
 });

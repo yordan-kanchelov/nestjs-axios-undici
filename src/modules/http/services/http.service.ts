@@ -73,6 +73,7 @@ import {
   meterUploadBody,
   resolveMaxRates,
   resolveUploadTotal,
+  type MeterOptions,
 } from '../adapters/axios-progress.adapter';
 import {
   DEFAULT_MAX_REDIRECTS,
@@ -1300,22 +1301,70 @@ export class HttpService implements OnModuleDestroy {
       }
 
       // `onUploadProgress`/upload `maxRate` (plan.md phase 2 "Progress
-      // callbacks"): wraps `options.body` in a counting/throttling stream
-      // only when at least one is actually set - a single `||` check on the
+      // callbacks"): wraps the body in a counting/throttling stream only
+      // when at least one is actually set - a single `||` check on the
       // common, neither-set path.
+      //
+      // Review fix: axios/follow-redirects buffer every byte *written* to
+      // the socket (not the original source), so a metered upload can still
+      // be replayed on a 307/308 redirect. This library hands the body
+      // straight to undici with no such buffering layer, so a *resendable*
+      // string/Buffer body is instead kept unmetered on `options.body`/
+      // `currentOptions.body` throughout the redirect chain (`buildRedirectHop`
+      // below never sees a one-shot stream for it, so it never rejects the
+      // redirect) and re-metered fresh, via `dispatchBody`, right before each
+      // hop's actual `request()` call - one meter instance per hop, so each
+      // hop's upload is reported independently, matching axios. An
+      // already-stream body (a caller's own `Readable`, or the `form-data`
+      // package's output) is genuinely one-shot regardless of metering, so
+      // it's still metered immediately, once, exactly as before - it was
+      // never resendable on a redirect anyway (see
+      // `createStreamRedirectError`).
+      let uploadMeterConfig: MeterOptions | undefined;
       if (
         options.body !== undefined &&
         (onUploadProgress || maxRate !== undefined)
       ) {
         const { upload: maxUploadRate } = resolveMaxRates(maxRate);
         if (onUploadProgress || maxUploadRate) {
-          options.body = meterUploadBody(options.body, {
+          const config: MeterOptions = {
             onProgress: onUploadProgress,
             maxRate: maxUploadRate,
             total: resolveUploadTotal(options.body, options.headers),
-          });
+          };
+          if (
+            typeof options.body === 'string' ||
+            Buffer.isBuffer(options.body)
+          ) {
+            uploadMeterConfig = config;
+          } else {
+            options.body = meterUploadBody(options.body, config);
+          }
         }
       }
+
+      /**
+       * `requestOptions` unchanged, unless a resendable string/Buffer body
+       * still has a pending upload meter (`uploadMeterConfig`) - then a
+       * shallow copy with a freshly metered body, built fresh for this one
+       * hop. Called once per hop: the first dispatch below, and every
+       * redirect replay (`onResponse`'s hop handling).
+       */
+      const dispatchBody = (
+        requestOptions: Record<string, any>,
+      ): Record<string, any> => {
+        if (
+          !uploadMeterConfig ||
+          (typeof requestOptions.body !== 'string' &&
+            !Buffer.isBuffer(requestOptions.body))
+        ) {
+          return requestOptions;
+        }
+        return {
+          ...requestOptions,
+          body: meterUploadBody(requestOptions.body, uploadMeterConfig),
+        };
+      };
 
       const fail = (error: unknown): void => {
         settled = true;
@@ -1432,7 +1481,10 @@ export class HttpService implements OnModuleDestroy {
               // for us (see the comment on the first `request()` call
               // below), so it's wrapped explicitly.
               try {
-                request(hop.url, currentOptions as any).then(onResponse, fail);
+                request(hop.url, dispatchBody(currentOptions) as any).then(
+                  onResponse,
+                  fail,
+                );
               } catch (error) {
                 fail(error);
               }
@@ -1472,7 +1524,10 @@ export class HttpService implements OnModuleDestroy {
       // as `@nestjs/axios` leaves it un-wrapped for the same input - wrapping
       // it in a try/catch here (or an `await`) would route it through
       // `fail`/`toAxiosError` instead, an observable behaviour change.
-      request(interceptorRequest.url, options).then(onResponse, fail);
+      request(interceptorRequest.url, dispatchBody(options)).then(
+        onResponse,
+        fail,
+      );
 
       return () => {
         clearDeadline();
