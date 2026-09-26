@@ -1,4 +1,9 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { Transform } from 'node:stream';
 import {
   request,
@@ -18,6 +23,10 @@ import {
 import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
 import type { HttpModuleOptions, UndiciRequestOptionsType } from '../types';
+import type {
+  ResolvedHttpModuleOptions,
+  ResolvedUndiciRequestOptions,
+} from '../internal/resolved-config';
 import type {
   HttpInterceptor,
   HttpInterceptorFunction,
@@ -252,6 +261,31 @@ class RequestAbortSignal {
   }
 }
 
+/**
+ * Axios-only `HttpModuleOptions` keys (plus the internal `__`-prefixed ones
+ * `axios-config.adapter.ts` stashes resolved transport pieces under) that
+ * exist only to build a dispatcher/transport at setup time
+ * (`setupDispatcher`) and must never reach undici's own per-request dispatch
+ * options - see plan.md phase 3 "Option mapping"/`plan/reports/
+ * package-quality.md` ("Module config leaks into undici's `dispatch()`
+ * options: raw `auth` (credentials), `proxy`, `baseURL`, `timeout` and
+ * `__axiosCompat`"). Stripped once, in the constructor, into
+ * `dispatchBaseOptions` - never filtered per request.
+ */
+const AXIOS_ONLY_DISPATCH_KEYS = [
+  'auth',
+  'httpAgent',
+  'httpsAgent',
+  'proxy',
+  'httpVersion',
+  'http2Options',
+  'cookieJar',
+  'withCredentials',
+  'xsrfCookieName',
+  'xsrfHeaderName',
+  '__resolvedConfig',
+] as const;
+
 /** Protocols this library (like axios) can actually dispatch. */
 const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:']);
 
@@ -375,15 +409,52 @@ function enforceMaxBodyLength(
 }
 
 @Injectable()
-export class HttpService {
+export class HttpService implements OnModuleDestroy {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
   private _axiosRef: AxiosRef;
   private customDispatcher?: Dispatcher;
+  // Per-service default `Agent`, built from this package's own undici copy
+  // (plan.md phase 3 "Default dispatcher" / "Duplicate undici copy"):
+  // created once here, used whenever no per-request `dispatcher`/
+  // `socketPath` and no module `dispatcher`/module-built dispatcher apply -
+  // see `executeRequest`'s dispatcher resolution. This replaces falling back
+  // to undici's global dispatcher (`getGlobalDispatcher()`), which is what
+  // let two copies of undici - this one and, on Node 22, the one bundled
+  // with Node itself - end up owning separate connection pools, and let
+  // `undici.setGlobalDispatcher()` affect requests this service never
+  // configured a dispatcher for. **Breaking**: `setGlobalDispatcher()` from
+  // undici no longer affects this service's requests at all; use
+  // `HttpService#setDispatcher()` instead.
+  //
+  // `allowH2: false` unconditionally is correct here (not just the default):
+  // whenever `httpVersion: 2` is configured, `setupDispatcher` already builds
+  // a `customDispatcher` with `allowH2: true`, which always wins over this
+  // one in the precedence order - so this default only ever serves the
+  // plain, no-transport-options case, where axios (and this library) never
+  // negotiates HTTP/2.
+  private readonly defaultDispatcher: Dispatcher;
   // `socketPath` (module- or request-level) dispatchers, cached per path so
   // a request-level `socketPath` (checked on every request, see
   // `executeRequest`) never builds a new `Agent` once one exists for that
   // path.
   private socketPathDispatchers?: Map<string, Dispatcher>;
+  // The undici request/dispatch options this service starts every request
+  // from (`dispatchFastPath`'s `mergedOptions`): `instanceOptions` (the
+  // module's resolved options) with the axios-only keys stripped - see
+  // `AXIOS_ONLY_DISPATCH_KEYS`. Built once here, in the constructor, never
+  // recomputed per request (plan.md phase 3 "Option mapping": "strip
+  // axios-only keys before calling undici"). Typed the same as
+  // `instanceOptions` (rather than a plain `Record<string, unknown>`) so it
+  // spreads into `mergedOptions` exactly as `instanceOptions` used to -
+  // deleting the axios-only keys is a runtime-only concern; none of them are
+  // read back off this object anyway.
+  private readonly dispatchBaseOptions: UndiciRequestOptionsType;
+  // Guards against closing the same dispatcher twice (`onModuleDestroy`,
+  // `setDispatcher` replacing a dispatcher it created) - `undici`'s
+  // `Dispatcher#close()` is safe to call more than once, but this avoids
+  // relying on that and keeps `Promise.allSettled` results in
+  // `onModuleDestroy` free of the same object's rejection twice.
+  private readonly closedDispatchers = new WeakSet<Dispatcher>();
   // Perf item 2: `createInterceptorHandler` builds a linked list of one
   // handler object per interceptor; that chain never changes shape between
   // requests unless `this.interceptors` itself is replaced or grown, so it's
@@ -407,19 +478,43 @@ export class HttpService {
   // The context `request()` dispatches with by default: this service's own
   // `defaults`/interceptors (the same objects `this._axiosRef` exposes).
   // `axiosRef.create()`-derived instances dispatch through
-  // `dispatchAxiosConfig` with their own context instead - see
+  // `dispatch()` with their own context instead - see
   // `axios-ref.factory.ts`.
   private readonly axiosContext: AxiosInstanceContext;
 
   public constructor(
+    // Typed with the plain, public `UndiciRequestOptionsType`/`HttpModuleOptions`
+    // (not the internal `Resolved*` variants that also carry `__resolvedConfig`
+    // - see `internal/resolved-config.ts`): both are constructor parameter
+    // properties, so their declared type is part of this public class'
+    // emitted `.d.ts` regardless of `protected`/`private` (api-extractor's
+    // `ae-forgotten-export` catches exactly this - an internal-only type
+    // reachable from a public signature). `setupDispatcher`/
+    // `shouldUseEnvProxyAgent`/`undiciRef` each cast to the internal type
+    // locally, at the one point they actually read `__resolvedConfig`.
     @Inject(UNDICI_INSTANCE_TOKEN)
     protected readonly instanceOptions: UndiciRequestOptionsType,
     @Optional()
     @Inject(HTTP_MODULE_OPTIONS)
     private readonly moduleOptions?: HttpModuleOptions,
+    // Only `HttpModule.register()`/`.registerAsync()` pass this (as a plain
+    // constructor argument, not through Nest DI - `@Optional()` here is only
+    // so the bare, non-dynamic `HttpModule` import (no `.register()` call,
+    // `HttpService` built by Nest's own DI instead) doesn't fail trying to
+    // resolve a provider for it): the fully resolved interceptor list
+    // (function, instance and DI-resolved class interceptors merged - see
+    // `http.module.ts`). Keeping this a constructor-only parameter, instead
+    // of the public `setInterceptors()` method the module used to call right
+    // after `new HttpService(...)`, is what lets that method become internal
+    // (plan.md phase 3 "HttpService members"): nothing outside this class
+    // needs to call it any more.
+    @Optional()
+    resolvedInterceptors?: Array<HttpInterceptor | HttpInterceptorFunction>,
   ) {
     // Initialize interceptors from module options if available
-    if (this.moduleOptions?.interceptors) {
+    if (resolvedInterceptors) {
+      this.setInterceptors(resolvedInterceptors);
+    } else if (this.moduleOptions?.interceptors) {
       // For now, we'll only handle function interceptors in the constructor
       // Class-based interceptors need to be resolved by the DI container
       this.interceptors = this.moduleOptions.interceptors
@@ -433,8 +528,13 @@ export class HttpService {
     // from then on `defaults` is the single source of truth (see
     // `createAxiosRefDefaults`'s doc comment).
     const defaults = createAxiosRefDefaults(this.moduleOptions);
+    // The host is a closure over the private `dispatch()`, not `this`, so
+    // the bridge (and its internal context types) stays off the public API.
     this._axiosRef = createAxiosRef(
-      this,
+      {
+        dispatchAxiosConfig: (config, context) =>
+          this.dispatch(config, undefined, context),
+      },
       defaults,
       this.axiosRequestInterceptors,
       this.axiosResponseInterceptors,
@@ -447,6 +547,18 @@ export class HttpService {
 
     // Setup custom dispatcher based on axios compatibility options
     this.setupDispatcher();
+
+    // Per-service default Agent (see the field's doc comment) - built from
+    // this package's own undici copy, once, here; never on the request path.
+    this.defaultDispatcher = new UndiciAgent({ allowH2: false });
+
+    const dispatchBaseOptions: Record<string, unknown> = {
+      ...this.instanceOptions,
+    };
+    for (const key of AXIOS_ONLY_DISPATCH_KEYS) {
+      delete dispatchBaseOptions[key];
+    }
+    this.dispatchBaseOptions = dispatchBaseOptions as UndiciRequestOptionsType;
   }
 
   /**
@@ -463,7 +575,13 @@ export class HttpService {
    * wins and is left untouched - none of the branches below run.
    */
   private setupDispatcher(): void {
-    const options = this.moduleOptions as any;
+    // `mapAxiosConfigToUndici` (axios-config.adapter.ts) stashes the
+    // resolved agent/proxy pieces under `__resolvedConfig` on the same
+    // object `HTTP_MODULE_OPTIONS` provides - a typed cast, not `as any`,
+    // right where this internal field is actually read (see the
+    // constructor's doc comment on why the field itself stays typed with
+    // the plain, public `HttpModuleOptions`).
+    const options = this.moduleOptions as ResolvedHttpModuleOptions | undefined;
     if (!options) return;
     if (this.instanceOptions.dispatcher) return;
 
@@ -473,8 +591,9 @@ export class HttpService {
     // apply whichever dispatcher is built below: through a proxy, the TLS
     // options go to the target (`requestTls`), as axios forwards an
     // `httpsAgent`'s TLS options through its proxy tunnel.
-    const agentOptions = options.__agentOptions || {};
-    const tls = agentOptions.tls as Record<string, unknown> | undefined;
+    const resolvedConfig = options.__resolvedConfig;
+    const agentOptions = resolvedConfig?.agentOptions ?? {};
+    const tls = agentOptions.tls;
     const hasTls = !!tls && Object.keys(tls).length > 0;
     const poolOptions: Record<string, unknown> = {
       pipelining: agentOptions.pipelining ?? options.pipelining ?? 1,
@@ -486,7 +605,8 @@ export class HttpService {
     // doesn't. axios only uses HTTP/2 with `httpVersion: 2`.
     poolOptions.allowH2 = !!agentOptions.allowH2;
 
-    if (options.__proxyAgent) {
+    const proxyAgent = resolvedConfig?.proxyAgent;
+    if (proxyAgent) {
       // Explicit `proxy: {...}` - highest priority among the auto-built
       // dispatchers. `proxyTunnel: false` matches axios: a plain HTTP
       // target is forwarded to the proxy in absolute form (`GET
@@ -495,7 +615,7 @@ export class HttpService {
       // CONNECT tunnel either way (this flag only affects http-to-http).
       baseDispatcher = new ProxyAgent({
         ...poolOptions,
-        ...options.__proxyAgent,
+        ...proxyAgent,
         proxyTunnel: false,
         ...(hasTls ? { requestTls: tls } : {}),
       });
@@ -512,7 +632,7 @@ export class HttpService {
         proxyTunnel: false,
         ...(hasTls ? { connect: tls, requestTls: tls } : {}),
       } as any);
-    } else if (options.socketPath || options.__agentOptions) {
+    } else if (options.socketPath || resolvedConfig?.agentOptions) {
       const connect: Record<string, unknown> = { ...tls };
       if (options.socketPath) connect.socketPath = options.socketPath;
 
@@ -536,7 +656,7 @@ export class HttpService {
     // a `CookieAgent` (wrapping `baseDispatcher`) for it, which only happens
     // once here, in the constructor - never on the request path.
     if (options.cookieJar) {
-      const jar = options.cookieJar;
+      const jar: any = options.cookieJar;
       if (
         typeof jar.setCookie !== 'function' ||
         typeof jar.getCookieString !== 'function'
@@ -578,9 +698,9 @@ export class HttpService {
    * `proxy: false` is passed, or a `dispatcher`/`proxy`/`socketPath` is
    * configured - see docs/axios-supported-options.md.
    */
-  private shouldUseEnvProxyAgent(options: any): boolean {
+  private shouldUseEnvProxyAgent(options: ResolvedHttpModuleOptions): boolean {
     if (options.proxy === false) return false;
-    if (options.proxy || options.__proxyAgent) return false;
+    if (options.proxy || options.__resolvedConfig?.proxyAgent) return false;
     if (options.socketPath) return false;
     const env = process.env;
     return !!(
@@ -602,7 +722,7 @@ export class HttpService {
    */
   private getSocketPathDispatcher(socketPath: string): Dispatcher {
     if (
-      socketPath === (this.moduleOptions as any)?.socketPath &&
+      socketPath === this.moduleOptions?.socketPath &&
       this.customDispatcher
     ) {
       return this.customDispatcher;
@@ -623,8 +743,90 @@ export class HttpService {
     return dispatcher;
   }
 
-  public setGlobalDispatcher(dispatcher: Dispatcher): void {
+  /**
+   * Sets this service's dispatcher - despite the name it never touches
+   * undici's own global dispatcher, only this `HttpService` (**breaking**:
+   * renamed from `setGlobalDispatcher`, which was equally misleading about
+   * *undici's* global dispatcher but is removed outright, no alias - plan.md
+   * phase 3 "HttpService members"). Takes precedence over the module's own
+   * `dispatcher`/module-built dispatcher and the per-service default
+   * (`undiciRef`/`defaultDispatcher`), but not over a per-request
+   * `dispatcher`/`socketPath` - see `executeRequest`'s precedence order.
+   *
+   * If the dispatcher this call replaces is one this service created itself
+   * (the module-built dispatcher from `setupDispatcher`, or - when nothing
+   * else was configured - the per-service default `Agent`), it is closed
+   * (gracefully, not awaited here - `close()` lets in-flight requests
+   * finish). A dispatcher passed in by the caller, whether through module
+   * options or an earlier `setDispatcher()` call, is never closed by this
+   * library - only ones it created itself.
+   */
+  public setDispatcher(dispatcher: Dispatcher): void {
+    const owned = this.ownedActiveDispatcher();
+    this.customDispatcher = undefined;
     this.instanceOptions.dispatcher = dispatcher;
+    if (owned && owned !== dispatcher) {
+      this.closeDispatcher(owned);
+    }
+  }
+
+  /**
+   * The dispatcher currently in effect for this service (ignoring any
+   * per-request override) that this service itself created, if any - used
+   * by `setDispatcher` to decide what to close when it's replaced, and by
+   * `onModuleDestroy` isn't needed separately since it always closes
+   * `customDispatcher`/`defaultDispatcher` unconditionally (closing a
+   * dispatcher that's no longer "active" but was still created by this
+   * service is exactly what `onModuleDestroy` is for).
+   */
+  private ownedActiveDispatcher(): Dispatcher | undefined {
+    if (this.instanceOptions.dispatcher) {
+      // Only owned when it's the module-built one; a `dispatcher` passed in
+      // module options directly, or set by an earlier `setDispatcher()`
+      // call, is the caller's.
+      return this.instanceOptions.dispatcher === this.customDispatcher
+        ? this.customDispatcher
+        : undefined;
+    }
+    // Nothing configured at all - the per-service default is what's
+    // actually serving requests right now.
+    return this.defaultDispatcher;
+  }
+
+  /** Closes `dispatcher` gracefully, at most once, swallowing any error - a
+   * dispatcher this service is discarding is never awaited or allowed to
+   * fail the caller (`setDispatcher`, `onModuleDestroy`'s per-dispatcher
+   * catch). */
+  private closeDispatcher(dispatcher: Dispatcher): Promise<void> {
+    if (this.closedDispatchers.has(dispatcher)) return Promise.resolve();
+    this.closedDispatchers.add(dispatcher);
+    return Promise.resolve(dispatcher.close()).catch(() => undefined);
+  }
+
+  /**
+   * Closes every dispatcher this service created - the per-service default
+   * `Agent`, the module-built dispatcher (`Agent`/`ProxyAgent`/
+   * `EnvHttpProxyAgent`/`CookieAgent`, whichever `setupDispatcher` built),
+   * and every cached `socketPath` `Agent` - gracefully (`close()`, which lets
+   * in-flight requests finish rather than aborting them, unlike
+   * `destroy()`). A `dispatcher` the caller supplied directly, through
+   * module options or `setDispatcher()`, is never touched here (plan.md
+   * phase 3 "Resource cleanup").
+   */
+  public async onModuleDestroy(): Promise<void> {
+    const closing: Promise<void>[] = [
+      this.closeDispatcher(this.defaultDispatcher),
+    ];
+    if (this.customDispatcher) {
+      closing.push(this.closeDispatcher(this.customDispatcher));
+    }
+    if (this.socketPathDispatchers) {
+      for (const dispatcher of this.socketPathDispatchers.values()) {
+        closing.push(this.closeDispatcher(dispatcher));
+      }
+      this.socketPathDispatchers.clear();
+    }
+    await Promise.all(closing);
   }
 
   /**
@@ -645,23 +847,9 @@ export class HttpService {
   }
 
   /**
-   * `AxiosRefHost.dispatchAxiosConfig`: the single entry point every
-   * axios-like instance `createAxiosRef` builds (the top-level `axiosRef`,
-   * and every `axiosRef.create()`-derived instance) dispatches a request
-   * through, using *its own* `context` (`defaults`/interceptors) rather than
-   * this service's. Shares everything else - the transport/dispatcher,
-   * module-registered generic interceptors, redirect handling - with the
-   * rest of this `HttpService`.
-   */
-  public dispatchAxiosConfig<T = any, D = any>(
-    config: AxiosLikeRequestConfig<D>,
-    context: AxiosInstanceContext,
-  ): Observable<AxiosLikeResponse<T, D>> {
-    return this.dispatch<T, D>(config, undefined, context);
-  }
-
-  /**
-   * Shared implementation behind `request()` and `dispatchAxiosConfig()`.
+   * Shared implementation behind `request()` and every axios-like instance
+   * built by `createAxiosRef` (the top-level `axiosRef` and each
+   * `axiosRef.create()` child), which pass their own `context`.
    * `defer()` makes the Observable cold and re-runs everything below (config
    * normalization, the axiosRef request interceptors, the actual request)
    * on every subscription, as `@nestjs/axios`' `makeObservable` does. This
@@ -896,7 +1084,11 @@ export class HttpService {
     // Handle timeout option for axios compatibility
     const { timeout, ...restOptions } = options || {};
     const mergedOptions = {
-      ...this.instanceOptions,
+      // `dispatchBaseOptions`, not `this.instanceOptions` directly: the
+      // axios-only keys (`auth`/`httpAgent`/`httpsAgent`/`proxy`/
+      // `httpVersion`/`cookieJar`/`withCredentials`/... - see
+      // `AXIOS_ONLY_DISPATCH_KEYS`) were already stripped once, at setup.
+      ...this.dispatchBaseOptions,
       ...restOptions,
       // Only a per-request `dispatcher` belongs here; the module's own is
       // applied as a fallback in `executeRequest`, after a per-request
@@ -1001,7 +1193,11 @@ export class HttpService {
           ? this.getSocketPathDispatcher(requestSocketPath)
           : undefined) ||
         this.customDispatcher ||
-        this.instanceOptions.dispatcher;
+        this.instanceOptions.dispatcher ||
+        // Per-service default, built once in the constructor - see
+        // `defaultDispatcher`'s doc comment. Replaces falling back to
+        // undici's global dispatcher.
+        this.defaultDispatcher;
 
       // Abort the undici request when the Observable is unsubscribed before
       // it settles (rxjs `timeout()`, `switchMap`, `takeUntil`, `race`, ...),
@@ -1304,8 +1500,26 @@ export class HttpService {
     };
   }
 
-  public get undiciRef(): UndiciRequestOptionsType {
-    return this.instanceOptions;
+  /**
+   * A read-only snapshot of this service's resolved undici/module options
+   * (**breaking**: previously the live, mutable `instanceOptions` object
+   * itself - plan.md phase 3 "HttpService members"). The internal
+   * `__resolvedConfig` key (where `axios-config.adapter.ts` stashes resolved
+   * transport pieces for `setupDispatcher` - see `ResolvedModuleConfig`) is
+   * stripped; everything else - `dispatcher`, `headers`, `baseURL`, ... - is
+   * a shallow copy, frozen with `Object.freeze` so reassigning a top-level
+   * key throws in strict mode (module code, and this library's own source,
+   * is always strict). A nested object (`headers`, for instance) isn't
+   * itself frozen and can still be mutated, but doing so was already
+   * documented as having no effect once `axiosRef.defaults` has seeded from
+   * it - see `docs/http/http.service.md`.
+   */
+  public get undiciRef(): Readonly<UndiciRequestOptionsType> {
+    const snapshot: ResolvedUndiciRequestOptions = {
+      ...(this.instanceOptions as ResolvedUndiciRequestOptions),
+    };
+    delete snapshot.__resolvedConfig;
+    return Object.freeze(snapshot) as Readonly<UndiciRequestOptionsType>;
   }
 
   /**
@@ -1323,21 +1537,44 @@ export class HttpService {
     this.interceptorsVersion++;
   }
 
-  public setInterceptors(
+  /**
+   * Replaces the module-registered (`HttpInterceptor`) interceptor chain
+   * wholesale. **Internal** (plan.md phase 3 "HttpService members": "internal
+   * `setInterceptors`") - not part of the public type any more (previously
+   * `public`, called by `http.module.ts` right after construction; the
+   * module now passes the resolved interceptor list into the constructor
+   * instead, so nothing outside this class needs to call this method). Kept
+   * as a real method, not inlined, because it's also this constructor's own
+   * entry point and it's what actually needs to run to add or replace the
+   * chain (bumping `interceptorsVersion` so the cached handler chain -
+   * `executeInterceptorChain` - rebuilds).
+   */
+  private setInterceptors(
     interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
   ): void {
     this.interceptors = interceptors;
     this.interceptorsVersion++;
   }
 
+  /**
+   * The number of module-registered (`HttpInterceptor`) interceptors this
+   * service currently runs every request through - i.e. `this.interceptors
+   * .length`, the same array `addInterceptor()` pushes onto and the
+   * (internal) `setInterceptors()` replaces. **Breaking**: previously added
+   * 1 for a phantom "axios response adapter" interceptor that hasn't existed
+   * since the axiosRef pipeline refactor (plan.md "refactor(axiosRef): one
+   * config object..."), and separately counted axiosRef's own request/response
+   * interceptors (`axiosRef.interceptors.request/response`) - a different,
+   * unrelated chain (see `runAxiosPipeline`) that this library has no
+   * equivalent "count" property for on the `axiosRef` object either, exactly
+   * like real axios. Kept (rather than removed, per plan.md phase 3's "if it
+   * has no real use, remove it" option) because it has a genuine use once
+   * fixed: asserting that `addInterceptor()`/module `interceptors` actually
+   * registered what was expected, which several existing tests already do -
+   * see `tests/services/http-interceptor.e2e.spec.ts`.
+   */
   public get interceptorCount(): number {
-    // Module-registered interceptors, plus live axiosRef request/response
-    // interceptors (which no longer live in `this.interceptors` - see
-    // `runAxiosPipeline`), plus the axios response adapter, always added.
-    const axiosCount =
-      this.axiosRequestInterceptors.entries.filter(Boolean).length +
-      this.axiosResponseInterceptors.entries.filter(Boolean).length;
-    return this.interceptors.length + axiosCount + 1;
+    return this.interceptors.length;
   }
 
   /**

@@ -35,7 +35,7 @@ Requires Node.js 22.17+, NestJS 10, 11 or 12, `rxjs` 7 and `undici` 7 or 8.
 | NestJS (`@nestjs/common`, `@nestjs/core`) | 10, 11, 12 | |
 | `undici` | 7, 8 | |
 | `rxjs` | 7.1+ | |
-| `reflect-metadata` | 0.1.13+, 0.2 | |
+| `reflect-metadata` | 0.1.13+, 0.2 | required by `@nestjs/common`/`@nestjs/core` themselves (their own peer dependency), not declared as this package's own peer - unused by this package's code |
 
 Every combination is installed from the packed package and run as both a CommonJS and an ESM app in CI, including the lowest versions of each range, and again weekly to catch new releases.
 

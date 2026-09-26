@@ -259,18 +259,24 @@ describe('HttpService redirects', () => {
     }
   });
 
-  it('follows redirects when the global dispatcher comes from another copy of undici', async () => {
-    // Node.js 22 bundles undici 6. When anything reads the global `fetch` before
-    // this package loads undici, that copy becomes the global dispatcher, and
-    // interceptors from undici 7 can't be composed onto it. Manual redirect
-    // handling never calls `.compose()`, so this is no longer a special case -
-    // this test guards against regressing back to it.
+  it('follows redirects using its own default dispatcher, ignoring undici.setGlobalDispatcher()', async () => {
+    // Node.js 22 bundles undici 6. When anything reads the global `fetch`
+    // before this package loads undici, that copy becomes the global
+    // dispatcher, and interceptors from undici 7 can't be composed onto it -
+    // manual redirect handling never calls `.compose()`, so that was never a
+    // problem for redirects specifically. Per-service default dispatcher
+    // (plan.md phase 3 "Default dispatcher") goes further: `HttpService`
+    // never reads undici's global dispatcher at all any more, so a foreign
+    // (or broken) global dispatcher can't affect it either way - **breaking**,
+    // documented in the migration guide. This foreign dispatcher's `dispatch`
+    // is spied on to prove it: it must never be called.
     const agent = new Agent();
+    const dispatchSpy = jest.fn(
+      (opts: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) =>
+        agent.dispatch(opts, handler),
+    );
     const foreignDispatcher = {
-      dispatch: (
-        opts: Dispatcher.DispatchOptions,
-        handler: Dispatcher.DispatchHandler,
-      ) => agent.dispatch(opts, handler),
+      dispatch: dispatchSpy,
       compose: jest.fn(() => {
         throw new Error(
           'interceptors from another undici copy are not supported',
@@ -290,6 +296,7 @@ describe('HttpService redirects', () => {
       expect(response.status).toBe(200);
       expect(response.data).toEqual({ path: '/final' });
       expect(foreignDispatcher.compose).not.toHaveBeenCalled();
+      expect(dispatchSpy).not.toHaveBeenCalled();
     } finally {
       setGlobalDispatcher(previous);
       await agent.close();

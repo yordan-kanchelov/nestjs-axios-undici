@@ -165,9 +165,11 @@ axiosRef request interceptors receive a config whose `headers` is non-optional a
 
 A `dispatcher` passed directly in module options (`register({ dispatcher })`) is never overridden by `httpAgent`/`httpsAgent`, `socketPath`, `proxy`, `cookieJar` or the `HTTP_PROXY`/`HTTPS_PROXY` environment variables - none of that mapping runs once a `dispatcher` is set, so a `cookieJar` next to a `dispatcher` is ignored. A per-request `dispatcher` wins over all of those too, including a per-request `socketPath`. Use this to configure undici directly when the axios-shaped options above aren't expressive enough (see [Performance Note](#performance-note)).
 
+Full precedence, highest first: a per-request `dispatcher` > a per-request `socketPath` > the module's own dispatcher (an explicit module `dispatcher`, or one built from `httpAgent`/`httpsAgent`/`socketPath`/`proxy`/env-proxy/`httpVersion`/`cookieJar`) > this `HttpService`'s per-service default `Agent`, built once at startup even with none of the above configured (see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle) - **breaking**: this replaces falling back to undici's own global dispatcher).
+
 A request-level `socketPath` gets its own cached `Agent` per path (at most 32 paths; the oldest is closed to make room), so use a small, fixed set of socket paths.
 
-Dispatchers this module creates (from `httpAgent`/`httpsAgent`/`socketPath`/`proxy`/env-proxy/`httpVersion`) are not yet closed on `app.close()` - see `OnModuleDestroy` in the migration guide's known gaps.
+Every dispatcher this module creates - `httpAgent`/`httpsAgent`/`socketPath`/`proxy`/env-proxy/`httpVersion`/`cookieJar`, the cached per-path `socketPath` `Agent`s, and the per-service default `Agent` - is closed gracefully on `app.close()` (`HttpService` implements `OnModuleDestroy`). A `dispatcher` you supply yourself is never closed.
 
 ### Connection pooling and TLS: `httpAgent` / `httpsAgent`
 

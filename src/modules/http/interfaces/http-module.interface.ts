@@ -4,15 +4,6 @@ import type { HttpModuleOptions } from '../types/http-module.type';
 export interface HttpModuleOptionsFactory {
   createHttpOptions(): Promise<HttpModuleOptions> | HttpModuleOptions;
 }
-export interface BodyMixin {
-  readonly body?: never; // throws on node v16.6.0
-  readonly bodyUsed: boolean;
-  arrayBuffer(): Promise<ArrayBuffer>;
-  blob(): Promise<Blob>;
-  formData(): Promise<never>;
-  json(): Promise<any>;
-  text(): Promise<string>;
-}
 /**
  * `HttpModule.registerAsync()` options - shaped to accept `@nestjs/axios`'
  * own `HttpModuleAsyncOptions` value directly (plan.md phase 2 "types: axios

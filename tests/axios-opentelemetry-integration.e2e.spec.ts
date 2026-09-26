@@ -335,11 +335,16 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
       expect(receivedHeaders['traceparent']).toBe('00-axios-headers-test-01');
     });
 
-    it('should verify interceptor count includes all interceptors', () => {
-      // Should have at least 2 interceptors:
-      // 1. OpenTelemetry interceptor (from onModuleInit)
-      // 2. Axios response adapter (always added)
-      expect(httpService.interceptorCount).toBeGreaterThanOrEqual(2);
+    it('interceptorCount only counts module-registered interceptors, not axiosRef ones', () => {
+      // `onModuleInit` above registers its OpenTelemetry interceptor through
+      // `axiosRef.interceptors.request.use()`, a separate chain from the
+      // module-registered (`HttpInterceptor`) one `interceptorCount` reports
+      // (plan.md phase 3 "HttpService members": `interceptorCount` "returns
+      // the real count" - of `this.interceptors`, the same array
+      // `addInterceptor()`/module `interceptors` populate; axiosRef has no
+      // equivalent "how many interceptors are registered" property either,
+      // exactly like real axios).
+      expect(httpService.interceptorCount).toBe(0);
     });
 
     it('should add a custom header via interceptor and verify it', async () => {

@@ -1087,8 +1087,7 @@ export function normalizeAxiosRequest(
  * from a `HttpInterceptorRequest`. Prefers the already-normalised `raw` seed
  * a request built through `normalizeAxiosRequest` carries (cheap: no combined
  * URL, no serialisation, no `AxiosHeaders` wrap); falls back to reconstructing
- * from `options` for requests that reach here some other way (e.g. the
- * standalone `AxiosResponseAdapterInterceptor`).
+ * from `options` for requests that reach here some other way.
  *
  * Callers (`AxiosLikeResponseImpl`, `AxiosError`) call this from a `config`
  * getter on first read and cache the result themselves - *not* from a

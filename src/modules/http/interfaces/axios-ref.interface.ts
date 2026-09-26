@@ -200,11 +200,10 @@ export interface AxiosRef {
 }
 
 /**
- * Extended HttpService interface with axios compatibility
+ * Alias for `AxiosRef`, named to match axios' own `AxiosInstance` - so code
+ * migrating from `@nestjs/axios`/axios that types a variable as
+ * `AxiosInstance` can use this instead of importing `axios` just for the
+ * type (plan.md phase 3 "Trim the public API": "consider exporting ...
+ * AxiosInstance-compatible aliases").
  */
-export interface HttpServiceWithAxiosRef {
-  /**
-   * Axios-compatible reference for interceptor management
-   */
-  axiosRef: AxiosRef;
-}
+export type AxiosInstance = AxiosRef;

@@ -303,16 +303,70 @@ HttpModule.register({ cookieJar: new CookieJar() });
 - **`error instanceof AxiosError` now also holds for `axios.AxiosError`** when the optional `axios` peer is installed (`npm i axios`) - see [Errors](/docs/axios-supported-options.md#errors). `error instanceof axios.CanceledError` specifically does not; use `isCancel()`. The link is to the copy of `axios` this package resolves; with a second, separate copy of `axios` in the app, use `axios.isAxiosError()` instead of `instanceof`.
 - **`HttpModule.registerAsync({})`** (none of `useFactory`/`useClass`/`useExisting`) now throws a clear error at setup, instead of silently registering a broken provider.
 
+### Public API trim
+
+The package now exports an explicit, deliberate list of names from its entry point (`src/index.ts`), rather than re-exporting whatever an internal file happened to declare `export` on. Every removal below is outright - no `@deprecated` step, per the "breaking changes are fine before 1.0.0" decision - since each one loses nothing: either it never did anything, or a supported replacement already exists.
+
+The surface is now frozen and diffable: [API Extractor](https://api-extractor.com/) checks every build's `lib/index.d.ts` against the committed report at `etc/nestjs-axios-undici.api.md` (`npm run api:check`, part of CI). Any future change to an exported name or signature has to update that file (`npm run api:update`) as part of the same PR, so it stays a deliberate, reviewable decision rather than an accident.
+
+**Removed, with what to use instead:**
+
+- **The legacy typed module**: `TypedHttpModule`, `InjectTypedHttpService`, `ExtractHttpServiceType`, `HTTP_SERVICE_TYPE`, `TypedDynamicModule`. Use `HttpModule`/`HttpService` directly - `HttpModuleOptions` is now strictly typed (see [Types](#types) above), so there's nothing `TypedHttpModule` did that plain `HttpModule.register()` doesn't already give you.
+- **`AxiosResponseAdapterInterceptor`/`axiosResponseAdapter`**: dead code - `HttpService` already converts every response to the axios-compatible shape itself, so this interceptor never had anything left to do. Nothing to switch to.
+- **`SizeLimitInterceptor`/`createSizeLimitInterceptor`/`SizeLimitOptions`**: see [Errors, timeouts and size limits](#errors-timeouts-and-size-limits) below - use the `maxBodyLength`/`maxContentLength` module/request options instead.
+- **`STATUS_TEXT_MAP`**: an internal lookup table `HttpService` uses to fill in `statusText`; never meant to be consumed directly. There's no public replacement - open an issue if you had a real use for it.
+- **`HTTP_MODULE_ID`**: a provider token that was registered but never injected anywhere - it did nothing. Nothing to switch to.
+- **The internal error helpers** `toAxiosError`, `createStatusError`, `createTimeoutError`, `createUnsupportedProtocolError`, `isDeadlineTimeoutReason`, plus the `DeadlineTimeoutReason`/`EffectiveAbortSignal` types: implementation details of how this library builds `AxiosError`s, not meant to be called directly. Use `AxiosError`/`isAxiosError`/`isCancel` (still exported) to construct or detect errors from your own code.
+- **Unused types**: `HttpServiceWithAxiosRef`, `BodyMixin`, `CommonResponseHeaders`, `MethodHeaders` - declared but never consumed by anything in this library or a real usage pattern. If you were importing one of these for your own typing, use `AxiosLikeResponse`/`RawAxiosHeaders`/a plain `Record<string, any>` instead, as appropriate.
+
+**Kept, and now also available as axios-named aliases** (PR #22/#23 already gave the package `AxiosLikeRequestConfig`/`AxiosLikeResponse`/`AxiosRef`; this adds the axios-named aliases on top, so migrating code can drop its own `import ... from 'axios'` purely for these types):
+
+```typescript
+import type { AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'nestjs-axios-undici';
+```
+
+`AxiosRequestConfig`/`AxiosResponse`/`AxiosInstance` are plain type aliases for this package's own `AxiosLikeRequestConfig`/`AxiosLikeResponse`/`AxiosRef` - no new behaviour, just a name migrating code already expects. If a file still imports the same name from `axios` too, TypeScript reports a duplicate identifier. Import one of them under another name, e.g. `import { AxiosResponse as UndiciAxiosResponse } from 'nestjs-axios-undici'`. The shapes are close but not identical to axios' own: `response.headers` is a plain object, not an `AxiosHeaders` instance.
+
+**`UNDICI_INSTANCE_TOKEN`/`HTTP_MODULE_OPTIONS`** stay exported: they're documented, supported injection tokens for overriding a test module's providers directly - see [Overriding the module's own providers](/docs/guides/testing.md#overriding-the-modules-own-providers).
+
+**`reflect-metadata` is no longer this package's own peer dependency.** Nothing in this library's own source imports it (the only past user, `InjectTypedHttpService`, is removed above); it's still required, transitively, because `@nestjs/common`/`@nestjs/core` themselves declare it as *their* peer dependency, so any app using this package already has to install it to satisfy Nest itself. Declaring it again as this package's own peer added a second, redundant version constraint with no protection behind it. If your install already worked before, nothing changes; `npm i reflect-metadata` is unaffected either way.
+
 ### Errors, timeouts and size limits
 
 - **`timeout` is now a total (deadline) timeout, like axios (breaking):** it used to map only to undici's `headersTimeout`/`bodyTimeout`, which reset on every chunk received - a response body that trickled in slowly (or steadily, one byte at a time) never timed out at all. `timeout` is now enforced from the moment the request starts until the response body is fully read (or, for `responseType: 'stream'`, until the headers arrive), with one timer per request. If your code depended on a slow-but-steady response never triggering `timeout`, it now will, at the configured value. `timeoutErrorMessage` and `transitional.clarifyTimeoutError` (code `ETIMEDOUT` instead of `ECONNABORTED`) are now honoured too.
 - **Size-limit error codes changed to match axios exactly (breaking):** `maxContentLength` now rejects with `ERR_BAD_RESPONSE` (was `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED`) and is enforced while the response streams in, not after buffering the whole body. `maxBodyLength` is now actually enforced (it used to be silently ignored for most requests): `ERR_BAD_REQUEST` for a string/Buffer body, `ERR_FR_MAX_BODY_LENGTH_EXCEEDED` for a stream body (matching axios' own default transport). If you were catching the old `ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED` code, update it. A per-request `maxBodyLength`/`maxContentLength` now correctly wins over a module-level one (it used to be the other way around for `maxContentLength`).
-- **`SizeLimitInterceptor` is no longer auto-registered** from `HttpModule.register({ maxBodyLength, maxContentLength })` - the enforcement above now happens directly, with the right codes. `createSizeLimitInterceptor`/`SizeLimitInterceptor` are still exported, for anyone using them directly as a standalone interceptor (their codes/messages were updated to match axios too).
+- **`SizeLimitInterceptor`/`createSizeLimitInterceptor` are removed.** They were never auto-registered from `HttpModule.register({ maxBodyLength, maxContentLength })` any more (see above), and had no other use once the enforcement above landed - their own response-size check never ran (it only ever saw the response after conversion), and buffered the whole body first where the built-in check above streams it. There's no replacement to switch to: `maxBodyLength`/`maxContentLength` on `HttpModule.register()`/a per-request config already gives you the same enforcement, with the right codes, for free.
 - **`validateStatus: null` now means every status resolves**, as in axios; it used to fall back to the default 2xx range. `undefined` set as an explicit key (`{ validateStatus: undefined }`) behaves the same way, matching axios' own `mergeConfig` semantics.
 - **Credentials embedded in a URL become `Authorization: Basic ...`** (`http://user:pass@host`), as in axios, and are stripped from the request line; `config.auth` still wins when both are set. If you relied on such a URL being sent through unmodified (with the credentials still in the request line, which undici's own URL parsing already dropped from the Host header anyway), this is a behaviour change.
 - **`allowAbsoluteUrls: false`** (axios ≥1.8) is now honoured: with a `baseURL`, an absolute request `url` combines with it instead of replacing it outright.
 - **`error.request`/`response.request` are now populated** (`path`, `method`, `host`, `protocol`, `res.responseUrl`) instead of an always-truthy empty placeholder object. Code that only checked `!!error.request` is unaffected; code that read fields off the old placeholder (there weren't any) has nothing to update.
 - An unsupported URL protocol (`tel:`, `ftp:`, ...) and undici's own request-argument-validation failures now reject with a proper `AxiosError` (`config`/`request` set) instead of a raw undici error class - update an `instanceof undici.errors.*`/`error.code` check for these specific cases if you had one (a genuinely malformed URL still propagates unwrapped, unchanged).
+
+### Dispatcher lifecycle and `HttpService` members
+
+**Breaking changes**:
+
+- **Per-service default dispatcher.** Every `HttpService` now owns its own undici `Agent`, built from this package's own undici copy, and uses it whenever no per-request `dispatcher`/`socketPath` and no module `dispatcher`/module-built dispatcher applies. It used to fall back to undici's *global* dispatcher (`undici.getGlobalDispatcher()`) instead: `undici.setGlobalDispatcher()` elsewhere in the process **no longer affects requests made through `HttpService`** at all. If you were relying on `setGlobalDispatcher()` (from `undici`) to redirect this library's traffic, configure the dispatcher through module options, a per-request `dispatcher`, or `HttpService#setDispatcher()` instead.
+
+  **Tests using undici's `MockAgent`:** the common pattern `setGlobalDispatcher(mockAgent)` no longer intercepts requests made through `HttpService`. The requests go to the real network instead, silently, and not even `mockAgent.disableNetConnect()` fires. Pass the mock to the module instead:
+
+  ```ts
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  // either
+  HttpModule.register({ dispatcher: mockAgent });
+  // or, on an existing service
+  httpService.setDispatcher(mockAgent);
+  ```
+
+  A `dispatcher` you pass in is never closed by the module, so the test still owns `mockAgent.close()`. See also [Testing](/docs/guides/testing.md). This also fixes the "two copies of undici" case: on a Node.js version that bundles its own undici, a plain request used to quietly run on Node's bundled `Agent` instead of this package's own.
+- **`OnModuleDestroy`.** `HttpService` now implements it: `app.close()` gracefully closes every dispatcher this library created for that service (the per-service default `Agent`, the module-built dispatcher, and any cached `socketPath` `Agent`s). A `dispatcher` you supplied yourself is never closed. If your tests create a module and never call `module.close()`, they still won't hang (nothing changed there), but a real app that used to see a lingering open connection or socket handle after shutdown no longer will - see [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle).
+- **The static `HttpModule` import (no `register()` call) no longer shares one options object across every app that imports it.** Each app's `HttpService` now gets its own; previously, `setGlobalDispatcher()`/`setDispatcher()` (or anything else mutating the shared options object) in one app leaked into every other app that imported the bare `HttpModule`.
+- **`setGlobalDispatcher(dispatcher)` is renamed to `setDispatcher(dispatcher)`, with no alias.** It never touched undici's own global dispatcher, only this service, so the new name is accurate; the old name is gone, not deprecated. If the dispatcher it replaces is one this service created itself, that dispatcher is now closed (see above); a dispatcher you supplied is never closed.
+- **`setInterceptors()` is no longer public.** It was only ever meant for `HttpModule.register()`/`.registerAsync()` to hand the fully-resolved interceptor list to a freshly-constructed `HttpService`; that now happens through the constructor instead. Use `addInterceptor()` to add interceptors at runtime, or the module's `interceptors` option at setup - nothing else needed to call `setInterceptors()` directly.
+- **`interceptorCount` is now the real count.** It used to add 1 for a phantom "axios response adapter" interceptor that hasn't existed since the axiosRef pipeline refactor, and separately counted `axiosRef`'s own request/response interceptors. It's now the plain length of the module-registered (`addInterceptor()`/module `interceptors`) chain only.
+- **`undiciRef` is now a read-only, frozen snapshot**, not the live options object - see [Types](#types) above and [`undiciRef`](/docs/http/http.service.md#undiciref). Each read returns a fresh copy with the internal `__`-prefixed keys stripped.
+- **Axios-only keys no longer leak into undici's dispatch options.** `auth`, `httpAgent`, `httpsAgent`, `proxy`, `httpVersion`, `cookieJar`, `withCredentials`, `xsrfCookieName`/`xsrfHeaderName` and the internal `__`-prefixed keys used to be spread wholesale onto every request's undici options (harmlessly ignored by undici, but visible to anything inspecting them, e.g. a custom `Dispatcher`). They're stripped once, at setup, now.
 
 ### Request/Response Transforms
 

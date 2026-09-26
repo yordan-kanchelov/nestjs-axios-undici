@@ -1,4 +1,3 @@
-import type { HttpModuleOptions } from '../types';
 import type { Agent } from 'http';
 import type { Agent as HttpsAgent } from 'https';
 import type {
@@ -6,6 +5,10 @@ import type {
   AxiosResponseType,
   HttpInterceptorFunction,
 } from '../interfaces';
+import type {
+  ResolvedHttpModuleOptions,
+  ResolvedModuleConfig,
+} from '../internal/resolved-config';
 
 /**
  * TLS/connection options this library reads off a Node.js `https.Agent`
@@ -159,9 +162,10 @@ export function resolveAgentOptions(
  */
 export function mapAxiosConfigToUndici(
   axiosConfig: AxiosConfigOptions,
-): HttpModuleOptions {
-  const undiciConfig: HttpModuleOptions = {};
+): ResolvedHttpModuleOptions {
+  const undiciConfig: ResolvedHttpModuleOptions = {};
   const interceptors: HttpInterceptorFunction[] = [];
+  let resolvedConfig: ResolvedModuleConfig | undefined;
 
   // Direct mappings
   if (axiosConfig.timeout !== undefined) {
@@ -191,7 +195,7 @@ export function mapAxiosConfigToUndici(
   // recomputed per request.
   const agentOptions = resolveAgentOptions(axiosConfig);
   if (agentOptions) {
-    (undiciConfig as any).__agentOptions = agentOptions;
+    resolvedConfig = { ...resolvedConfig, agentOptions };
     if (agentOptions.pipelining !== undefined) {
       undiciConfig.pipelining = agentOptions.pipelining;
     }
@@ -213,7 +217,7 @@ export function mapAxiosConfigToUndici(
       : `${rawProtocol}:`;
     const proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
 
-    const proxyOptions: any = {
+    const proxyOptions: { uri: string; token?: string } = {
       uri: proxyUrl,
     };
 
@@ -226,7 +230,7 @@ export function mapAxiosConfigToUndici(
     }
 
     // Store proxy configuration for later dispatcher creation
-    (undiciConfig as any).__proxyAgent = proxyOptions;
+    resolvedConfig = { ...resolvedConfig, proxyAgent: proxyOptions };
   }
 
   // `withCredentials` needs no mapping: it's a no-op, like axios itself on
@@ -240,7 +244,7 @@ export function mapAxiosConfigToUndici(
   // Decompress: applied as a default per-request option (the response
   // adapter reads it the same way it reads a per-call `decompress`).
   if (axiosConfig.decompress !== undefined) {
-    (undiciConfig as any).decompress = axiosConfig.decompress;
+    undiciConfig.decompress = axiosConfig.decompress;
   }
 
   // Validate status - this is handled at the interceptor level
@@ -275,6 +279,10 @@ export function mapAxiosConfigToUndici(
   // Add interceptors if any were created
   if (interceptors.length > 0) {
     undiciConfig.interceptors = interceptors;
+  }
+
+  if (resolvedConfig) {
+    undiciConfig.__resolvedConfig = resolvedConfig;
   }
 
   return undiciConfig;

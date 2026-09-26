@@ -233,18 +233,16 @@ export const STATUS_TEXT_MAP: Record<number, string> = {
 /**
  * Converts an undici response to the axios-compatible response format,
  * reading and parsing the body and rejecting with an axios-like error when
- * the status fails `validateStatus`. HttpService applies it at the end of the
- * interceptor chain; AxiosResponseAdapterInterceptor exposes it as an
- * interceptor.
+ * the status fails `validateStatus`. `HttpService` applies it at the end of
+ * the interceptor chain, in `executeRequest`.
  */
 export async function toAxiosLikeResponse(
   request: HttpInterceptorRequest,
   undiciResponse: Dispatcher.ResponseData,
   // Built by `HttpService.executeRequest` from the hop that was actually
   // dispatched (a `RequestInfo`), whether or not a redirect was followed,
-  // matching axios. Callers with no such hop tracking of their own (e.g. the
-  // standalone `AxiosResponseAdapterInterceptor`) can omit it; a reasonable
-  // one is then built from `request` itself.
+  // matching axios. A caller with no such hop tracking of its own can omit
+  // it; a reasonable one is then built from `request` itself.
   requestInfo?: RequestInfo | Record<string, any>,
 ): Promise<AxiosLikeResponse> {
   requestInfo ??= new RequestInfo(

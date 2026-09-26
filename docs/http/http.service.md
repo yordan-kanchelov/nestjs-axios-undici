@@ -106,18 +106,39 @@ See [Interceptors](/docs/guides/interceptors.md).
 
 ## `interceptorCount`
 
-Read-only. The number of interceptors in this service's chain: native interceptors (`addInterceptor`/module `interceptors`), live `axiosRef` request/response interceptors, and the axios response adapter (always present).
+Read-only. The number of *module-registered* interceptors in this service's chain - native interceptors added through `addInterceptor()` or the module's `interceptors` option. It does **not** count `axiosRef`'s own request/response interceptors (a separate chain - see [`axiosRef`](#axiosref) above; real axios has no combined "how many interceptors" property either).
 
-## `setGlobalDispatcher(dispatcher)`
+> **Breaking change:** earlier versions added 1 for a phantom "axios response adapter" that no longer exists, and separately counted `axiosRef` interceptors. `interceptorCount` is now the plain length of the native interceptor chain.
 
-Sets the undici `Dispatcher` used by later requests made through this `HttpService`. Despite the name, it does not change undici's global dispatcher. A `dispatcher` passed per request takes precedence. Neither applies when the module creates its own dispatcher (`proxy`, `cookieJar`, `socketPath`, or `httpAgent`/`httpsAgent` with `maxSockets`).
+## Dispatchers and connection lifecycle
+
+Every `HttpService` owns an undici `Dispatcher`, built from this package's own undici copy, so it's never affected by anything else in the process that changes undici's *global* dispatcher:
+
+1. A `dispatcher` given on a specific request always wins.
+2. Otherwise, a request-level `socketPath` uses a cached per-path `Agent`.
+3. Otherwise, the module's own dispatcher applies: an explicit `dispatcher` passed to `register()`/`registerAsync()`, or one this library built for you from `proxy`, `cookieJar`, `socketPath`, `httpVersion: 2`, or `httpAgent`/`httpsAgent` options.
+4. Otherwise, this service's **per-service default `Agent`** - built once, at construction, from this package's own undici copy (`allowH2: false`; HTTP/2 needs `httpVersion: 2`, which builds its own dispatcher at step 3 instead).
+
+> **Breaking change:** earlier versions fell back to undici's *global* dispatcher (`undici.getGlobalDispatcher()`) at step 4 instead of a dispatcher of their own. That meant `undici.setGlobalDispatcher()` elsewhere in the process could silently redirect this library's own traffic, and - on Node.js versions that bundle their own copy of undici - a plain request could end up on a completely different connection pool than the one this library's own undici copy manages. Neither is true any more: `undici.setGlobalDispatcher()` has **no effect** on requests made through `HttpService` unless a dispatcher is explicitly wired up (module options, `setDispatcher()`, or a per-request `dispatcher`).
+
+### `OnModuleDestroy`
+
+`HttpService` implements Nest's `OnModuleDestroy`, so `app.close()` (or `moduleRef.close()` in a test) gracefully closes (`Dispatcher#close()` - lets in-flight requests finish, doesn't abort them) every dispatcher **this service created**: the per-service default `Agent`, the module-built dispatcher (whichever of `Agent`/`ProxyAgent`/`EnvHttpProxyAgent`/`CookieAgent` `register()`'s options produced), and every cached per-path `socketPath` `Agent`. A `dispatcher` *you* supplied - through module options, a per-request option, or `setDispatcher()` - is never closed by this library; you own its lifecycle.
+
+## `setDispatcher(dispatcher)`
+
+Sets the undici `Dispatcher` used by later requests made through this `HttpService` (unless a per-request `dispatcher`/`socketPath` or the module's own dispatcher applies - see the precedence list above). If the dispatcher it replaces is one this service created itself (the module-built dispatcher, or the per-service default `Agent` when nothing else was configured), that dispatcher is closed. A dispatcher you supplied yourself - through module options or an earlier `setDispatcher()` call - is never closed.
 
 ```typescript
 import { Agent } from 'undici';
 
-this.httpService.setGlobalDispatcher(new Agent({ connections: 10 }));
+this.httpService.setDispatcher(new Agent({ connections: 10 }));
 ```
+
+> **Breaking change:** renamed from `setGlobalDispatcher` (no alias - it never touched undici's global dispatcher, so the old name was misleading either way).
 
 ## `undiciRef`
 
-Read-only. The undici request options this service uses as defaults for every request (module `headers`, timeouts, `dispatcher`, ...).
+Read-only. A frozen snapshot of the undici request options this service uses as defaults for every request (module `headers`, timeouts, `dispatcher`, ...). Internal `__`-prefixed keys are stripped. Each read returns a fresh, independent snapshot - mutating one has no effect on the service or on a later read.
+
+> **Breaking change:** previously the live, mutable options object itself; mutating it (or the object originally passed to `register()`) already had no effect on `axiosRef.defaults`-backed fields (see `axiosRef.defaults` above) - it's now read-only for the rest too.
