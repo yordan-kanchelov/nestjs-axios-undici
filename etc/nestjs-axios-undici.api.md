@@ -197,8 +197,12 @@ export interface AxiosLikeRequestConfig<D = any> {
     params?: any;
     // (undocumented)
     paramsSerializer?: AxiosParamsSerializer;
+    parseReviver?: (this: any, key: string, value: any, context?: {
+        source?: string;
+    }) => any;
     // (undocumented)
     responseType?: AxiosResponseType;
+    sensitiveHeaders?: string[];
     // (undocumented)
     signal?: AbortSignal | AxiosLikeAbortSignal;
     socketPath?: string | null;
@@ -334,8 +338,12 @@ export interface AxiosRefDefaults<D = any> {
     params?: any;
     // (undocumented)
     paramsSerializer?: AxiosParamsSerializer;
+    parseReviver?: (this: any, key: string, value: any, context?: {
+        source?: string;
+    }) => any;
     // (undocumented)
     responseType?: AxiosResponseType;
+    sensitiveHeaders?: string[];
     // (undocumented)
     timeout?: number;
     // (undocumented)
@@ -530,6 +538,9 @@ export interface HttpModuleOptions {
     params?: any;
     // (undocumented)
     paramsSerializer?: AxiosParamsSerializer;
+    parseReviver?: (this: any, key: string, value: any, context?: {
+        source?: string;
+    }) => any;
     pipelining?: 0 | 1;
     proxy?: {
         protocol?: string;
@@ -543,6 +554,7 @@ export interface HttpModuleOptions {
     // (undocumented)
     responseEncoding?: string;
     responseType?: AxiosResponseType;
+    sensitiveHeaders?: string[];
     socketPath?: string | null;
     timeout?: number;
     timeoutErrorMessage?: string;

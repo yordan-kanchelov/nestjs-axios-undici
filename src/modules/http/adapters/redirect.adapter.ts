@@ -82,6 +82,37 @@ export function shouldStripSensitiveHeaders(
   );
 }
 
+/**
+ * axios' own, *stricter* rule for `config.sensitiveHeaders` (`isSameOrigin
+ * Redirect` in `lib/adapters/http.js`): unlike the built-in `Authorization`/
+ * `Cookie`/`Proxy-Authorization` list above (subdomain-exempt, downgrade-
+ * only), a header **named in `config.sensitiveHeaders`** is dropped on *any*
+ * change of origin (protocol, host, or port) - a subdomain redirect, or an
+ * http-to-https *upgrade*, still strips it. `URL#origin` already normalises
+ * default ports the same way `new URL(...).origin` does on both sides, so
+ * this is a plain string comparison.
+ */
+function isSameOrigin(currentUrl: URL, redirectUrl: URL): boolean {
+  return currentUrl.origin === redirectUrl.origin;
+}
+
+/**
+ * axios' validation for `config.sensitiveHeaders` (`lib/adapters/http.js`):
+ * must be an array of strings, or `undefined`/`null` (no extra headers
+ * beyond the built-in list). Returns the lower-cased `Set` `buildRedirectHop`
+ * checks headers against (empty when `value` is nullish), or throws a plain
+ * `Error` with axios' own message - the caller wraps it as an `AxiosError`
+ * (`ERR_BAD_OPTION_VALUE`), matching `isUnparsableTimeout`'s precedent of a
+ * plain validation helper the error-construction stays out of.
+ */
+export function normalizeSensitiveHeaders(value: unknown): Set<string> {
+  if (value === undefined || value === null) return new Set();
+  if (!Array.isArray(value) || !value.every(h => typeof h === 'string')) {
+    throw new Error('sensitiveHeaders must be an array of strings');
+  }
+  return new Set(value.map(h => h.toLowerCase()));
+}
+
 /** axios `beforeRedirect(options, responseDetails, requestDetails)`. */
 export type BeforeRedirect = (
   options: Record<string, any>,
@@ -105,6 +136,14 @@ export interface RedirectHopInput {
   /** The just-completed response's headers, for `beforeRedirect`'s `responseDetails`. */
   responseHeaders: Record<string, any>;
   beforeRedirect?: BeforeRedirect;
+  /**
+   * axios' `sensitiveHeaders` config option: extra header names (already
+   * lower-cased and deduplicated by `normalizeSensitiveHeaders`) stripped
+   * alongside the built-in list - see `isSameOrigin`'s doc comment for the
+   * stricter rule these get, on top of the lenient one the built-in 3 get.
+   * `undefined`/empty is the common case and costs one falsy check.
+   */
+  sensitiveHeaders?: Set<string>;
 }
 
 export interface RedirectHopResult {
@@ -175,10 +214,24 @@ export function buildRedirectHop(input: RedirectHopInput): RedirectHopResult {
     : input.headers;
   headers = removeHeaders(headers, key => key === 'host');
 
+  const extraSensitive = input.sensitiveHeaders;
   if (shouldStripSensitiveHeaders(currentUrl, redirectUrl)) {
-    headers = removeHeaders(headers, key =>
-      SENSITIVE_REDIRECT_HEADERS.has(key),
-    );
+    // The lenient (subdomain-exempt, downgrade-only) rule: the built-in 3
+    // plus whatever the config added.
+    headers =
+      extraSensitive && extraSensitive.size
+        ? removeHeaders(
+            headers,
+            key =>
+              SENSITIVE_REDIRECT_HEADERS.has(key) || extraSensitive.has(key),
+          )
+        : removeHeaders(headers, key => SENSITIVE_REDIRECT_HEADERS.has(key));
+  } else if (extraSensitive?.size && !isSameOrigin(currentUrl, redirectUrl)) {
+    // The stricter, origin-based rule applies only to headers the config
+    // explicitly named (`isSameOrigin`'s doc comment) - a subdomain redirect
+    // or an http->https upgrade doesn't reach the lenient branch above, but
+    // still strips these.
+    headers = removeHeaders(headers, key => extraSensitive.has(key));
   }
 
   let finalUrl = redirectUrl;

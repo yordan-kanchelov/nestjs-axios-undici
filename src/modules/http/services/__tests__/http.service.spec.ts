@@ -295,6 +295,60 @@ describe('HttpService', () => {
   });
 
   /**
+   * plan.md phase 2 "fix: redirect sensitiveHeaders option" - axios' own
+   * validation for `config.sensitiveHeaders` (`lib/adapters/http.js`),
+   * checked up front, before ever calling undici's `request()` - the same
+   * precedent as `timeout` just above.
+   */
+  describe('an invalid sensitiveHeaders option', () => {
+    it('rejects with ERR_BAD_OPTION_VALUE, never dispatching', async () => {
+      await expect(
+        lastValueFrom(
+          service.request(baseURL, {
+            sensitiveHeaders: 'X-Api-Key' as any,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'ERR_BAD_OPTION_VALUE',
+        message: 'sensitiveHeaders must be an array of strings',
+      });
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects an array containing a non-string element too', async () => {
+      await expect(
+        lastValueFrom(
+          service.request(baseURL, {
+            sensitiveHeaders: ['X-Api-Key', 42] as any,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'ERR_BAD_OPTION_VALUE' });
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('a valid sensitiveHeaders array is unaffected', async () => {
+      await expect(
+        lastValueFrom(
+          service.request(baseURL, { sensitiveHeaders: ['X-Api-Key'] }),
+        ),
+      ).resolves.toBeDefined();
+      expect(requestMock).toHaveBeenCalled();
+    });
+
+    it('is skipped entirely when maxRedirects: 0 (no redirects to strip headers on), matching axios', async () => {
+      await expect(
+        lastValueFrom(
+          service.request(baseURL, {
+            sensitiveHeaders: 'not-an-array' as any,
+            maxRedirects: 0,
+          }),
+        ),
+      ).resolves.toBeDefined();
+      expect(requestMock).toHaveBeenCalled();
+    });
+  });
+
+  /**
    * plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values like
    * axios" (found by upstream conformance): undici would otherwise throw
    * `InvalidArgumentError` for a header value axios' Node `http` transport

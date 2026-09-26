@@ -231,6 +231,123 @@ describe('HttpService redirects', () => {
     expect(response.status).toBe(200);
   });
 
+  /**
+   * plan.md phase 2 "fix: redirect sensitiveHeaders option": axios' own
+   * `config.sensitiveHeaders` - extra header names dropped alongside
+   * `Authorization`/`Cookie`/`Proxy-Authorization`. See
+   * `redirect.adapter.spec.ts` (unit) for the full lenient-vs-strict-rule
+   * matrix (subdomains, http->https upgrades); this covers it end to end,
+   * through real servers.
+   */
+  describe('sensitiveHeaders', () => {
+    it('drops a custom header (request-level) on a cross-host redirect, unlike the default (no sensitiveHeaders)', async () => {
+      const withoutOption: any = await firstValueFrom(
+        service.request(`${baseUrl}/cross-host`, {
+          headers: { 'X-Api-Key': 'secret' },
+        }),
+      );
+      expect(withoutOption.data.headers['x-api-key']).toBe('secret');
+
+      const withOption: any = await firstValueFrom(
+        service.request(`${baseUrl}/cross-host`, {
+          headers: { 'X-Api-Key': 'secret' },
+          sensitiveHeaders: ['X-Api-Key'],
+        }),
+      );
+      expect(withOption.data.headers['x-api-key']).toBeUndefined();
+      // The built-in list still applies too, independent of the custom one.
+      expect(withOption.data.headers['authorization']).toBeUndefined();
+    });
+
+    it('keeps a custom header on a genuine same-host, same-port redirect', async () => {
+      const response: any = await firstValueFrom(
+        service.request(`${baseUrl}/start`, {
+          headers: { 'X-Api-Key': 'secret' },
+          sensitiveHeaders: ['X-Api-Key'],
+        }),
+      );
+
+      expect(response.status).toBe(200);
+    });
+
+    it('module-level sensitiveHeaders applies too', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [HttpModule.register({ sensitiveHeaders: ['X-Api-Key'] })],
+      }).compile();
+      const withModuleOption = module.get<HttpService>(HttpService);
+
+      const response: any = await firstValueFrom(
+        withModuleOption.request(`${baseUrl}/cross-host`, {
+          headers: { 'X-Api-Key': 'secret' },
+        }),
+      );
+
+      expect(response.data.headers['x-api-key']).toBeUndefined();
+    });
+
+    it('a request-level value wins over the module-level one', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [HttpModule.register({ sensitiveHeaders: ['X-Other'] })],
+      }).compile();
+      const withModuleOption = module.get<HttpService>(HttpService);
+
+      const response: any = await firstValueFrom(
+        withModuleOption.request(`${baseUrl}/cross-host`, {
+          headers: { 'X-Api-Key': 'secret', 'X-Other': 'kept' },
+          sensitiveHeaders: ['X-Api-Key'],
+        }),
+      );
+
+      expect(response.data.headers['x-api-key']).toBeUndefined();
+      // The module-level list is fully overridden, not merged - matching
+      // axios' own request > instance precedence for every other option.
+      expect(response.data.headers['x-other']).toBe('kept');
+    });
+
+    it('axiosRef.create({ sensitiveHeaders }) applies to every request through that instance, like axios.create()', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        imports: [HttpModule.register({})],
+      }).compile();
+      const root = module.get<HttpService>(HttpService);
+      const client = root.axiosRef.create({
+        headers: { 'X-Api-Key': 'secret', 'X-Other': 'keep' },
+        sensitiveHeaders: ['X-Api-Key'],
+      });
+
+      const response: any = await client.get(`${baseUrl}/cross-host`);
+
+      expect(response.data.headers['x-api-key']).toBeUndefined();
+      expect(response.data.headers['x-other']).toBe('keep');
+    });
+
+    it('rejects with ERR_BAD_OPTION_VALUE for a non-array value, never reaching the server', async () => {
+      await expect(
+        firstValueFrom(
+          service.request(`${baseUrl}/start`, {
+            sensitiveHeaders: 'X-Api-Key' as any,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'ERR_BAD_OPTION_VALUE',
+        message: 'sensitiveHeaders must be an array of strings',
+      });
+    });
+
+    it('an invalid sensitiveHeaders is ignored when maxRedirects: 0 (no redirects to strip headers on)', async () => {
+      const response: any = await firstValueFrom(
+        service.request(`${baseUrl}/start`, {
+          sensitiveHeaders: 'not-an-array' as any,
+          maxRedirects: 0,
+          validateStatus: () => true,
+        }),
+      );
+
+      // The 3xx itself is returned as-is, not rejected with
+      // ERR_BAD_OPTION_VALUE - validation is skipped entirely, as in axios.
+      expect(response.status).toBe(302);
+    });
+  });
+
   it('rejects clearly when a streamed body would need to be resent (307)', async () => {
     const server307 = createServer((req, res) => {
       if (req.url === '/redirect-307') {

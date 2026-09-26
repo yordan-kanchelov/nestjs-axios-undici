@@ -70,6 +70,7 @@ import {
   resolveDataUrlRequest,
 } from '../adapters/axios-data-url.adapter';
 import {
+  createInvalidSensitiveHeadersError,
   createStatusError,
   createTimeoutError,
   createUnparsableTimeoutError,
@@ -91,6 +92,7 @@ import {
   createTooManyRedirectsError,
   dumpRedirectBody,
   isRedirectResponse,
+  normalizeSensitiveHeaders,
   urlToString,
   type BeforeRedirect,
   type RedirectHopResult,
@@ -1250,11 +1252,13 @@ export class HttpService implements OnModuleDestroy {
       const rawOptions = interceptorRequest.options as Record<string, any> & {
         maxRedirections?: number;
         beforeRedirect?: BeforeRedirect;
+        sensitiveHeaders?: string[];
         socketPath?: string;
       };
       const {
         maxRedirections,
         beforeRedirect: requestBeforeRedirect,
+        sensitiveHeaders: requestSensitiveHeaders,
         socketPath: requestSocketPath,
         // The raw axios `timeout` (ms): a total deadline, read by this
         // method's own timer below - not undici's own `headersTimeout`/
@@ -1294,6 +1298,46 @@ export class HttpService implements OnModuleDestroy {
       if (isUnparsableTimeout(deadlineMs)) {
         subscriber.error(createUnparsableTimeoutError(interceptorRequest));
         return;
+      }
+
+      // `sensitiveHeaders` (plan.md "fix: redirect sensitiveHeaders option"):
+      // request > axiosRef.defaults > module, the same precedence every
+      // other passthrough default gets - `requestSensitiveHeaders` here is
+      // already request-vs-defaults-resolved (`normalizeAxiosRequest`/
+      // `buildAxiosConfig`, both upstream of this point); the `?? module`
+      // fallback below only matters when `defaults` was never seeded at all
+      // (a service's own `axiosRef.defaults` always is, at setup - see
+      // `DEFAULTS_PASSTHROUGH_KEYS` in `axios-ref.factory.ts` - so this is
+      // just a safety net, matching `beforeRedirect` just above it). Validated
+      // - and, once validated, resolved into the `Set` `buildRedirectHop`
+      // checks headers against - up front, exactly like
+      // `timeout` above: axios validates `config.sensitiveHeaders` while
+      // building the (non-native) follow-redirects transport options, before
+      // the request is even sent, whenever redirects are actually followed
+      // (`maxRedirects !== 0`) - not lazily on the first redirect. Skipped
+      // entirely (no cost) when `sensitiveHeaders` isn't set at all, the
+      // overwhelming majority of requests.
+      const configuredSensitiveHeaders =
+        requestSensitiveHeaders ??
+        (this.moduleOptions as any)?.sensitiveHeaders;
+      let sensitiveHeaders: Set<string> | undefined;
+      if (configuredSensitiveHeaders !== undefined) {
+        const redirectsEnabled =
+          (maxRedirections === undefined || maxRedirections === null
+            ? DEFAULT_MAX_REDIRECTS
+            : maxRedirections) !== 0;
+        if (redirectsEnabled) {
+          try {
+            sensitiveHeaders = normalizeSensitiveHeaders(
+              configuredSensitiveHeaders,
+            );
+          } catch {
+            subscriber.error(
+              createInvalidSensitiveHeadersError(interceptorRequest),
+            );
+            return;
+          }
+        }
       }
 
       // Precedence: an explicit per-request `dispatcher` always wins; then a
@@ -1561,6 +1605,7 @@ export class HttpService implements OnModuleDestroy {
                 beforeRedirect:
                   requestBeforeRedirect ??
                   (this.moduleOptions as any)?.beforeRedirect,
+                sensitiveHeaders,
               });
             } catch (error) {
               dumpRedirectBody(res.body).then(() => fail(error));

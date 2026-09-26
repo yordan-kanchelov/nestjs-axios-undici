@@ -53,6 +53,8 @@ const DEFAULTS_PASSTHROUGH_KEYS = [
   'onDownloadProgress',
   'maxRate',
   'formSerializer',
+  'parseReviver',
+  'sensitiveHeaders',
 ] as const;
 
 /**

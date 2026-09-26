@@ -1202,6 +1202,10 @@ export function normalizeAxiosRequest(
     (defaults?.onDownloadProgress !== undefined &&
       input.onDownloadProgress === undefined) ||
     (defaults?.maxRate !== undefined && input.maxRate === undefined) ||
+    (defaults?.parseReviver !== undefined &&
+      input.parseReviver === undefined) ||
+    (defaults?.sensitiveHeaders !== undefined &&
+      input.sensitiveHeaders === undefined) ||
     (defaults?.formSerializer !== undefined &&
       input.formSerializer === undefined) ||
     (headerBase
@@ -1358,6 +1362,18 @@ export function normalizeAxiosRequest(
   }
   if (options.maxRate === undefined && defaults?.maxRate !== undefined) {
     options.maxRate = defaults.maxRate;
+  }
+  if (
+    options.parseReviver === undefined &&
+    defaults?.parseReviver !== undefined
+  ) {
+    options.parseReviver = defaults.parseReviver;
+  }
+  if (
+    options.sensitiveHeaders === undefined &&
+    defaults?.sensitiveHeaders !== undefined
+  ) {
+    options.sensitiveHeaders = defaults.sensitiveHeaders;
   }
   const formSerializer: FormSerializerOptions | undefined =
     options.formSerializer ?? defaults?.formSerializer;
@@ -1606,6 +1622,10 @@ export function buildAxiosConfig(
     maxRedirects,
     allowAbsoluteUrls,
     beforeRedirect: input.beforeRedirect ?? instance.beforeRedirect,
+    sensitiveHeaders:
+      input.sensitiveHeaders ??
+      defaults?.sensitiveHeaders ??
+      instance.sensitiveHeaders,
     validateStatus: validateStatusProvided
       ? input.validateStatus
       : (defaults?.validateStatus ?? instance.validateStatus),
@@ -1629,6 +1649,7 @@ export function buildAxiosConfig(
       input.onDownloadProgress ?? defaults?.onDownloadProgress,
     maxRate: input.maxRate ?? defaults?.maxRate,
     formSerializer: input.formSerializer ?? defaults?.formSerializer,
+    parseReviver: input.parseReviver ?? defaults?.parseReviver,
   };
 
   return config;
@@ -1751,6 +1772,9 @@ export function serializeAxiosConfig(
   if (config.beforeRedirect !== undefined) {
     options.beforeRedirect = config.beforeRedirect;
   }
+  if (config.sensitiveHeaders !== undefined) {
+    options.sensitiveHeaders = config.sensitiveHeaders;
+  }
   if (config.validateStatus !== undefined) {
     options.validateStatus = config.validateStatus;
   }
@@ -1780,6 +1804,9 @@ export function serializeAxiosConfig(
   }
   if (config.maxRate !== undefined) {
     options.maxRate = config.maxRate;
+  }
+  if (config.parseReviver !== undefined) {
+    options.parseReviver = config.parseReviver;
   }
 
   const signal = resolveSignal(

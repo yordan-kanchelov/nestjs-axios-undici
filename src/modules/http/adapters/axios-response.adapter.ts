@@ -422,6 +422,12 @@ export async function toAxiosLikeResponse(
   const maxContentLength = (request.options as any)?.maxContentLength;
   const responseType = (request.options as any)?.responseType;
   const decompress = (request.options as any)?.decompress;
+  // axios' `parseReviver` (plan.md "fix: JSON reviver (parseReviver)"): only
+  // reaches the *default* JSON parsing below - a custom `transformResponse`
+  // (the branch right after this) replaces default parsing entirely, same as
+  // axios (`parseReviver` is read by axios' own default `transformResponse`
+  // only; a fully custom one would have to read `this.parseReviver` itself).
+  const parseReviver = (request.options as any)?.parseReviver;
   const contentEncodingHeader = headers['content-encoding'];
   const contentEncoding = Array.isArray(contentEncodingHeader)
     ? contentEncodingHeader[0]
@@ -513,7 +519,7 @@ export async function toAxiosLikeResponse(
         body as Dispatcher.ResponseData['body'],
         responseType,
         maxContentLength,
-        { contentEncoding, decompress },
+        { contentEncoding, decompress, parseReviver },
       );
       if (
         responseType === 'stream' &&
@@ -532,7 +538,7 @@ export async function toAxiosLikeResponse(
       parsedData = await readDefaultBody(
         body as Dispatcher.ResponseData['body'],
         contentType,
-        { maxContentLength, contentEncoding, decompress },
+        { maxContentLength, contentEncoding, decompress, parseReviver },
       );
     } else {
       // Axios returns empty string for null body

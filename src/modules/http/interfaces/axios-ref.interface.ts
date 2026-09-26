@@ -126,6 +126,15 @@ export interface AxiosRefDefaults<D = any> {
   maxRate?: number | [number, number];
   /** See `AxiosLikeRequestConfig.formSerializer`. */
   formSerializer?: FormSerializerOptions;
+  /** See `AxiosLikeRequestConfig.parseReviver`. */
+  parseReviver?: (
+    this: any,
+    key: string,
+    value: any,
+    context?: { source?: string },
+  ) => any;
+  /** See `AxiosLikeRequestConfig.sensitiveHeaders`. */
+  sensitiveHeaders?: string[];
 }
 
 /**
