@@ -151,7 +151,7 @@ npm run test:upstream:nestjs   # just @nestjs/axios
 npm run test:upstream:axios    # just axios (both strategies)
 ```
 
-See `tests/upstream/README.md` for the full breakdown, the expected-failures format, and the licensing note for the two cloned projects.
+[Upstream test results](/docs/upstream-tests.md) explains each expected failure. See `tests/upstream/README.md` for the expected-failures format and the licensing note for the two cloned projects.
 
 ## Overriding the module's own providers
 

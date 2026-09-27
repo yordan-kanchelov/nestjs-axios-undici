@@ -13,6 +13,7 @@
 
 * Reference
   * [Axios compatibility](/docs/axios-supported-options.md)
+  * [Upstream test results](/docs/upstream-tests.md)
   * [HttpModule](/docs/http/http.module.md)
   * [HttpService](/docs/http/http.service.md)
 
