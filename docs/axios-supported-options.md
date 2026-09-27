@@ -14,7 +14,7 @@ Legend: ✅ same as axios · ⚠️ works with a documented difference · ❌ no
 | `postForm` / `putForm` / `patchForm` with `FormData` | ✅ | Sent as `multipart/form-data`. |
 | `postForm` / `putForm` / `patchForm` with a plain object | ✅ | Sent as `multipart/form-data`, converted to a `FormData`, matching axios' own `postForm`. An explicit `Content-Type` header doesn't change this, and neither does axios'. This was confirmed against real axios. |
 | `query(url, data?, config?)` | ✅ | The HTTP `QUERY` method, new in `@nestjs/axios` 12 / axios ≥1.16. |
-| Unsubscribing aborts the request | ✅ | Unsubscribing before the response arrives (`timeout()`, `switchMap`, `takeUntil`, `race`, ...) aborts the upstream request, as in `@nestjs/axios`. It doesn't abort once the response has been emitted, or for `responseType: 'stream'`, once the headers have been emitted. A caller's own `AbortSignal` (`config.signal`) works differently: it keeps working after emission too. See `signal` under [Request config](#request-config). |
+| Unsubscribing aborts the request | ✅ | Unsubscribing before the response arrives (`timeout()`, `switchMap`, `takeUntil`, `race`, ...) aborts the upstream request, as in `@nestjs/axios`. It doesn't abort once the response has been emitted, or for `responseType: 'stream'`, once the headers have been emitted. `@nestjs/axios` never aborts a `responseType: 'stream'` request on unsubscribe, even before the headers arrive. A caller's own `AbortSignal` (`config.signal`) works differently: it keeps working after emission too. See `signal` under [Request config](#request-config). |
 
 ## `axiosRef`
 
