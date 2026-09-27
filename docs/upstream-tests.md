@@ -1,6 +1,6 @@
 # Upstream test results
 
-Every pull request that touches `src/` runs the test files of `@nestjs/axios` and axios against this package, unmodified. The same suites also run on every push to `main` and once a week. A test that doesn't pass is listed as an expected failure, with a written reason. The run fails if a test outside those lists fails, or if a listed test starts passing and the list goes stale.
+Every pull request into `main` that changes `src/`, `tests/upstream/` or the workflow itself runs the test files of `@nestjs/axios` and axios against this package, unmodified. The same suites run on every push to `main` that changes those paths, and once a week. A test that doesn't pass is listed as an expected failure, with a written reason. The run fails if a test outside those lists fails, or if a listed test starts passing and the list goes stale.
 
 This page explains each expected failure. The full lists, with one reason per test, are in [`tests/upstream/`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/tests/upstream). [Testing](/docs/guides/testing.md#upstream-conformance-suites) shows how to run the suites locally.
 
